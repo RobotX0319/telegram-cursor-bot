@@ -12,5 +12,8 @@
       "binding": "SESSIONS",
       "id": "e4f1347ef43c457abe6e81f7b801e94b"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  }
 }

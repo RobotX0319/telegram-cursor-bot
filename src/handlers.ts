@@ -4,8 +4,13 @@ import {
   formatRunResult,
   getAgent,
   getRun,
+  isTerminal,
   pollRunAndFormat,
 } from "./cursor";
+import {
+  addPendingRun,
+  notifyIfFinished,
+} from "./pending";
 import { defaultRepo, getSession, updateSession } from "./session";
 import { sendChatAction, sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
@@ -89,7 +94,7 @@ async function handleCommand(
       return;
 
     case "/new":
-      await handleNew(env, chatId, userId, args || "Yangi agent tayyor.");
+      await handleNew(env, chatId, userId, args || "Yangi agent tayyor.", ctx);
       return;
 
     case "/agent":
@@ -271,7 +276,7 @@ async function startAgentRun(
       ].join("\n"),
     );
 
-    ctx.waitUntil(notifyWhenRunFinishes(env, chatId, agent.id, run.id));
+    ctx.waitUntil(trackRunUntilFinished(env, chatId, userId, agent.id, run.id));
   } catch (error) {
     await sendMessage(
       env,
@@ -305,7 +310,7 @@ async function continueAgentRun(
       [`Buyruq yuborildi.`, `Run: ${run.id}`, "", "Kutilmoqda..."].join("\n"),
     );
 
-    ctx.waitUntil(notifyWhenRunFinishes(env, chatId, agentId, run.id));
+    ctx.waitUntil(trackRunUntilFinished(env, chatId, userId, agentId, run.id));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
@@ -322,20 +327,34 @@ async function continueAgentRun(
   }
 }
 
-async function notifyWhenRunFinishes(
+async function trackRunUntilFinished(
   env: Env,
   chatId: number,
+  userId: number,
   agentId: string,
   runId: string,
 ): Promise<void> {
+  const pending = {
+    chatId,
+    userId,
+    agentId,
+    runId,
+    createdAt: new Date().toISOString(),
+  };
+
+  await addPendingRun(env, pending);
+
   try {
-    const run = await pollRunAndFormat(env, agentId, runId);
-    await sendMessage(env, chatId, formatRunResult(run));
+    // waitUntil faqat ~30 soniya ishlaydi — tez tugagan runlar uchun qisqa polling
+    const run = await pollRunAndFormat(env, agentId, runId, 5, 5000);
+    if (isTerminal(run.status)) {
+      await notifyIfFinished(env, pending);
+    }
   } catch (error) {
-    await sendMessage(
-      env,
-      chatId,
-      `Natija olinmadi: ${error instanceof Error ? error.message : String(error)}\n/status bilan tekshiring.`,
+    console.error(
+      `Run ${runId} kuzatilmadi:`,
+      error instanceof Error ? error.message : String(error),
     );
+    // Cron trigger keyinroq tekshiradi
   }
 }

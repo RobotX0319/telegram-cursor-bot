@@ -1,4 +1,5 @@
 import { handleMessage } from "./handlers";
+import { processPendingRuns } from "./pending";
 import { configureWebhookFromEnv, getWebhookInfo } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
 
@@ -54,5 +55,13 @@ export default {
     }
 
     return new Response("Not Found", { status: 404 });
+  },
+
+  async scheduled(
+    _event: ScheduledEvent,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    ctx.waitUntil(processPendingRuns(env));
   },
 };
