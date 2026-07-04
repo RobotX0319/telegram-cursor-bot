@@ -2,6 +2,12 @@
 
 Bu yerda birgalikda ishlaymiz — bot kodidan alohida ish maydoni.
 
+## Loyihalar
+
+| Papka | Tavsif |
+|-------|--------|
+| [`echo-bot/`](echo-bot/) | Echo bot — yozgan xabaringizni qaytaradi |
+
 ## Vositalar
 
 | Buyruq | Vazifasi |

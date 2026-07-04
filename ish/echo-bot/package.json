@@ -1,0 +1,17 @@
+{
+  "name": "telegram-echo-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "setup-webhook": "node scripts/setup-webhook.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250701.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.22.0"
+  }
+}
