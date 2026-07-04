@@ -12,23 +12,11 @@ on:
       - "tsconfig.json"
       - ".github/workflows/deploy-cursor-bot.yml"
   workflow_dispatch:
-    inputs:
-      telegram_bot_token:
-        description: "Telegram bot token (ixtiyoriy — bo'sh qoldirilsa repo secret ishlatiladi)"
-        required: false
-        type: string
-      allowed_user_id:
-        description: "Asosiy admin Telegram user ID"
-        required: false
-        type: string
-      webhook_secret:
-        description: "Webhook secret (ixtiyoriy)"
-        required: false
-        type: string
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -47,43 +35,25 @@ jobs:
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "::error::GitHub Secrets kerak: CLOUDFLARE_API_TOKEN va CLOUDFLARE_ACCOUNT_ID"
-            echo "Cloudflare Dashboard → My Profile → API Tokens"
             exit 1
           fi
-
-      - name: Set Worker secrets
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          BOT_TOKEN: ${{ inputs.telegram_bot_token || secrets.TELEGRAM_BOT_TOKEN }}
-          USER_ID: ${{ inputs.allowed_user_id || secrets.ALLOWED_USER_ID }}
-          WEBHOOK_SECRET: ${{ inputs.webhook_secret || secrets.TELEGRAM_WEBHOOK_SECRET }}
-          CURSOR_KEY: ${{ secrets.CURSOR_API_KEY }}
-          DEFAULT_REPO: ${{ secrets.DEFAULT_GITHUB_REPO }}
-        run: |
-          set -euo pipefail
-          put_secret() {
-            local name="$1"
-            local value="$2"
-            if [ -n "$value" ]; then
-              echo "$value" | npx wrangler secret put "$name"
-            fi
-          }
-          put_secret TELEGRAM_BOT_TOKEN "$BOT_TOKEN"
-          put_secret ALLOWED_USER_ID "$USER_ID"
-          put_secret TELEGRAM_WEBHOOK_SECRET "$WEBHOOK_SECRET"
-          put_secret CURSOR_API_KEY "$CURSOR_KEY"
-          put_secret DEFAULT_GITHUB_REPO "$DEFAULT_REPO"
+          echo "Cloudflare credentials found."
 
       - name: Deploy to Cloudflare Workers
-        run: npx wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Setup webhook and commands
-        if: success()
+      - name: Setup webhook (ixtiyoriy)
+        continue-on-error: true
+        env:
+          WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
         run: |
-          SECRET="${{ inputs.webhook_secret || secrets.TELEGRAM_WEBHOOK_SECRET }}"
-          curl -sf \
-            "https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/setup-webhook?key=${SECRET}"
+          if [ -n "$WEBHOOK_SECRET" ]; then
+            curl -sf \
+              "https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/setup-webhook?key=${WEBHOOK_SECRET}" \
+              || echo "Webhook setup skipped (admin key mismatch or secret not in GitHub)."
+          else
+            echo "TELEGRAM_WEBHOOK_SECRET GitHub da yo'q — webhook o'tkazib yuborildi (Cloudflare secretlari saqlanadi)."
+          fi
