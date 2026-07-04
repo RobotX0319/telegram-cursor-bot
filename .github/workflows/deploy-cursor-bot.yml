@@ -1,0 +1,78 @@
+name: Deploy telegram-cursor-bot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "wrangler.jsonc"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - ".github/workflows/deploy-cursor-bot.yml"
+  workflow_dispatch:
+    inputs:
+      telegram_bot_token:
+        description: "Telegram bot token (ixtiyoriy — bo'sh qoldirilsa repo secret ishlatiladi)"
+        required: false
+        type: string
+      allowed_user_id:
+        description: "Asosiy admin Telegram user ID"
+        required: false
+        type: string
+      webhook_secret:
+        description: "Webhook secret (ixtiyoriy)"
+        required: false
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set Worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BOT_TOKEN: ${{ inputs.telegram_bot_token || secrets.TELEGRAM_BOT_TOKEN }}
+          USER_ID: ${{ inputs.allowed_user_id || secrets.ALLOWED_USER_ID }}
+          WEBHOOK_SECRET: ${{ inputs.webhook_secret || secrets.TELEGRAM_WEBHOOK_SECRET }}
+          CURSOR_KEY: ${{ secrets.CURSOR_API_KEY }}
+          DEFAULT_REPO: ${{ secrets.DEFAULT_GITHUB_REPO }}
+        run: |
+          set -euo pipefail
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              echo "$value" | npx wrangler secret put "$name"
+            fi
+          }
+          put_secret TELEGRAM_BOT_TOKEN "$BOT_TOKEN"
+          put_secret ALLOWED_USER_ID "$USER_ID"
+          put_secret TELEGRAM_WEBHOOK_SECRET "$WEBHOOK_SECRET"
+          put_secret CURSOR_API_KEY "$CURSOR_KEY"
+          put_secret DEFAULT_GITHUB_REPO "$DEFAULT_REPO"
+
+      - name: Deploy to Cloudflare Workers
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Setup webhook and commands
+        if: success()
+        run: |
+          SECRET="${{ inputs.webhook_secret || secrets.TELEGRAM_WEBHOOK_SECRET }}"
+          curl -sf \
+            "https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/setup-webhook?key=${SECRET}"

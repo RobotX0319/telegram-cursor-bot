@@ -7,7 +7,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
-    "setup-webhook": "node scripts/setup-webhook.mjs"
+    "setup-webhook": "node scripts/setup-webhook.mjs",
+    "setup-all": "node scripts/setup-all.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250701.0",

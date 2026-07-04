@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+/**
+ * To'liq o'rnatish: secretlar → deploy → webhook
+ *
+ * Talab: npx wrangler login yoki CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
+ *
+ * Ishlatish:
+ *   node scripts/setup-all.mjs
+ */
+
+import { execSync } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const devVarsPath = resolve(root, ".dev.vars");
+
+function loadDevVars() {
+  if (!existsSync(devVarsPath)) {
+    console.error(".dev.vars topilmadi. Avval: cp .dev.vars.example .dev.vars");
+    process.exit(1);
+  }
+
+  const vars = {};
+  for (const line of readFileSync(devVarsPath, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const idx = trimmed.indexOf("=");
+    if (idx === -1) continue;
+    vars[trimmed.slice(0, idx)] = trimmed.slice(idx + 1);
+  }
+  return vars;
+}
+
+function putSecret(name, value) {
+  if (!value?.trim()) {
+    console.log(`⏭  ${name} — o'tkazib yuborildi (qiymat yo'q)`);
+    return;
+  }
+  console.log(`🔐 ${name} ...`);
+  execSync(`npx wrangler secret put ${name}`, {
+    cwd: root,
+    input: value,
+    stdio: ["pipe", "inherit", "inherit"],
+  });
+}
+
+const vars = loadDevVars();
+const workerUrl =
+  process.env.WORKER_URL ?? "https://telegram-cursor-bot.fxjournaluz.workers.dev";
+
+const required = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "ALLOWED_USER_ID"];
+for (const key of required) {
+  if (!vars[key]?.trim()) {
+    console.error(`Kerak: ${key} (.dev.vars da)`);
+    process.exit(1);
+  }
+}
+
+console.log("\n📦 Secretlarni sozlash...\n");
+putSecret("TELEGRAM_BOT_TOKEN", vars.TELEGRAM_BOT_TOKEN);
+putSecret("TELEGRAM_WEBHOOK_SECRET", vars.TELEGRAM_WEBHOOK_SECRET);
+putSecret("ALLOWED_USER_ID", vars.ALLOWED_USER_ID);
+putSecret("CURSOR_API_KEY", vars.CURSOR_API_KEY);
+putSecret("DEFAULT_GITHUB_REPO", vars.DEFAULT_GITHUB_REPO);
+
+console.log("\n🚀 Deploy...\n");
+execSync("npx wrangler deploy", { cwd: root, stdio: "inherit" });
+
+console.log("\n🔗 Webhook ulash...\n");
+process.env.TELEGRAM_BOT_TOKEN = vars.TELEGRAM_BOT_TOKEN;
+process.env.TELEGRAM_WEBHOOK_SECRET = vars.TELEGRAM_WEBHOOK_SECRET;
+process.env.WORKER_URL = workerUrl;
+execSync("node scripts/setup-webhook.mjs", { cwd: root, stdio: "inherit" });
+
+console.log("\n✅ Tayyor! Telegramda botga /ping yuboring.\n");
