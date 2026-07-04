@@ -17,10 +17,12 @@ const HELP_TEXT = `Video bot
 
 Foydalanuvchi:
 - 1, 2, 3 ... yuboring — shu ID dagi videoni olasiz
+- /info 3 — video haqida ma'lumot (yubormasdan)
 
 Admin:
 - Video yuklang — avtomatik ID beriladi
 - /list — barcha videolar ro'yxati
+- /info 3 — video tafsilotlari
 - /delete 5 — videoni o'chirish
 - /stats — statistika`;
 
@@ -116,6 +118,10 @@ async function handleCommand(
         return;
       }
       await handleStats(env, chatId);
+      return;
+
+    case "/info":
+      await handleInfo(env, chatId, userId, args);
       return;
 
     default:
@@ -253,4 +259,47 @@ async function handleDelete(
 async function handleStats(env: Env, chatId: number): Promise<void> {
   const total = await countVideos(env);
   await sendMessage(env, chatId, `Jami videolar: ${total}`);
+}
+
+async function handleInfo(
+  env: Env,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  if (!/^\d+$/.test(args)) {
+    await sendMessage(env, chatId, "Foydalanish: /info 3");
+    return;
+  }
+
+  const id = Number.parseInt(args, 10);
+  const video = await getVideo(env, id);
+
+  if (!video) {
+    await sendMessage(env, chatId, `Video topilmadi: ${id}`);
+    return;
+  }
+
+  const title = video.caption ?? video.fileName ?? "Video";
+  const lines = [
+    `Video #${video.id}`,
+    `Nom: ${title}`,
+    `Turi: ${video.kind}`,
+    video.mimeType ? `Format: ${video.mimeType}` : null,
+    `Yuklangan: ${formatDate(video.uploadedAt)}`,
+  ];
+
+  if (isAdmin(env, userId)) {
+    lines.push(`Admin ID: ${video.uploadedBy}`);
+  }
+
+  lines.push("", "Videoni olish uchun shu raqamni yuboring.");
+
+  await sendMessage(env, chatId, lines.filter(Boolean).join("\n"));
+}
+
+function formatDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
 }

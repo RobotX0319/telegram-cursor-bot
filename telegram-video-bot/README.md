@@ -36,6 +36,7 @@ telegram-video-bot/
 | **Admin** | `/delete 5` — videoni o'chirish |
 | **Admin** | `/stats` — statistika |
 | **Hamma** | `1`, `2`, `3` ... — video olish |
+| **Hamma** | `/info 3` — video haqida ma'lumot |
 | **Hamma** | `/start`, `/help` |
 
 ## O'rnatish
