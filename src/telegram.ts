@@ -8,6 +8,8 @@ export const BOT_COMMANDS = [
   { command: "status", description: "Agent holati" },
   { command: "repo", description: "GitHub repo belgilash" },
   { command: "new", description: "Yangi agent ochish" },
+  { command: "agents", description: "Agentlar ro'yxati" },
+  { command: "use", description: "Agent tanlash" },
   { command: "agent", description: "Faol agent haqida" },
   { command: "admin", description: "Adminlar boshqaruvi" },
   { command: "ping", description: "Tekshirish" },

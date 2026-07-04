@@ -11,8 +11,18 @@ export interface Env {
   SESSIONS: KVNamespace;
 }
 
+export interface StoredAgentEntry {
+  agentId: string;
+  name: string;
+  url: string;
+  latestRunId?: string;
+  createdAt: string;
+}
+
 export interface UserSession {
+  activeAgentId?: string;
   agentId?: string;
+  agents?: StoredAgentEntry[];
   repoUrl?: string;
   latestRunId?: string;
   updatedAt: string;

@@ -1,4 +1,14 @@
 import {
+  formatAgentsList,
+  getActiveAgentEntry,
+  getActiveAgentId,
+  getNormalizedSession,
+  registerAgent,
+  removeAgentFromList,
+  selectAgent,
+  updateAgentRun,
+} from "./agents";
+import {
   addAdmin,
   getBootstrapAdminIds,
   isAllowedUser,
@@ -33,6 +43,8 @@ Buyruqlar:
 /status — agent va run holati
 /repo <url> — GitHub repo (masalan https://github.com/user/repo)
 /new — yangi cloud agent ochish
+/agents — barcha agentlar ro'yxati
+/use 2 — agent tanlash (raqam yoki ID)
 /agent — faol agent haqida
 /admin list — adminlar ro'yxati
 /admin add <id> — yangi admin qo'shish
@@ -110,6 +122,15 @@ async function handleCommand(
 
     case "/new":
       await handleNew(env, chatId, userId, args || "Yangi agent tayyor.", ctx, workerOrigin);
+      return;
+
+    case "/agents":
+      await handleAgents(env, chatId, userId, args);
+      return;
+
+    case "/use":
+    case "/select":
+      await handleUse(env, chatId, userId, args);
       return;
 
     case "/agent":
@@ -253,6 +274,88 @@ async function handleAdminRemove(
   await sendMessage(env, chatId, `Admin olib tashlandi: ${targetId}`);
 }
 
+async function handleAgents(
+  env: Env,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  const [subcommand, ...rest] = args.split(/\s+/);
+  const sub = subcommand?.toLowerCase();
+  const value = rest.join(" ").trim() || subcommand;
+
+  if (sub === "remove" || sub === "delete") {
+    const target = rest.join(" ").trim() || subcommand;
+    if (!target || target === "remove" || target === "delete") {
+      await sendMessage(env, chatId, "Foydalanish: /agents remove 2");
+      return;
+    }
+
+    const result = await removeAgentFromList(env, userId, target);
+    if (!result.ok) {
+      await sendMessage(env, chatId, result.error);
+      return;
+    }
+
+    await sendMessage(
+      env,
+      chatId,
+      `Ro'yxatdan olib tashlandi: ${result.name}\n\n${formatAgentsList(await getNormalizedSession(env, userId))}`,
+    );
+    return;
+  }
+
+  if (args && sub !== "list" && !["remove", "delete"].includes(sub ?? "")) {
+    await sendMessage(
+      env,
+      chatId,
+      "Foydalanish:\n/agents\n/agents remove 2",
+    );
+    return;
+  }
+
+  const session = await getNormalizedSession(env, userId);
+  await sendMessage(env, chatId, formatAgentsList(session));
+}
+
+async function handleUse(
+  env: Env,
+  chatId: number,
+  userId: number,
+  selector: string,
+): Promise<void> {
+  if (!selector) {
+    await sendMessage(
+      env,
+      chatId,
+      "Foydalanish:\n/use 2\n/use bc_abc123\n\nRo'yxat: /agents",
+    );
+    return;
+  }
+
+  const result = await selectAgent(env, userId, selector);
+  if (!result.ok) {
+    await sendMessage(env, chatId, result.error);
+    return;
+  }
+
+  const { entry } = result;
+  await sendMessage(
+    env,
+    chatId,
+    [
+      `Faol agent tanlandi ★`,
+      `Nom: ${entry.name}`,
+      `ID: ${entry.agentId}`,
+      entry.url ? `URL: ${entry.url}` : null,
+      "",
+      "Endi oddiy matn yuboring — shu agentga ketadi.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+}
+
 async function handleRepo(
   env: Env,
   chatId: number,
@@ -277,14 +380,17 @@ async function handleAgentInfo(
   chatId: number,
   userId: number,
 ): Promise<void> {
-  const session = await getSession(env, userId);
-  if (!session?.agentId) {
-    await sendMessage(env, chatId, "Faol agent yo'q. /new yoki matn yuboring.");
+  const session = await getNormalizedSession(env, userId);
+  const activeId = getActiveAgentId(session);
+
+  if (!activeId) {
+    await sendMessage(env, chatId, "Faol agent yo'q. /new yoki /agents");
     return;
   }
 
   try {
-    const agent = await getAgent(env, session.agentId);
+    const agent = await getAgent(env, activeId);
+    const entry = getActiveAgentEntry(session);
     await sendMessage(
       env,
       chatId,
@@ -293,7 +399,9 @@ async function handleAgentInfo(
         `ID: ${agent.id}`,
         `Status: ${agent.status}`,
         `URL: ${agent.url}`,
-        session.latestRunId ? `Latest run: ${session.latestRunId}` : null,
+        entry?.latestRunId ? `Latest run: ${entry.latestRunId}` : null,
+        "",
+        "Boshqa agent: /agents → /use 2",
       ]
         .filter(Boolean)
         .join("\n"),
@@ -312,17 +420,21 @@ async function handleStatus(
   chatId: number,
   userId: number,
 ): Promise<void> {
-  const session = await getSession(env, userId);
-  if (!session?.agentId || !session.latestRunId) {
-    await sendMessage(env, chatId, "Hozircha faol run yo'q.");
+  const session = await getNormalizedSession(env, userId);
+  const activeId = getActiveAgentId(session);
+  const entry = getActiveAgentEntry(session);
+  const runId = entry?.latestRunId ?? session?.latestRunId;
+
+  if (!activeId || !runId) {
+    await sendMessage(env, chatId, "Hozircha faol run yo'q.\n\nAgent tanlash: /agents");
     return;
   }
 
   try {
-    const run = await getRun(env, session.agentId, session.latestRunId);
+    const run = await getRun(env, activeId, runId);
 
     if (isTerminal(run.status)) {
-      await clearPendingForManualStatus(env, session.latestRunId);
+      await clearPendingForManualStatus(env, runId);
     }
 
     await sendMessage(env, chatId, formatRunResult(run));
@@ -343,7 +455,7 @@ async function handleNew(
   ctx: ExecutionContext,
   workerOrigin: string,
 ): Promise<void> {
-  const session = await getSession(env, userId);
+  const session = await getNormalizedSession(env, userId);
   const repoUrl = defaultRepo(env, session);
 
   if (!repoUrl) {
@@ -366,11 +478,12 @@ async function dispatchPrompt(
   ctx: ExecutionContext,
   workerOrigin: string,
 ): Promise<void> {
-  const session = await getSession(env, userId);
+  const session = await getNormalizedSession(env, userId);
   const repoUrl = defaultRepo(env, session);
+  const activeId = getActiveAgentId(session);
 
-  if (session?.agentId) {
-    await continueAgentRun(env, chatId, userId, session.agentId, prompt, ctx, workerOrigin);
+  if (activeId) {
+    await continueAgentRun(env, chatId, userId, activeId, prompt, ctx, workerOrigin);
     return;
   }
 
@@ -400,23 +513,25 @@ async function startAgentRun(
 
   try {
     const { agent, run } = await createAgent(env, prompt, repoUrl);
-
-    await updateSession(env, userId, {
-      agentId: agent.id,
-      repoUrl,
-      latestRunId: run.id,
-    });
+    const session = await registerAgent(env, userId, agent, run, repoUrl);
+    const agentNumber = session.agents?.findIndex((a) => a.agentId === agent.id);
 
     await sendMessage(
       env,
       chatId,
       [
         forceNew ? "Yangi agent ochildi." : "Agent ishga tushdi.",
+        agentNumber != null && agentNumber >= 0
+          ? `Ro'yxatdagi raqam: ${agentNumber + 1}`
+          : null,
         `Agent: ${agent.url}`,
         `Run: ${run.id}`,
         "",
         "Natija tayyor bo'lganda xabar yuboraman...",
-      ].join("\n"),
+        "Boshqa agent: /agents → /use 2",
+      ]
+        .filter(Boolean)
+        .join("\n"),
     );
 
     ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
@@ -445,16 +560,21 @@ async function continueAgentRun(
 
   try {
     const { run } = await createRun(env, agentId, prompt);
-
-    await updateSession(env, userId, {
-      agentId,
-      latestRunId: run.id,
-    });
+    const session = await updateAgentRun(env, userId, agentId, run.id);
+    const entry = session.agents?.find((a) => a.agentId === agentId);
 
     await sendMessage(
       env,
       chatId,
-      [`Buyruq yuborildi.`, `Run: ${run.id}`, "", "Kutilmoqda..."].join("\n"),
+      [
+        `Buyruq yuborildi.`,
+        entry ? `Agent: ${entry.name}` : null,
+        `Run: ${run.id}`,
+        "",
+        "Kutilmoqda...",
+      ]
+        .filter(Boolean)
+        .join("\n"),
     );
 
     ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
