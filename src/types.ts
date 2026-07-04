@@ -7,6 +7,7 @@ export interface Env {
   DEFAULT_GITHUB_REPO?: string;
   DEFAULT_GITHUB_BRANCH?: string;
   ENVIRONMENT?: string;
+  WORKER_PUBLIC_URL?: string;
   SESSIONS: KVNamespace;
 }
 

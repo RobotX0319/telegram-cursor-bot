@@ -38,11 +38,11 @@ Buyruqlar:
 /admin add <id> — yangi admin qo'shish
 /admin remove <id> — adminni olib tashlash
 
-Oddiy matn yoki /ask <prompt> — agentga vazifa yuborish
+Oddiy matn yuboring — agentga vazifa ( /ask shart emas )
 
 Masalan:
-/ask README ga o'rnatish bo'limini qo'sh
-Yoki shunchaki: src/index.ts dagi xatoni tuzat
+README ga o'rnatish bo'limini qo'sh
+Yoki: src/index.ts dagi xatoni tuzat
 
 Agent Cloudflare Worker kodini ham shu repoda o'zgartirishi mumkin.`;
 
@@ -122,7 +122,11 @@ async function handleCommand(
 
     case "/ask":
       if (!args) {
-        await sendMessage(env, chatId, "Foydalanish: /ask <prompt>");
+        await sendMessage(
+          env,
+          chatId,
+          "Oddiy matn yuboring — agent avtomatik ishlaydi.\nYoki: /ask <prompt>",
+        );
         return;
       }
       await dispatchPrompt(env, chatId, userId, args, ctx, workerOrigin);
@@ -415,8 +419,9 @@ async function startAgentRun(
       ].join("\n"),
     );
 
+    ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
     ctx.waitUntil(
-      trackRunUntilFinished(env, chatId, userId, agent.id, run.id, workerOrigin),
+      trackRunUntilFinished(env, chatId, userId, agent.id, run.id),
     );
   } catch (error) {
     await sendMessage(
@@ -452,8 +457,9 @@ async function continueAgentRun(
       [`Buyruq yuborildi.`, `Run: ${run.id}`, "", "Kutilmoqda..."].join("\n"),
     );
 
+    ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
     ctx.waitUntil(
-      trackRunUntilFinished(env, chatId, userId, agentId, run.id, workerOrigin),
+      trackRunUntilFinished(env, chatId, userId, agentId, run.id),
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -477,7 +483,6 @@ async function trackRunUntilFinished(
   userId: number,
   agentId: string,
   runId: string,
-  workerOrigin: string,
 ): Promise<void> {
   const pending = {
     chatId,
@@ -490,11 +495,9 @@ async function trackRunUntilFinished(
   await addPendingRun(env, pending);
 
   try {
-    // waitUntil faqat ~30 soniya ishlaydi — tez tugagan runlar uchun qisqa polling
-    const run = await pollRunAndFormat(env, agentId, runId, 5, 5000);
+    const run = await pollRunAndFormat(env, agentId, runId, 3, 3000);
     if (isTerminal(run.status)) {
       await notifyIfFinished(env, pending);
-      return;
     }
   } catch (error) {
     console.error(
@@ -502,6 +505,4 @@ async function trackRunUntilFinished(
       error instanceof Error ? error.message : String(error),
     );
   }
-
-  await kickoffPendingPoll(env, workerOrigin);
 }

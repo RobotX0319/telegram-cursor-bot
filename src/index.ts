@@ -1,6 +1,10 @@
 import { handleMessage } from "./handlers";
 import { continuePollingPendingRuns, processPendingRuns } from "./pending";
-import { configureWebhookFromEnv, getWebhookInfo } from "./telegram";
+import {
+  configureWebhookFromEnv,
+  getWebhookInfo,
+  setBotCommands,
+} from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
 
 export default {
@@ -34,6 +38,16 @@ export default {
       });
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/setup-commands") {
+      const key = url.searchParams.get("key");
+      if (!key || key !== env.TELEGRAM_WEBHOOK_SECRET) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const ok = await setBotCommands(env);
+      return Response.json({ ok });
+    }
+
     if (request.method === "GET" && url.pathname === "/admin/poll-pending") {
       const key = url.searchParams.get("key");
       if (!key || key !== env.TELEGRAM_WEBHOOK_SECRET) {
@@ -58,7 +72,12 @@ export default {
       }
 
       if (update.message) {
+        const text = update.message.text?.trim() ?? "";
         ctx.waitUntil(handleMessage(env, update.message, ctx, url.origin));
+
+        if (!text.toLowerCase().startsWith("/status")) {
+          ctx.waitUntil(processPendingRuns(env));
+        }
       }
 
       return new Response("ok");

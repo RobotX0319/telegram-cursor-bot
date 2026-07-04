@@ -11,7 +11,7 @@ if (!token || !workerUrl || !secret) {
 
 const webhookUrl = `${workerUrl.replace(/\/$/, "")}/webhook`;
 
-const response = await fetch(
+const webhookResponse = await fetch(
   `https://api.telegram.org/bot${token}/setWebhook`,
   {
     method: "POST",
@@ -25,7 +25,30 @@ const response = await fetch(
   },
 );
 
-const body = await response.text();
-console.log(response.status, body);
+const webhookBody = await webhookResponse.text();
+console.log("setWebhook", webhookResponse.status, webhookBody);
 
-if (!response.ok) process.exit(1);
+const commandsResponse = await fetch(
+  `https://api.telegram.org/bot${token}/setMyCommands`,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      commands: [
+        { command: "start", description: "Botni boshlash" },
+        { command: "help", description: "Yordam" },
+        { command: "status", description: "Agent holati" },
+        { command: "repo", description: "GitHub repo belgilash" },
+        { command: "new", description: "Yangi agent ochish" },
+        { command: "agent", description: "Faol agent haqida" },
+        { command: "admin", description: "Adminlar boshqaruvi" },
+        { command: "ping", description: "Tekshirish" },
+      ],
+    }),
+  },
+);
+
+const commandsBody = await commandsResponse.text();
+console.log("setMyCommands", commandsResponse.status, commandsBody);
+
+if (!webhookResponse.ok || !commandsResponse.ok) process.exit(1);

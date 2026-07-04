@@ -13,7 +13,16 @@ export interface PendingRun {
 const PENDING_PREFIX = "pending:";
 const NOTIFIED_PREFIX = "notified:";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 10_000;
+
+function resolveWorkerOrigin(env: Env, origin?: string): string {
+  const url = env.WORKER_PUBLIC_URL || origin || "";
+  return url.replace(/\/$/, "");
+}
+
+function pollPendingUrl(env: Env, workerOrigin: string): string {
+  return `${workerOrigin}/admin/poll-pending?key=${encodeURIComponent(env.TELEGRAM_WEBHOOK_SECRET)}`;
+}
 
 function pendingKey(runId: string): string {
   return `${PENDING_PREFIX}${runId}`;
@@ -110,8 +119,14 @@ export async function processPendingRuns(env: Env): Promise<number> {
 
 export async function continuePollingPendingRuns(
   env: Env,
-  workerOrigin: string,
+  workerOrigin?: string,
 ): Promise<void> {
+  const origin = resolveWorkerOrigin(env, workerOrigin);
+  if (!origin) {
+    console.error("Worker origin topilmadi — polling to'xtatildi");
+    return;
+  }
+
   await processPendingRuns(env);
 
   const remaining = await listPendingRuns(env);
@@ -119,10 +134,8 @@ export async function continuePollingPendingRuns(
 
   await sleep(POLL_INTERVAL_MS);
 
-  const pollUrl = `${workerOrigin.replace(/\/$/, "")}/admin/poll-pending?key=${encodeURIComponent(env.TELEGRAM_WEBHOOK_SECRET)}`;
-
   try {
-    const response = await fetch(pollUrl);
+    const response = await fetch(pollPendingUrl(env, origin));
     if (!response.ok) {
       console.error("Poll chain failed:", response.status, await response.text());
     }
@@ -136,12 +149,23 @@ export async function continuePollingPendingRuns(
 
 export async function kickoffPendingPoll(
   env: Env,
-  workerOrigin: string,
+  workerOrigin?: string,
 ): Promise<void> {
-  const pollUrl = `${workerOrigin.replace(/\/$/, "")}/admin/poll-pending?key=${encodeURIComponent(env.TELEGRAM_WEBHOOK_SECRET)}`;
+  const origin = resolveWorkerOrigin(env, workerOrigin);
+  if (!origin) {
+    console.error("Worker origin topilmadi — poll kickoff o'tkazib yuborildi");
+    return;
+  }
 
   try {
-    await fetch(pollUrl);
+    const response = await fetch(pollPendingUrl(env, origin));
+    if (!response.ok) {
+      console.error(
+        "Pending poll kickoff failed:",
+        response.status,
+        await response.text(),
+      );
+    }
   } catch (error) {
     console.error(
       "Pending poll kickoff failed:",
