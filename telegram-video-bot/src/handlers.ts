@@ -6,6 +6,7 @@ import {
   listVideos,
   saveVideo,
 } from "./storage";
+import { getAdminPanelUrl } from "./admin";
 import {
   sendDocumentByFileId,
   sendMessage,
@@ -21,6 +22,7 @@ Foydalanuvchi:
 
 Admin:
 - Video yuklang — avtomatik ID beriladi
+- /panel — web admin panel havolasi
 - /list — barcha videolar ro'yxati
 - /info 3 — video tafsilotlari
 - /delete 5 — videoni o'chirish
@@ -33,6 +35,7 @@ export function isAdmin(env: Env, userId: number): boolean {
 export async function handleMessage(
   env: Env,
   message: TelegramMessage,
+  workerOrigin: string,
 ): Promise<void> {
   const userId = message.from?.id;
   const chatId = message.chat.id;
@@ -57,7 +60,7 @@ export async function handleMessage(
   if (!text) return;
 
   if (text.startsWith("/")) {
-    await handleCommand(env, chatId, userId, text);
+    await handleCommand(env, chatId, userId, text, workerOrigin);
     return;
   }
 
@@ -78,6 +81,7 @@ async function handleCommand(
   chatId: number,
   userId: number,
   text: string,
+  workerOrigin: string,
 ): Promise<void> {
   const [command, ...rest] = text.split(/\s+/);
   const args = rest.join(" ").trim();
@@ -122,6 +126,14 @@ async function handleCommand(
 
     case "/info":
       await handleInfo(env, chatId, userId, args);
+      return;
+
+    case "/panel":
+      if (!isAdmin(env, userId)) {
+        await sendMessage(env, chatId, "Bu buyruq faqat admin uchun.");
+        return;
+      }
+      await handlePanel(env, chatId, workerOrigin);
       return;
 
     default:
@@ -302,4 +314,23 @@ function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+}
+
+async function handlePanel(
+  env: Env,
+  chatId: number,
+  workerOrigin: string,
+): Promise<void> {
+  const url = getAdminPanelUrl(workerOrigin, env.TELEGRAM_WEBHOOK_SECRET);
+  await sendMessage(
+    env,
+    chatId,
+    [
+      "Admin panel:",
+      url,
+      "",
+      "Videolarni ko'rish va o'chirish mumkin.",
+      "Havolani hech kimga bermang.",
+    ].join("\n"),
+  );
 }

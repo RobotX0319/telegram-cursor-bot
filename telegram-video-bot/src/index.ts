@@ -1,3 +1,4 @@
+import { handleAdminRequest } from "./admin";
 import { handleMessage } from "./handlers";
 import { configureWebhookFromEnv, getWebhookInfo } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
@@ -33,6 +34,10 @@ export default {
       });
     }
 
+    if (url.pathname.startsWith("/admin")) {
+      return handleAdminRequest(request, env);
+    }
+
     if (request.method === "POST" && url.pathname === "/webhook") {
       const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
       if (!secret || secret !== env.TELEGRAM_WEBHOOK_SECRET) {
@@ -47,7 +52,7 @@ export default {
       }
 
       if (update.message) {
-        ctx.waitUntil(handleMessage(env, update.message));
+        ctx.waitUntil(handleMessage(env, update.message, url.origin));
       }
 
       return new Response("ok");

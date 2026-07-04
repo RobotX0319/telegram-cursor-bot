@@ -32,6 +32,7 @@ telegram-video-bot/
 | Kim | Harakat |
 |-----|---------|
 | **Admin** | Video yuklash → avtomatik ID |
+| **Admin** | `/panel` — web admin panel |
 | **Admin** | `/list` — barcha videolar |
 | **Admin** | `/delete 5` — videoni o'chirish |
 | **Admin** | `/stats` — statistika |
@@ -96,6 +97,16 @@ Yoki brauzerda:
 ```
 https://telegram-video-bot.<account>.workers.dev/admin/setup-webhook?key=SIZNING_SECRET
 ```
+
+## Admin panel
+
+Brauzerda videolarni ko'rish va o'chirish:
+
+```
+https://telegram-video-bot.<account>.workers.dev/admin?key=SIZNING_SECRET
+```
+
+Yoki Telegramda admin sifatida: `/panel` — havola yuboriladi.
 
 ## Lokal dev
 
