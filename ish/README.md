@@ -70,5 +70,6 @@ Telegramda `/start` yuboring, keyin istalgan matn — bot qaytaradi.
 | `npm run echo-bot:deploy` | Cloudflare ga deploy |
 | `npm run echo-bot:setup-webhook` | Telegram webhook ulash |
 | `npm run echo-bot:health` | Bot ishlayaptimi tekshirish |
+| `npm run echo-bot:setup` | O'rnatish qo'llanmasi (+ avtomatik webhook) |
 
 Batafsil: [`echo-bot/README.md`](echo-bot/README.md)
