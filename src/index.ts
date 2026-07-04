@@ -1,5 +1,6 @@
 import { handleMessage } from "./handlers";
 import { continuePollingPendingRuns, processPendingRuns } from "./pending";
+import { pollTelegramUpdates } from "./poll";
 import {
   configureWebhookFromEnv,
   getWebhookInfo,
@@ -66,6 +67,16 @@ export default {
       return Response.json({ ok: true, polling: true });
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/poll-telegram") {
+      const key = url.searchParams.get("key");
+      if (!isAdminKey(env, key)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const result = await pollTelegramUpdates(env, ctx, url.origin);
+      return Response.json(result);
+    }
+
     if (request.method === "POST" && url.pathname === "/webhook") {
       const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
       if (!isAcceptedWebhookSecret(env, secret)) {
@@ -92,5 +103,16 @@ export default {
     }
 
     return new Response("Not Found", { status: 404 });
+  },
+
+  async scheduled(
+    event: ScheduledEvent,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    const origin =
+      env.WORKER_PUBLIC_URL?.replace(/\/$/, "") ??
+      "https://telegram-cursor-bot.invincible-wanderer.workers.dev";
+    ctx.waitUntil(pollTelegramUpdates(env, ctx, origin));
   },
 };
