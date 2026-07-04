@@ -12,6 +12,7 @@ export const BOT_COMMANDS = [
   { command: "use", description: "Agent tanlash" },
   { command: "agent", description: "Faol agent haqida" },
   { command: "admin", description: "Adminlar boshqaruvi" },
+  { command: "setkey", description: "Cursor API key saqlash" },
   { command: "ping", description: "Tekshirish" },
   { command: "version", description: "Bot versiyasi" },
 ] as const;

@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleMessage } from "../src/handlers";
+import { saveCursorApiKey, resolveCursorApiKey } from "../src/secrets";
 import type { Env } from "../src/types";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -38,15 +39,32 @@ class MemoryKV implements KVNamespace {
 
 function loadVars(): Record<string, string> {
   const vars: Record<string, string> = {};
-  const path = resolve(root, ".dev.vars");
-  for (const line of readFileSync(path, "utf8").split("\n")) {
+  const devVarsPath = resolve(root, ".dev.vars");
+  for (const line of readFileSync(devVarsPath, "utf8").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const idx = trimmed.indexOf("=");
     if (idx === -1) continue;
     vars[trimmed.slice(0, idx)] = trimmed.slice(idx + 1);
   }
+
+  const cursorKeyPath = resolve(root, ".cursor-key");
+  if (existsSync(cursorKeyPath)) {
+    const fileKey = readFileSync(cursorKeyPath, "utf8").trim();
+    if (fileKey) vars.CURSOR_API_KEY = fileKey;
+  }
+
+  if (process.env.CURSOR_API_KEY?.trim()) {
+    vars.CURSOR_API_KEY = process.env.CURSOR_API_KEY.trim();
+  }
+
   return vars;
+}
+
+function persistCursorKeyFile(apiKey: string): void {
+  writeFileSync(resolve(root, ".cursor-key"), `${apiKey.trim()}\n`, {
+    mode: 0o600,
+  });
 }
 
 const ctx: ExecutionContext = {
@@ -80,17 +98,18 @@ async function main(): Promise<void> {
     SESSIONS: new MemoryKV(),
   } as unknown as Env;
 
-  await deleteWebhook(vars.TELEGRAM_BOT_TOKEN);
-
-  if (!vars.CURSOR_API_KEY?.trim()) {
-    console.warn(
-      "⚠️  CURSOR_API_KEY yo'q — /new va agent buyruqlari ishlamaydi.\n" +
-        "   https://cursor.com/dashboard/integrations dan key oling va .dev.vars ga qo'shing.",
-    );
+  const startupKey =
+    vars.CURSOR_API_KEY?.trim() || process.env.CURSOR_API_KEY?.trim();
+  if (startupKey) {
+    await saveCursorApiKey(env, startupKey);
+    console.log("✅ CURSOR_API_KEY yuklandi.");
   } else {
-    console.log("✅ CURSOR_API_KEY topildi.");
+    console.warn(
+      "⚠️  CURSOR_API_KEY yo'q — Telegramda /setkey key_... yuboring.",
+    );
   }
 
+  await deleteWebhook(vars.TELEGRAM_BOT_TOKEN);
   console.log("✅ Telegram polling ishga tushdi. /ping yuboring.");
 
   let offset = 0;
@@ -124,12 +143,17 @@ async function main(): Promise<void> {
         offset = update.update_id + 1;
         if (update.message) {
           console.log("Xabar:", update.message.text ?? "(media)");
+          const text = update.message.text?.trim() ?? "";
           await handleMessage(
             env,
             update.message,
             ctx,
             vars.WORKER_PUBLIC_URL ?? "http://localhost",
           );
+          if (text.toLowerCase().startsWith("/setkey") || text.toLowerCase().startsWith("/cursorkey")) {
+            const saved = await resolveCursorApiKey(env);
+            if (saved) persistCursorKeyFile(saved);
+          }
         }
       }
     } catch (error) {

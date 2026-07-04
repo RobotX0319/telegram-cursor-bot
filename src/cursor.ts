@@ -1,3 +1,4 @@
+import { resolveCursorApiKey } from "./secrets";
 import type {
   CreateAgentResponse,
   CreateRunResponse,
@@ -9,16 +10,17 @@ import type {
 
 const CURSOR_API = "https://api.cursor.com/v1";
 
-export function getCursorApiKeyError(env: Env): string | null {
-  if (!env.CURSOR_API_KEY?.trim()) {
+export async function getCursorApiKeyError(env: Env): Promise<string | null> {
+  const apiKey = await resolveCursorApiKey(env);
+  if (!apiKey) {
     return [
       "CURSOR_API_KEY sozlanmagan.",
       "",
-      "1. https://cursor.com/dashboard/integrations ga kiring",
-      "2. User API Keys → yangi key yarating",
-      "3. .dev.vars fayliga qo'shing:",
-      "   CURSOR_API_KEY=key_...",
-      "4. Botni qayta ishga tushiring: npm run bot",
+      "Admin sifatida Telegramda:",
+      "/setkey key_...",
+      "",
+      "Yoki papkada .cursor-key fayliga yozing.",
+      "Key olish: https://cursor.com/dashboard/integrations",
     ].join("\n");
   }
   return null;
@@ -33,13 +35,14 @@ async function cursorFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const keyError = getCursorApiKeyError(env);
+  const keyError = await getCursorApiKeyError(env);
   if (keyError) throw new Error(keyError);
 
+  const apiKey = await resolveCursorApiKey(env);
   const response = await fetch(`${CURSOR_API}${path}`, {
     ...init,
     headers: {
-      Authorization: authHeader(env.CURSOR_API_KEY),
+      Authorization: authHeader(apiKey),
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },

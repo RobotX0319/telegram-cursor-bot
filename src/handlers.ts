@@ -31,6 +31,7 @@ import {
   kickoffPendingPoll,
   notifyIfFinished,
 } from "./pending";
+import { saveCursorApiKey, resolveCursorApiKey } from "./secrets";
 import { defaultRepo, updateSession } from "./session";
 import { sendChatAction, sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
@@ -50,6 +51,7 @@ Buyruqlar:
 /admin list — adminlar ro'yxati
 /admin add <id> — yangi admin qo'shish
 /admin remove <id> — adminni olib tashlash
+/setkey <key> — Cursor API kalitini saqlash (faqat admin)
 /version — bot versiyasi
 
 Barcha adminlar bir xil agentlar va repo bilan ishlaydi.
@@ -148,6 +150,11 @@ async function handleCommand(
       await handleAdmin(env, chatId, userId, args);
       return;
 
+    case "/setkey":
+    case "/cursorkey":
+      await handleSetKey(env, chatId, userId, args);
+      return;
+
     case "/ask":
       if (!args) {
         await sendMessage(
@@ -212,6 +219,45 @@ async function handleAdmin(
         "Foydalanish:\n/admin list\n/admin add 123456789\n/admin remove 123456789",
       );
   }
+}
+
+async function handleSetKey(
+  env: Env,
+  chatId: number,
+  userId: number,
+  apiKey: string,
+): Promise<void> {
+  if (!getBootstrapAdminIds(env).includes(String(userId))) {
+    await sendMessage(env, chatId, "Faqat asosiy admin /setkey ishlata oladi.");
+    return;
+  }
+
+  const key = apiKey.trim();
+  if (!key) {
+    await sendMessage(
+      env,
+      chatId,
+      "Foydalanish: /setkey key_...\n\nKey: https://cursor.com/dashboard/integrations",
+    );
+    return;
+  }
+
+  if (!key.startsWith("key_") && !key.startsWith("crsr_")) {
+    await sendMessage(
+      env,
+      chatId,
+      "Key formati noto'g'ri. key_... yoki crsr_... bilan boshlanishi kerak.",
+    );
+    return;
+  }
+
+  await saveCursorApiKey(env, key);
+  const masked = `${key.slice(0, 8)}...${key.slice(-4)}`;
+  await sendMessage(
+    env,
+    chatId,
+    `✅ Cursor API key saqlandi: ${masked}\n\nEndi /new yoki matn yuboring.`,
+  );
 }
 
 async function handleAdminList(env: Env, chatId: number): Promise<void> {

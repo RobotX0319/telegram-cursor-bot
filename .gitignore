@@ -2,6 +2,7 @@ node_modules/
 .wrangler/
 .dev.vars
 .env
+.cursor-key
 wrangler.temp.jsonc
 *.log
 dist/
