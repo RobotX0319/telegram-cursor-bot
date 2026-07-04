@@ -10,6 +10,7 @@ export const BOT_COMMANDS = [
   { command: "delete", description: "Video o'chirish (admin)" },
   { command: "stats", description: "Statistika (admin)" },
   { command: "panel", description: "Admin panel (admin)" },
+  { command: "check", description: "Obunani tekshirish" },
   { command: "ping", description: "Tekshirish" },
 ] as const;
 
@@ -36,6 +37,13 @@ export async function sendMessage(
   env: Env,
   chatId: number,
   text: string,
+  options?: {
+    replyMarkup?: {
+      inline_keyboard: Array<
+        Array<{ text: string; url?: string; callback_data?: string }>
+      >;
+    };
+  },
 ): Promise<void> {
   const response = await fetch(
     `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
@@ -45,6 +53,7 @@ export async function sendMessage(
       body: JSON.stringify({
         chat_id: chatId,
         text,
+        ...(options?.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
       }),
     },
   );
@@ -52,6 +61,29 @@ export async function sendMessage(
   if (!response.ok) {
     const body = await response.text();
     console.error("Telegram sendMessage failed:", response.status, body);
+  }
+}
+
+export async function answerCallbackQuery(
+  env: Env,
+  callbackQueryId: string,
+  text?: string,
+): Promise<void> {
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        ...(text ? { text, show_alert: true } : {}),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("answerCallbackQuery failed:", response.status, body);
   }
 }
 
@@ -118,7 +150,7 @@ export async function setWebhook(
     body: JSON.stringify({
       url: webhookUrl,
       secret_token: secret,
-      allowed_updates: ["message"],
+      allowed_updates: ["message", "callback_query"],
       drop_pending_updates: true,
     }),
   });

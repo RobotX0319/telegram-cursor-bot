@@ -38,6 +38,7 @@ telegram-video-bot/
 | **Admin** | `/stats` — statistika |
 | **Hamma** | `1`, `2`, `3` ... — video olish |
 | **Hamma** | `/info 3` — video haqida ma'lumot |
+| **Hamma** | `/check` — obunani tekshirish |
 | **Hamma** | `/start`, `/help` |
 
 ## O'rnatish

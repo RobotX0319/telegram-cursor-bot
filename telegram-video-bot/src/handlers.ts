@@ -8,17 +8,26 @@ import {
 } from "./storage";
 import { getAdminPanelUrl } from "./admin";
 import {
+  ensureSubscribed,
+  getRequiredChannels,
+  handleSubscriptionCheck,
+  isUserSubscribed,
+  sendSubscriptionRequired,
+} from "./subscription";
+import {
+  answerCallbackQuery,
   sendDocumentByFileId,
   sendMessage,
   sendVideoByFileId,
 } from "./telegram";
-import type { Env, StoredVideo, TelegramMessage } from "./types";
+import type { Env, StoredVideo, TelegramCallbackQuery, TelegramMessage } from "./types";
 
 const HELP_TEXT = `Video bot
 
 Foydalanuvchi:
 - 1, 2, 3 ... yuboring — shu ID dagi videoni olasiz
 - /info 3 — video haqida ma'lumot (yubormasdan)
+- /check — obunani tekshirish
 
 Admin:
 - Video yuklang — avtomatik ID beriladi
@@ -42,6 +51,18 @@ export async function handleMessage(
 
   if (!userId) return;
 
+  const text = message.text?.trim();
+  const isCheckCommand = text?.toLowerCase().split("@")[0] === "/check";
+
+  if (
+    !isAdmin(env, userId) &&
+    getRequiredChannels(env).length > 0 &&
+    !isCheckCommand
+  ) {
+    const subscribed = await ensureSubscribed(env, chatId, userId);
+    if (!subscribed) return;
+  }
+
   if (message.video || isVideoDocument(message)) {
     if (!isAdmin(env, userId)) {
       await sendMessage(
@@ -56,7 +77,6 @@ export async function handleMessage(
     return;
   }
 
-  const text = message.text?.trim();
   if (!text) return;
 
   if (text.startsWith("/")) {
@@ -138,6 +158,10 @@ async function handleCommand(
 
     case "/ping":
       await sendMessage(env, chatId, "pong");
+      return;
+
+    case "/check":
+      await handleSubscriptionCheck(env, chatId, userId);
       return;
 
     default:
@@ -337,4 +361,31 @@ async function handlePanel(
       "Havolani hech kimga bermang.",
     ].join("\n"),
   );
+}
+
+export async function handleCallbackQuery(
+  env: Env,
+  query: TelegramCallbackQuery,
+): Promise<void> {
+  const userId = query.from.id;
+  const chatId = query.message?.chat.id;
+
+  if (!chatId || query.data !== "check_sub") {
+    await answerCallbackQuery(env, query.id);
+    return;
+  }
+
+  const subscribed = await isUserSubscribed(env, userId);
+  if (subscribed) {
+    await answerCallbackQuery(env, query.id, "Obuna tasdiqlandi!");
+    await sendMessage(
+      env,
+      chatId,
+      "✅ Obuna tasdiqlandi!\n\nVideo olish uchun ID yuboring.\nMasalan: 1",
+    );
+    return;
+  }
+
+  await answerCallbackQuery(env, query.id, "Hali obuna bo'lmadingiz!");
+  await sendSubscriptionRequired(env, chatId);
 }

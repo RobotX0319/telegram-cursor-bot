@@ -1,5 +1,5 @@
 import { handleAdminRequest } from "./admin";
-import { handleMessage } from "./handlers";
+import { handleCallbackQuery, handleMessage } from "./handlers";
 import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
 
@@ -63,6 +63,10 @@ export default {
 
       if (update.message) {
         ctx.waitUntil(handleMessage(env, update.message, url.origin));
+      }
+
+      if (update.callback_query) {
+        ctx.waitUntil(handleCallbackQuery(env, update.callback_query));
       }
 
       return new Response("ok");

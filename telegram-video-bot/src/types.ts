@@ -2,7 +2,9 @@ export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
   TELEGRAM_ADMIN_ID: string;
+  REQUIRED_CHANNELS?: string;
   ENVIRONMENT?: string;
+  WORKER_PUBLIC_URL?: string;
   VIDEOS: KVNamespace;
 }
 
@@ -49,6 +51,14 @@ export interface TelegramMessage {
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
+}
+
+export interface TelegramCallbackQuery {
+  id: string;
+  from: TelegramUser;
+  message?: TelegramMessage;
+  data?: string;
 }
 
 export interface StoredVideo {
