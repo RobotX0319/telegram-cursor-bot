@@ -136,6 +136,10 @@ async function handleCommand(
       await handlePanel(env, chatId, workerOrigin);
       return;
 
+    case "/ping":
+      await sendMessage(env, chatId, "pong");
+      return;
+
     default:
       await sendMessage(env, chatId, "Noma'lum buyruq. /help");
   }

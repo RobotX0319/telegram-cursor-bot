@@ -1,0 +1,39 @@
+name: Deploy telegram-video-bot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "telegram-video-bot/**"
+      - ".github/workflows/deploy-video-bot.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: telegram-video-bot
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: telegram-video-bot/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy to Cloudflare Workers
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Setup webhook and commands
+        if: success()
+        run: |
+          curl -sf \
+            "https://telegram-video-bot.fxjournaluz.workers.dev/admin/setup-webhook?key=${{ secrets.TELEGRAM_VIDEO_WEBHOOK_SECRET || secrets.TELEGRAM_WEBHOOK_SECRET }}"

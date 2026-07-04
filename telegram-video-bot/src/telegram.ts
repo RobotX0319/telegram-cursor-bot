@@ -2,6 +2,36 @@ import type { Env } from "./types";
 
 const TELEGRAM_API = "https://api.telegram.org";
 
+export const BOT_COMMANDS = [
+  { command: "start", description: "Botni boshlash" },
+  { command: "help", description: "Yordam" },
+  { command: "info", description: "Video haqida ma'lumot" },
+  { command: "list", description: "Videolar ro'yxati (admin)" },
+  { command: "delete", description: "Video o'chirish (admin)" },
+  { command: "stats", description: "Statistika (admin)" },
+  { command: "panel", description: "Admin panel (admin)" },
+  { command: "ping", description: "Tekshirish" },
+] as const;
+
+export async function setBotCommands(env: Env): Promise<boolean> {
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/setMyCommands`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commands: BOT_COMMANDS }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("Telegram setMyCommands failed:", response.status, body);
+    return false;
+  }
+
+  return true;
+}
+
 export async function sendMessage(
   env: Env,
   chatId: number,
@@ -105,7 +135,14 @@ export async function configureWebhookFromEnv(
     env.TELEGRAM_WEBHOOK_SECRET,
   );
   const body = await response.text();
-  return { ok: response.ok, status: response.status, body };
+  const commandsSet = response.ok ? await setBotCommands(env) : false;
+  return {
+    ok: response.ok,
+    status: response.status,
+    body: commandsSet
+      ? body
+      : `${body}\n(setMyCommands failed — buyruqlar menyusi o'rnatilmadi)`,
+  };
 }
 
 export async function getWebhookInfo(env: Env): Promise<unknown> {

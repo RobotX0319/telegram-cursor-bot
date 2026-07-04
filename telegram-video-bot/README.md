@@ -98,6 +98,24 @@ Yoki brauzerda:
 https://telegram-video-bot.<account>.workers.dev/admin/setup-webhook?key=SIZNING_SECRET
 ```
 
+Buyruqlar menyusini alohida yangilash:
+
+```
+https://telegram-video-bot.<account>.workers.dev/admin/setup-commands?key=SIZNING_SECRET
+```
+
+### Avtomatik deploy (GitHub Actions)
+
+`main` branchga push qilganda `telegram-video-bot/` o'zgarsa avtomatik deploy qilinadi.
+
+GitHub repo **Settings → Secrets** ga qo'shing:
+
+| Secret | Tavsif |
+|--------|--------|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token (Workers Edit) |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `TELEGRAM_WEBHOOK_SECRET` | Webhook secret (deploydan keyin webhook yangilanadi) |
+
 ## Admin panel
 
 Brauzerda videolarni ko'rish va o'chirish:
