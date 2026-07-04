@@ -34,6 +34,16 @@ export default {
       });
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/poll-pending") {
+      const key = url.searchParams.get("key");
+      if (!key || key !== env.TELEGRAM_WEBHOOK_SECRET) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      await processPendingRuns(env);
+      return Response.json({ ok: true });
+    }
+
     if (request.method === "POST" && url.pathname === "/webhook") {
       const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
       if (!secret || secret !== env.TELEGRAM_WEBHOOK_SECRET) {
@@ -51,17 +61,11 @@ export default {
         ctx.waitUntil(handleMessage(env, update.message, ctx));
       }
 
+      ctx.waitUntil(processPendingRuns(env));
+
       return new Response("ok");
     }
 
     return new Response("Not Found", { status: 404 });
-  },
-
-  async scheduled(
-    _event: ScheduledEvent,
-    env: Env,
-    ctx: ExecutionContext,
-  ): Promise<void> {
-    ctx.waitUntil(processPendingRuns(env));
   },
 };
