@@ -16,8 +16,8 @@ Bot: Salom!
 ## O'rnatish
 
 ```bash
-cd ish/echo-bot
-npm install
+cd ish
+npm run echo-bot:install
 ```
 
 ### Secretlar
@@ -37,7 +37,8 @@ npx wrangler secret put ALLOWED_USER_ID
 ### Deploy
 
 ```bash
-npm run deploy
+cd ish
+npm run echo-bot:deploy
 ```
 
 Deploy tugagach worker URL ni oling, masalan:
@@ -49,7 +50,8 @@ Deploy tugagach worker URL ni oling, masalan:
 export TELEGRAM_BOT_TOKEN="..."
 export WORKER_URL="https://telegram-echo-bot.<account>.workers.dev"
 export TELEGRAM_WEBHOOK_SECRET="..."
-npm run setup-webhook
+cd ish
+npm run echo-bot:setup-webhook
 ```
 
 Yoki brauzerda:

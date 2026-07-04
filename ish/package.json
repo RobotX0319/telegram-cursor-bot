@@ -1,0 +1,13 @@
+{
+  "name": "ish-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "echo-bot:install": "npm install --prefix echo-bot",
+    "echo-bot:dev": "npm run dev --prefix echo-bot",
+    "echo-bot:deploy": "npm run deploy --prefix echo-bot",
+    "echo-bot:setup-webhook": "npm run setup-webhook --prefix echo-bot",
+    "echo-bot:health": "node echo-bot/scripts/check-health.mjs",
+    "echo-bot:types": "npm run types --prefix echo-bot"
+  }
+}

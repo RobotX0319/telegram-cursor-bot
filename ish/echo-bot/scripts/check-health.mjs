@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
-const url =
-  process.env.WORKER_URL ??
-  process.env.WORKER_PUBLIC_URL ??
-  "https://telegram-cursor-bot.fxjournaluz.workers.dev";
+const url = process.env.WORKER_URL ?? process.env.ECHO_BOT_URL;
+
+if (!url) {
+  console.error("Kerak: WORKER_URL yoki ECHO_BOT_URL");
+  console.error('Masalan: export WORKER_URL="https://telegram-echo-bot.account.workers.dev"');
+  process.exit(1);
+}
 
 const healthUrl = `${url.replace(/\/$/, "")}/health`;
 
