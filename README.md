@@ -24,37 +24,111 @@ Telegram xabar → Worker webhook → Cursor Cloud Agents API → natija → Tel
 
 ## O'rnatish
 
+### 1. Reponi klonlash va bog'liqliklarni o'rnatish
+
+Node.js 18+ va npm kerak.
+
 ```bash
+git clone https://github.com/RobotX0319/telegram-cursor-bot.git
 cd telegram-cursor-bot
 npm install
+```
 
-# KV namespace
-npx wrangler kv namespace create SESSIONS
-# chiqgan id ni wrangler.jsonc -> kv_namespaces[0].id ga qo'ying
+### 2. Cloudflare ga kirish
 
-# Cloudflare login
+```bash
 npx wrangler login
+```
 
-# Secretlar
+Brauzerda Cloudflare akkauntingiz bilan tasdiqlang.
+
+### 3. KV namespace yaratish
+
+Worker sessiya ma'lumotlarini saqlash uchun KV namespace kerak:
+
+```bash
+npx wrangler kv namespace create SESSIONS
+```
+
+Chiqgan `id` ni `wrangler.jsonc` faylidagi `kv_namespaces[0].id` ga yozing:
+
+```jsonc
+"kv_namespaces": [
+  {
+    "binding": "SESSIONS",
+    "id": "SIZNING_KV_ID"
+  }
+]
+```
+
+### 4. Secretlarni sozlash
+
+Har bir buyruqda qiymat kiritish so'raladi:
+
+```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put CURSOR_API_KEY
-npx wrangler secret put TELEGRAM_WEBHOOK_SECRET   # faqat A-Z a-z 0-9 _ - (masalan: tg_cursor_bot_2026)
-npx wrangler secret put ALLOWED_USER_ID           # sizning Telegram user ID
-npx wrangler secret put DEFAULT_GITHUB_REPO       # https://github.com/user/repo
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
+npx wrangler secret put ALLOWED_USER_ID
+npx wrangler secret put DEFAULT_GITHUB_REPO
+```
 
-# Deploy
+| Secret | Tavsif |
+|--------|--------|
+| `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/BotFather) dan olingan bot tokeni |
+| `CURSOR_API_KEY` | [Cursor Dashboard → Integrations](https://cursor.com/dashboard/integrations) dan |
+| `TELEGRAM_WEBHOOK_SECRET` | Tasodifiy maxfiy satr — faqat `A-Z`, `a-z`, `0-9`, `_`, `-` (masalan: `tg_cursor_bot_2026`) |
+| `ALLOWED_USER_ID` | Sizning Telegram user ID ([@userinfobot](https://t.me/userinfobot)) |
+| `DEFAULT_GITHUB_REPO` | Agent ishlaydigan repo URL (masalan: `https://github.com/user/repo`) |
+
+### 5. Deploy qilish
+
+```bash
 npm run deploy
+```
 
-# Webhook (deploy dan keyin worker URL ni oling)
-$env:TELEGRAM_BOT_TOKEN="..."
-$env:WORKER_URL="https://telegram-cursor-bot.<account>.workers.dev"
-$env:TELEGRAM_WEBHOOK_SECRET="..."
+Deploy tugagach, terminalda worker URL ko'rsatiladi, masalan:
+
+```
+https://telegram-cursor-bot.<account>.workers.dev
+```
+
+### 6. Telegram webhook ni ulash
+
+**Variant A — skript orqali (tavsiya etiladi):**
+
+Linux / macOS:
+
+```bash
+export TELEGRAM_BOT_TOKEN="123456:ABC..."
+export WORKER_URL="https://telegram-cursor-bot.<account>.workers.dev"
+export TELEGRAM_WEBHOOK_SECRET="tg_cursor_bot_2026"
 npm run setup-webhook
 ```
 
-## Telegram user ID
+Windows (PowerShell):
 
-[@userinfobot](https://t.me/userinfobot) ga yozing — ID ni `ALLOWED_USER_ID` ga qo'ying.
+```powershell
+$env:TELEGRAM_BOT_TOKEN="123456:ABC..."
+$env:WORKER_URL="https://telegram-cursor-bot.<account>.workers.dev"
+$env:TELEGRAM_WEBHOOK_SECRET="tg_cursor_bot_2026"
+npm run setup-webhook
+```
+
+**Variant B — brauzer orqali:**
+
+Deploy qilingan worker URL ga kiring (secret token `key` parametri sifatida):
+
+```
+https://telegram-cursor-bot.<account>.workers.dev/admin/setup-webhook?key=SIZNING_TELEGRAM_WEBHOOK_SECRET
+```
+
+### 7. Tekshirish
+
+1. Brauzerda health endpoint: `https://telegram-cursor-bot.<account>.workers.dev/health`
+2. Telegramda botga `/ping` yuboring — javob kelishi kerak
+3. `/repo https://github.com/user/repo` bilan repo belgilang
+4. `/ask Salom` bilan agentni sinab ko'ring
 
 ## Keyingi qadam
 
