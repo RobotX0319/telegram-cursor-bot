@@ -138,7 +138,38 @@ https://telegram-cursor-bot.<account>.workers.dev/admin/setup-webhook?key=SIZNIN
 3. Telegramdan: `/repo https://github.com/.../telegram-cursor-bot`
 4. Keyin: `/ask src/index.ts ga yangi /version buyrug'i qo'sh`
 
-Agent o'zgartirish kiritgach, `git pull` + `npm run deploy` yoki GitHub Actions orqali avtomatik deploy qo'shishingiz mumkin.
+Agent o'zgartirish kiritgach, GitHub Actions avtomatik Cloudflare ga deploy qiladi (quyidagi bo'lim).
+
+## Avtomatik deploy (GitHub Actions)
+
+Cloud Agent **Cloudflare ga kira olmaydi** — faqat GitHub repoda kod yozadi. Deploy uchun GitHub Actions sozlang:
+
+### 1. Cloudflare API token
+
+1. [Cloudflare Dashboard → API Tokens](https://dash.cloudflare.com/profile/api-tokens)
+2. **Create Token** → shablon: **Edit Cloudflare Workers**
+3. Account: sizning akkauntingiz
+4. Token ni nusxalang
+
+### 2. GitHub repo secretlari
+
+GitHub → `RobotX0319/telegram-cursor-bot` → **Settings → Secrets and variables → Actions**:
+
+| Secret | Qiymat |
+|--------|--------|
+| `CLOUDFLARE_API_TOKEN` | yuqoridagi token |
+| `CLOUDFLARE_ACCOUNT_ID` | `4450cffd4f25491cc797dd112824bc72` |
+
+### 3. Ishlash tartibi
+
+```
+Agent kod yozadi → git push main → GitHub Actions deploy → Worker yangilanadi
+```
+
+Telegramdan agentga shunday yozing:
+> "O'zgartirishni main ga push qil — GitHub Actions deploy qiladi"
+
+**Eslatma:** Worker secretlari (`TELEGRAM_BOT_TOKEN` va hokazo) Cloudflare da qoladi — agent ularni repoga yozmasin.
 
 ## Lokal dev
 
