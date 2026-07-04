@@ -50,12 +50,16 @@ const vars = loadDevVars();
 const workerUrl =
   process.env.WORKER_URL ?? "https://telegram-cursor-bot.fxjournaluz.workers.dev";
 
-const required = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "ALLOWED_USER_ID"];
+const required = ["TELEGRAM_BOT_TOKEN", "ALLOWED_USER_ID"];
 for (const key of required) {
   if (!vars[key]?.trim()) {
     console.error(`Kerak: ${key} (.dev.vars da)`);
     process.exit(1);
   }
+}
+
+if (!vars.TELEGRAM_WEBHOOK_SECRET?.trim() && vars.TELEGRAM_BOT_TOKEN) {
+  vars.TELEGRAM_WEBHOOK_SECRET = `tg_${vars.TELEGRAM_BOT_TOKEN.split(":")[0]}_bootstrap`;
 }
 
 console.log("\n📦 Secretlarni sozlash...\n");

@@ -1,6 +1,8 @@
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const workerUrl = process.env.WORKER_URL;
-const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+const secret =
+  process.env.TELEGRAM_WEBHOOK_SECRET ||
+  (token ? `tg_${token.split(":")[0]}_bootstrap` : "");
 
 if (!token || !workerUrl || !secret) {
   console.error(

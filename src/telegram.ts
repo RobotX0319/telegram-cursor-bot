@@ -94,6 +94,28 @@ export async function setWebhook(
 
 const WEBHOOK_SECRET_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 
+export function bootstrapWebhookSecret(botToken: string): string {
+  const botId = botToken.split(":")[0]?.trim();
+  return botId ? `tg_${botId}_bootstrap` : "";
+}
+
+export function getWebhookSecrets(env: Env): string[] {
+  const secrets = new Set<string>();
+  if (env.TELEGRAM_WEBHOOK_SECRET?.trim()) {
+    secrets.add(env.TELEGRAM_WEBHOOK_SECRET.trim());
+  }
+  const bootstrap = bootstrapWebhookSecret(env.TELEGRAM_BOT_TOKEN);
+  if (bootstrap && isValidWebhookSecret(bootstrap)) {
+    secrets.add(bootstrap);
+  }
+  return [...secrets];
+}
+
+export function isAcceptedWebhookSecret(env: Env, secret: string | null): boolean {
+  if (!secret) return false;
+  return getWebhookSecrets(env).includes(secret);
+}
+
 export function isValidWebhookSecret(secret: string): boolean {
   return WEBHOOK_SECRET_PATTERN.test(secret);
 }
@@ -102,13 +124,17 @@ export async function configureWebhookFromEnv(
   env: Env,
   workerOrigin: string,
 ): Promise<{ ok: boolean; status: number; body: string }> {
-  if (!isValidWebhookSecret(env.TELEGRAM_WEBHOOK_SECRET)) {
+  const secret =
+    env.TELEGRAM_WEBHOOK_SECRET?.trim() ||
+    bootstrapWebhookSecret(env.TELEGRAM_BOT_TOKEN);
+
+  if (!secret || !isValidWebhookSecret(secret)) {
     return {
       ok: false,
       status: 400,
       body: JSON.stringify({
         error:
-          "TELEGRAM_WEBHOOK_SECRET faqat A-Z, a-z, 0-9, _ va - belgilaridan iborat bo'lishi kerak (1-256 belgi). Masalan: tg_cursor_bot_secret_2026",
+          "TELEGRAM_WEBHOOK_SECRET yoki TELEGRAM_BOT_TOKEN kerak. Secret faqat A-Z, a-z, 0-9, _ va - belgilaridan iborat bo'lishi kerak.",
       }),
     };
   }
@@ -117,7 +143,7 @@ export async function configureWebhookFromEnv(
   const response = await setWebhook(
     env.TELEGRAM_BOT_TOKEN,
     webhookUrl,
-    env.TELEGRAM_WEBHOOK_SECRET,
+    secret,
   );
   const body = await response.text();
   const commandsSet = response.ok ? await setBotCommands(env) : false;

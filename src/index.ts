@@ -3,10 +3,16 @@ import { continuePollingPendingRuns, processPendingRuns } from "./pending";
 import {
   configureWebhookFromEnv,
   getWebhookInfo,
+  getWebhookSecrets,
+  isAcceptedWebhookSecret,
   setBotCommands,
 } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
 import { VERSION } from "./version";
+
+function isAdminKey(env: Env, key: string | null): boolean {
+  return Boolean(key && getWebhookSecrets(env).includes(key));
+}
 
 export default {
   async fetch(
@@ -27,7 +33,7 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/admin/setup-webhook") {
       const key = url.searchParams.get("key");
-      if (!key || key !== env.TELEGRAM_WEBHOOK_SECRET) {
+      if (!isAdminKey(env, key)) {
         return new Response("Unauthorized", { status: 401 });
       }
 
@@ -42,7 +48,7 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/admin/setup-commands") {
       const key = url.searchParams.get("key");
-      if (!key || key !== env.TELEGRAM_WEBHOOK_SECRET) {
+      if (!isAdminKey(env, key)) {
         return new Response("Unauthorized", { status: 401 });
       }
 
@@ -52,7 +58,7 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/admin/poll-pending") {
       const key = url.searchParams.get("key");
-      if (!key || key !== env.TELEGRAM_WEBHOOK_SECRET) {
+      if (!isAdminKey(env, key)) {
         return new Response("Unauthorized", { status: 401 });
       }
 
@@ -62,7 +68,7 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/webhook") {
       const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
-      if (!secret || secret !== env.TELEGRAM_WEBHOOK_SECRET) {
+      if (!isAcceptedWebhookSecret(env, secret)) {
         return new Response("Unauthorized", { status: 401 });
       }
 

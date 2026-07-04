@@ -1,5 +1,5 @@
 import { formatRunResult, getRun, isTerminal, sleep } from "./cursor";
-import { sendMessage } from "./telegram";
+import { getWebhookSecrets, sendMessage } from "./telegram";
 import type { Env } from "./types";
 
 export interface PendingRun {
@@ -21,7 +21,8 @@ function resolveWorkerOrigin(env: Env, origin?: string): string {
 }
 
 function pollPendingUrl(env: Env, workerOrigin: string): string {
-  return `${workerOrigin}/admin/poll-pending?key=${encodeURIComponent(env.TELEGRAM_WEBHOOK_SECRET)}`;
+  const key = getWebhookSecrets(env)[0] ?? env.TELEGRAM_WEBHOOK_SECRET;
+  return `${workerOrigin}/admin/poll-pending?key=${encodeURIComponent(key)}`;
 }
 
 function pendingKey(runId: string): string {
