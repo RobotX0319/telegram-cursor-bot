@@ -56,11 +56,13 @@ export async function handleMessage(
 
   if (
     !isAdmin(env, userId) &&
-    getRequiredChannels(env).length > 0 &&
     !isCheckCommand
   ) {
-    const subscribed = await ensureSubscribed(env, chatId, userId);
-    if (!subscribed) return;
+    const channels = await getRequiredChannels(env);
+    if (channels.length > 0) {
+      const subscribed = await ensureSubscribed(env, chatId, userId);
+      if (!subscribed) return;
+    }
   }
 
   if (message.video || isVideoDocument(message)) {

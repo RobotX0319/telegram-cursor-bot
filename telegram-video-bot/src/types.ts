@@ -72,3 +72,21 @@ export interface StoredVideo {
   uploadedBy: number;
   uploadedAt: string;
 }
+
+export interface StoredChannel {
+  id: string;
+  title?: string;
+  url?: string;
+  addedAt: string;
+}
+
+export interface SubscriptionConfig {
+  enabled: boolean;
+  channels: StoredChannel[];
+}
+
+export interface RequiredChannel {
+  id: string;
+  title: string;
+  url?: string;
+}

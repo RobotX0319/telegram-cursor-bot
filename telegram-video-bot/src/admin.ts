@@ -1,4 +1,10 @@
 import { countVideos, deleteVideo, listVideos } from "./storage";
+import {
+  addRequiredChannel,
+  getSubscriptionConfig,
+  removeRequiredChannel,
+  setSubscriptionEnabled,
+} from "./subscription";
 import type { Env } from "./types";
 
 function isAuthorized(url: URL, env: Env): boolean {
@@ -14,6 +20,62 @@ export async function handleAdminRequest(
 
   if (!isAuthorized(url, env)) {
     return new Response("Unauthorized", { status: 401 });
+  }
+
+  if (request.method === "GET" && url.pathname === "/admin/api/subscription") {
+    const config = await getSubscriptionConfig(env);
+    return Response.json(config);
+  }
+
+  if (request.method === "POST" && url.pathname === "/admin/api/subscription/toggle") {
+    let body: { enabled?: boolean };
+    try {
+      body = (await request.json()) as { enabled?: boolean };
+    } catch {
+      return Response.json({ ok: false, error: "JSON kerak" }, { status: 400 });
+    }
+
+    if (typeof body.enabled !== "boolean") {
+      return Response.json({ ok: false, error: "enabled kerak" }, { status: 400 });
+    }
+
+    const config = await setSubscriptionEnabled(env, body.enabled);
+    return Response.json({ ok: true, config });
+  }
+
+  if (request.method === "POST" && url.pathname === "/admin/api/subscription/add") {
+    let body: { channel?: string; url?: string; title?: string };
+    try {
+      body = (await request.json()) as { channel?: string; url?: string; title?: string };
+    } catch {
+      return Response.json({ ok: false, error: "JSON kerak" }, { status: 400 });
+    }
+
+    if (!body.channel?.trim()) {
+      return Response.json({ ok: false, error: "channel kerak" }, { status: 400 });
+    }
+
+    const result = await addRequiredChannel(
+      env,
+      body.channel,
+      body.url,
+      body.title,
+    );
+    if (!result.ok) {
+      return Response.json(result, { status: 400 });
+    }
+
+    return Response.json(result);
+  }
+
+  if (request.method === "POST" && url.pathname === "/admin/api/subscription/remove") {
+    const channelId = url.searchParams.get("id");
+    if (!channelId) {
+      return Response.json({ ok: false, error: "id kerak" }, { status: 400 });
+    }
+
+    const config = await removeRequiredChannel(env, channelId);
+    return Response.json({ ok: true, config });
   }
 
   if (request.method === "GET" && url.pathname === "/admin/api/videos") {
@@ -138,6 +200,68 @@ function renderAdminPage(key: string): string {
       display: none;
     }
     .id-cell { font-weight: 700; color: #60a5fa; }
+    .section {
+      background: #1a1d27;
+      border: 1px solid #2a2f3d;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .section h2 { font-size: 1.1rem; margin-bottom: 12px; }
+    .section p { color: #8b919a; font-size: 0.85rem; margin-bottom: 16px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    input[type="text"] {
+      background: #0f1117;
+      border: 1px solid #2a2f3d;
+      color: #e4e6eb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      min-width: 200px;
+      flex: 1;
+    }
+    .switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .switch input { display: none; }
+    .slider {
+      width: 44px;
+      height: 24px;
+      background: #2a2f3d;
+      border-radius: 999px;
+      position: relative;
+      transition: background 0.2s;
+    }
+    .slider::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .switch input:checked + .slider { background: #3b82f6; }
+    .switch input:checked + .slider::after { transform: translateX(20px); }
+    .channel-list { list-style: none; }
+    .channel-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #2a2f3d;
+    }
+    .channel-list li:last-child { border-bottom: none; }
+    .channel-meta { color: #8b919a; font-size: 0.8rem; margin-top: 2px; }
+    .status-on { color: #4ade80; }
+    .status-off { color: #8b919a; }
     @media (max-width: 640px) {
       table, thead, tbody, th, td, tr { display: block; }
       thead { display: none; }
@@ -156,7 +280,7 @@ function renderAdminPage(key: string): string {
 <body>
   <div class="wrap">
     <h1>Video Bot Admin</h1>
-    <p class="sub">Videolarni ko'rish va boshqarish</p>
+    <p class="sub">Videolar va majburiy obunani boshqarish</p>
 
     <div id="error" class="error"></div>
 
@@ -165,25 +289,57 @@ function renderAdminPage(key: string): string {
         <div class="stat-label">Jami videolar</div>
         <div class="stat-value" id="total">—</div>
       </div>
+      <div class="stat">
+        <div class="stat-label">Majburiy obuna</div>
+        <div class="stat-value" id="sub-status">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Obuna kanallari</div>
+        <div class="stat-value" id="sub-count">—</div>
+      </div>
     </div>
 
-    <div class="toolbar">
-      <button id="refresh">Yangilash</button>
+    <div class="section">
+      <h2>Majburiy obuna</h2>
+      <p>Bot kanal(lar)ga obuna bo'lmagan foydalanuvchilarga video bermaydi. Bot kanalda admin bo'lishi kerak.</p>
+
+      <div class="row">
+        <label class="switch">
+          <input type="checkbox" id="sub-enabled">
+          <span class="slider"></span>
+        </label>
+        <span id="sub-enabled-label">O'chirilgan</span>
+      </div>
+
+      <div class="row">
+        <input type="text" id="channel-input" placeholder="@kanal yoki https://t.me/kanal">
+        <input type="text" id="channel-url" placeholder="Havola (ixtiyoriy)">
+        <button id="add-channel">Qo'shish</button>
+      </div>
+
+      <ul class="channel-list" id="channels"></ul>
     </div>
 
-    <div id="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Nom</th>
-            <th>Turi</th>
-            <th>Vaqt</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="videos"></tbody>
-      </table>
+    <div class="section">
+      <h2>Videolar</h2>
+      <div class="toolbar">
+        <button id="refresh">Yangilash</button>
+      </div>
+
+      <div id="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nom</th>
+              <th>Turi</th>
+              <th>Vaqt</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="videos"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -199,6 +355,89 @@ function renderAdminPage(key: string): string {
     function clearError() {
       const el = document.getElementById("error");
       el.style.display = "none";
+    }
+
+    async function loadSubscription() {
+      const res = await fetch("/admin/api/subscription?key=" + encodeURIComponent(KEY));
+      if (!res.ok) throw new Error("Obuna sozlamalari yuklanmadi");
+      return res.json();
+    }
+
+    function renderSubscription(config) {
+      const enabled = config.enabled && config.channels.length > 0;
+      document.getElementById("sub-enabled").checked = config.enabled;
+      document.getElementById("sub-enabled-label").textContent = config.enabled ? "Yoqilgan" : "O'chirilgan";
+      document.getElementById("sub-enabled-label").className = config.enabled ? "status-on" : "status-off";
+      document.getElementById("sub-status").textContent = enabled ? "Yoniq" : "O'chiq";
+      document.getElementById("sub-status").className = enabled ? "stat-value status-on" : "stat-value status-off";
+      document.getElementById("sub-count").textContent = config.channels.length;
+
+      const list = document.getElementById("channels");
+      if (!config.channels.length) {
+        list.innerHTML = '<li class="empty">Kanal qo\\'shilmagan</li>';
+        return;
+      }
+
+      list.innerHTML = config.channels.map(function(c) {
+        const title = c.title || c.id;
+        const meta = c.url ? c.url : c.id;
+        return '<li>' +
+          '<div><strong>' + escapeHtml(title) + '</strong><div class="channel-meta">' + escapeHtml(meta) + '</div></div>' +
+          '<button class="danger" onclick=\'removeChannel(' + JSON.stringify(c.id) + ')\'>O\\'chirish</button>' +
+        '</li>';
+      }).join("");
+    }
+
+    async function toggleSubscription(enabled) {
+      clearError();
+      const res = await fetch("/admin/api/subscription/toggle?key=" + encodeURIComponent(KEY), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || "Sozlama saqlanmadi");
+        return;
+      }
+      renderSubscription(data.config);
+    }
+
+    async function addChannel() {
+      const channel = document.getElementById("channel-input").value.trim();
+      const url = document.getElementById("channel-url").value.trim();
+      if (!channel) {
+        showError("Kanal kiriting: @username");
+        return;
+      }
+      clearError();
+      const res = await fetch("/admin/api/subscription/add?key=" + encodeURIComponent(KEY), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: channel, url: url || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || "Kanal qo'shilmadi");
+        return;
+      }
+      document.getElementById("channel-input").value = "";
+      document.getElementById("channel-url").value = "";
+      renderSubscription(data.config);
+    }
+
+    async function removeChannel(id) {
+      if (!confirm("Kanal o'chirilsinmi: " + id + "?")) return;
+      clearError();
+      const res = await fetch("/admin/api/subscription/remove?id=" + encodeURIComponent(id) + "&key=" + encodeURIComponent(KEY), {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || "O'chirilmadi");
+        return;
+      }
+      renderSubscription(data.config);
     }
 
     async function loadVideos() {
@@ -238,9 +477,10 @@ function renderAdminPage(key: string): string {
 
     async function refresh() {
       try {
-        const data = await loadVideos();
-        document.getElementById("total").textContent = data.total;
-        renderVideos(data.videos);
+        const [videoData, subData] = await Promise.all([loadVideos(), loadSubscription()]);
+        document.getElementById("total").textContent = videoData.total;
+        renderVideos(videoData.videos);
+        renderSubscription(subData);
       } catch (e) {
         showError(e.message || "Xatolik");
       }
@@ -261,6 +501,10 @@ function renderAdminPage(key: string): string {
     }
 
     document.getElementById("refresh").addEventListener("click", refresh);
+    document.getElementById("add-channel").addEventListener("click", addChannel);
+    document.getElementById("sub-enabled").addEventListener("change", function(e) {
+      toggleSubscription(e.target.checked);
+    });
     refresh();
   </script>
 </body>

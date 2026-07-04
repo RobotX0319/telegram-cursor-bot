@@ -1,5 +1,7 @@
 import { sendMessage } from "./telegram";
-import type { Env } from "./types";
+import type { Env, RequiredChannel, SubscriptionConfig, StoredChannel } from "./types";
+
+const SUBSCRIPTION_KEY = "meta:subscription";
 
 const SUBSCRIBED_STATUSES = new Set([
   "creator",
@@ -8,36 +10,143 @@ const SUBSCRIBED_STATUSES = new Set([
   "restricted",
 ]);
 
-export interface RequiredChannel {
-  id: string;
-  title: string;
-  url?: string;
-}
+export type { RequiredChannel };
 
-export function getRequiredChannels(env: Env): RequiredChannel[] {
-  const raw = env.REQUIRED_CHANNELS?.trim();
-  if (!raw) return [];
-
-  return raw.split(",").map((entry) => {
-    const id = entry.trim();
-    const title = id.startsWith("@") ? id : `Kanal ${id}`;
-    const url = channelUrl(id);
-    return { id, title, url };
-  });
-}
-
-function channelUrl(channelId: string): string | undefined {
+function channelUrl(channelId: string, customUrl?: string): string | undefined {
+  if (customUrl?.trim()) return customUrl.trim();
   if (channelId.startsWith("@")) {
     return `https://t.me/${channelId.slice(1)}`;
   }
   return undefined;
 }
 
+function channelTitle(channelId: string, title?: string): string {
+  return title?.trim() || (channelId.startsWith("@") ? channelId : `Kanal ${channelId}`);
+}
+
+function parseChannelsFromEnv(env: Env): StoredChannel[] {
+  const raw = env.REQUIRED_CHANNELS?.trim();
+  if (!raw) return [];
+
+  return raw.split(",").map((entry) => {
+    const id = normalizeChannelId(entry.trim());
+    return {
+      id,
+      title: channelTitle(id),
+      url: channelUrl(id),
+      addedAt: new Date().toISOString(),
+    };
+  });
+}
+
+export function normalizeChannelId(input: string): string {
+  const value = input.trim();
+  if (!value) return value;
+
+  const tmeMatch = value.match(
+    /^https?:\/\/(?:www\.)?t\.me\/([A-Za-z0-9_+]+)\/?$/,
+  );
+  if (tmeMatch) {
+    const slug = tmeMatch[1];
+    if (slug.startsWith("+") || slug.startsWith("joinchat")) return value;
+    return `@${slug}`;
+  }
+
+  if (/^-?\d+$/.test(value)) return value;
+  return value.startsWith("@") ? value : `@${value}`;
+}
+
+export async function getSubscriptionConfig(
+  env: Env,
+): Promise<SubscriptionConfig> {
+  const raw = await env.VIDEOS.get(SUBSCRIPTION_KEY);
+  if (raw) {
+    return JSON.parse(raw) as SubscriptionConfig;
+  }
+
+  const envChannels = parseChannelsFromEnv(env);
+  return {
+    enabled: envChannels.length > 0,
+    channels: envChannels,
+  };
+}
+
+export async function saveSubscriptionConfig(
+  env: Env,
+  config: SubscriptionConfig,
+): Promise<void> {
+  await env.VIDEOS.put(SUBSCRIPTION_KEY, JSON.stringify(config));
+}
+
+export async function getRequiredChannels(env: Env): Promise<RequiredChannel[]> {
+  const config = await getSubscriptionConfig(env);
+  if (!config.enabled || config.channels.length === 0) return [];
+
+  return config.channels.map((channel) => ({
+    id: channel.id,
+    title: channelTitle(channel.id, channel.title),
+    url: channelUrl(channel.id, channel.url),
+  }));
+}
+
+export async function setSubscriptionEnabled(
+  env: Env,
+  enabled: boolean,
+): Promise<SubscriptionConfig> {
+  const config = await getSubscriptionConfig(env);
+  config.enabled = enabled;
+  await saveSubscriptionConfig(env, config);
+  return config;
+}
+
+export async function addRequiredChannel(
+  env: Env,
+  input: string,
+  customUrl?: string,
+  title?: string,
+): Promise<{ ok: true; config: SubscriptionConfig } | { ok: false; error: string }> {
+  const id = normalizeChannelId(input);
+  if (!id) {
+    return { ok: false, error: "Kanal ID kiritilmagan" };
+  }
+
+  const config = await getSubscriptionConfig(env);
+  if (config.channels.some((c) => c.id === id)) {
+    return { ok: false, error: "Kanal allaqachon mavjud" };
+  }
+
+  const channel: StoredChannel = {
+    id,
+    title: title?.trim() || channelTitle(id),
+    url: customUrl?.trim() || channelUrl(id),
+    addedAt: new Date().toISOString(),
+  };
+
+  config.channels.push(channel);
+  config.enabled = true;
+  await saveSubscriptionConfig(env, config);
+  return { ok: true, config };
+}
+
+export async function removeRequiredChannel(
+  env: Env,
+  channelId: string,
+): Promise<SubscriptionConfig> {
+  const id = normalizeChannelId(channelId);
+  const config = await getSubscriptionConfig(env);
+  config.channels = config.channels.filter((c) => c.id !== id);
+  if (config.channels.length === 0) {
+    config.enabled = false;
+  }
+  await saveSubscriptionConfig(env, config);
+  return config;
+}
+
 export async function isUserSubscribed(
   env: Env,
   userId: number,
 ): Promise<boolean> {
-  const channels = getRequiredChannels(env);
+  const channels = await getRequiredChannels(env);
   if (channels.length === 0) return true;
 
   for (const channel of channels) {
@@ -87,7 +196,7 @@ export async function sendSubscriptionRequired(
   env: Env,
   chatId: number,
 ): Promise<void> {
-  const channels = getRequiredChannels(env);
+  const channels = await getRequiredChannels(env);
   const lines = [
     "Botdan foydalanish uchun quyidagi kanal(lar)ga obuna bo'ling:",
     "",
@@ -113,7 +222,8 @@ export async function ensureSubscribed(
   chatId: number,
   userId: number,
 ): Promise<boolean> {
-  if (getRequiredChannels(env).length === 0) return true;
+  const channels = await getRequiredChannels(env);
+  if (channels.length === 0) return true;
 
   const subscribed = await isUserSubscribed(env, userId);
   if (!subscribed) {

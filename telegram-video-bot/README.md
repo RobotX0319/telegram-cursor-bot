@@ -70,13 +70,15 @@ npx wrangler login
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 npx wrangler secret put TELEGRAM_ADMIN_ID
+npx wrangler secret put REQUIRED_CHANNELS
 ```
 
-| Secret | Tavsif |
+| Secret / Var | Tavsif |
 |--------|--------|
 | `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/BotFather) dan yangi bot tokeni |
 | `TELEGRAM_WEBHOOK_SECRET` | Tasodifiy maxfiy satr (A-Z, a-z, 0-9, _, -) |
 | `TELEGRAM_ADMIN_ID` | Admin Telegram user ID ([@userinfobot](https://t.me/userinfobot)) |
+| `REQUIRED_CHANNELS` | Majburiy kanal(lar): `@channel1,@channel2` (ixtiyoriy) |
 
 ### 5. Deploy
 
@@ -126,6 +128,36 @@ https://telegram-video-bot.<account>.workers.dev/admin?key=SIZNING_SECRET
 ```
 
 Yoki Telegramda admin sifatida: `/panel` — havola yuboriladi.
+
+## Majburiy obuna
+
+Foydalanuvchilar botdan foydalanishdan oldin kanalga obuna bo'lishi kerak.
+
+### Admin panel orqali (tavsiya)
+
+1. Telegramda `/panel` — admin panel havolasini oling
+2. **Majburiy obuna** bo'limida kanal qo'shing (`@username`)
+3. Yoqish/O'chirish tugmasini bosing
+
+### Yoki secret orqali
+
+```bash
+npx wrangler secret put REQUIRED_CHANNELS
+# Masalan: @mychannel yoki @channel1,@channel2
+```
+
+Birinchi marta env dan kanallar panelga ko'chiriladi.
+
+**Muhim:** Bot kanalda **admin** bo'lishi kerak (obunani tekshirish uchun).
+
+### Ishlash tartibi
+
+1. Foydalanuvchi botga yozadi
+2. Obuna bo'lmagan bo'lsa — kanal havolasi va «Tekshirish» tugmasi chiqadi
+3. Obuna bo'lgach `/check` yoki tugmani bosadi
+4. Tasdiqlangach video olish mumkin
+
+Admin obunadan ozod — to'g'ridan-to'g'ri ishlaydi.
 
 ## Lokal dev
 
