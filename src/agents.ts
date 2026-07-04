@@ -1,5 +1,5 @@
 import { getAgent } from "./cursor";
-import { getSession, updateSession } from "./session";
+import { getSession, getSessionUserId, updateSession } from "./session";
 import type { CursorAgent, CursorRun, Env, StoredAgentEntry, UserSession } from "./types";
 
 export function normalizeSession(session: UserSession | null): UserSession | null {
@@ -30,7 +30,8 @@ export async function getNormalizedSession(
   env: Env,
   userId: number,
 ): Promise<UserSession | null> {
-  return normalizeSession(await getSession(env, userId));
+  const ownerId = getSessionUserId(env, userId);
+  return normalizeSession(await getSession(env, ownerId));
 }
 
 export function getActiveAgentId(session: UserSession | null): string | null {
@@ -57,7 +58,8 @@ export async function registerAgent(
   run: CursorRun,
   repoUrl?: string,
 ): Promise<UserSession> {
-  const session = normalizeSession(await getSession(env, userId));
+  const ownerId = getSessionUserId(env, userId);
+  const session = normalizeSession(await getSession(env, ownerId));
   const agents = [...(session?.agents ?? [])];
 
   const existingIndex = agents.findIndex((a) => a.agentId === agent.id);
@@ -78,7 +80,7 @@ export async function registerAgent(
     agents.push(entry);
   }
 
-  return updateSession(env, userId, {
+  return updateSession(env, ownerId, {
     agents,
     activeAgentId: agent.id,
     agentId: agent.id,
@@ -93,7 +95,8 @@ export async function updateAgentRun(
   agentId: string,
   runId: string,
 ): Promise<UserSession> {
-  const session = normalizeSession(await getSession(env, userId));
+  const ownerId = getSessionUserId(env, userId);
+  const session = normalizeSession(await getSession(env, ownerId));
   const agents = [...(session?.agents ?? [])];
   const index = agents.findIndex((a) => a.agentId === agentId);
 
@@ -101,7 +104,7 @@ export async function updateAgentRun(
     agents[index] = { ...agents[index], latestRunId: runId };
   }
 
-  return updateSession(env, userId, {
+  return updateSession(env, ownerId, {
     agents,
     activeAgentId: agentId,
     agentId,
@@ -160,7 +163,7 @@ export async function selectAgent(
     a.agentId === entry!.agentId ? entry! : a,
   );
 
-  await updateSession(env, userId, {
+  await updateSession(env, getSessionUserId(env, userId), {
     agents: updatedAgents,
     activeAgentId: entry.agentId,
     agentId: entry.agentId,
@@ -198,7 +201,7 @@ export async function removeAgentFromList(
   const [removed] = agents.splice(index, 1);
   const nextActive = agents.at(-1);
 
-  await updateSession(env, userId, {
+  await updateSession(env, getSessionUserId(env, userId), {
     agents,
     activeAgentId: nextActive?.agentId,
     agentId: nextActive?.agentId,
@@ -224,7 +227,7 @@ export function formatAgentsList(session: UserSession | null): string {
   });
 
   return [
-    "Sizning agentlaringiz:",
+    "Umumiy agentlar (barcha adminlar bir xil ro'yxatni ko'radi):",
     "",
     ...lines,
     "",

@@ -31,7 +31,7 @@ import {
   kickoffPendingPoll,
   notifyIfFinished,
 } from "./pending";
-import { defaultRepo, getSession, updateSession } from "./session";
+import { defaultRepo, updateWorkspaceSession } from "./session";
 import { sendChatAction, sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 import { BUILD_DATE, VERSION } from "./version";
@@ -51,6 +51,8 @@ Buyruqlar:
 /admin add <id> — yangi admin qo'shish
 /admin remove <id> — adminni olib tashlash
 /version — bot versiyasi
+
+Barcha adminlar bir xil agentlar va repo bilan ishlaydi.
 
 Oddiy matn yuboring — agentga vazifa ( /ask shart emas )
 
@@ -385,8 +387,8 @@ async function handleRepo(
     return;
   }
 
-  await updateSession(env, userId, { repoUrl });
-  await sendMessage(env, chatId, `Repo saqlandi:\n${repoUrl}`);
+  await updateWorkspaceSession(env, userId, { repoUrl });
+  await sendMessage(env, chatId, `Repo saqlandi (umumiy):\n${repoUrl}`);
 }
 
 async function handleAgentInfo(
