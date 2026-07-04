@@ -1,4 +1,12 @@
 import {
+  addAdmin,
+  getBootstrapAdminIds,
+  isAllowedUser,
+  listAllAdminIds,
+  listStoredAdmins,
+  removeAdmin,
+} from "./admins";
+import {
   createAgent,
   createRun,
   formatRunResult,
@@ -26,6 +34,9 @@ Buyruqlar:
 /repo <url> — GitHub repo (masalan https://github.com/user/repo)
 /new — yangi cloud agent ochish
 /agent — faol agent haqida
+/admin list — adminlar ro'yxati
+/admin add <id> — yangi admin qo'shish
+/admin remove <id> — adminni olib tashlash
 
 Oddiy matn yoki /ask <prompt> — agentga vazifa yuborish
 
@@ -47,11 +58,11 @@ export async function handleMessage(
 
   if (!userId || !text) return;
 
-  if (env.ALLOWED_USER_ID && String(userId) !== env.ALLOWED_USER_ID) {
+  if (!(await isAllowedUser(env, userId))) {
     await sendMessage(
       env,
       chatId,
-      "Ruxsat yo'q. ALLOWED_USER_ID ga Telegram user ID ni qo'shing.",
+      "Ruxsat yo'q. Admin sizni qo'shishi kerak:\n/admin add <telegram_user_id>",
     );
     return;
   }
@@ -105,6 +116,10 @@ async function handleCommand(
       await handleAgentInfo(env, chatId, userId);
       return;
 
+    case "/admin":
+      await handleAdmin(env, chatId, userId, args);
+      return;
+
     case "/ask":
       if (!args) {
         await sendMessage(env, chatId, "Foydalanish: /ask <prompt>");
@@ -120,6 +135,118 @@ async function handleCommand(
     default:
       await sendMessage(env, chatId, "Noma'lum buyruq. /help");
   }
+}
+
+async function handleAdmin(
+  env: Env,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  const [subcommand, ...rest] = args.split(/\s+/);
+  const sub = (subcommand || "list").toLowerCase();
+  const value = rest.join(" ").trim();
+
+  switch (sub) {
+    case "list":
+      await handleAdminList(env, chatId);
+      return;
+
+    case "add":
+      await handleAdminAdd(env, chatId, userId, value);
+      return;
+
+    case "remove":
+    case "delete":
+      await handleAdminRemove(env, chatId, value);
+      return;
+
+    default:
+      await sendMessage(
+        env,
+        chatId,
+        "Foydalanish:\n/admin list\n/admin add 123456789\n/admin remove 123456789",
+      );
+  }
+}
+
+async function handleAdminList(env: Env, chatId: number): Promise<void> {
+  const bootstrapIds = new Set(getBootstrapAdminIds(env));
+  const allIds = await listAllAdminIds(env);
+  const stored = await listStoredAdmins(env);
+  const storedById = new Map(stored.map((admin) => [admin.userId, admin]));
+
+  const lines = allIds.map((id) => {
+    if (bootstrapIds.has(id)) return `${id} — asosiy admin (env)`;
+    const info = storedById.get(id);
+    return info
+      ? `${id} — qo'shilgan (${info.addedBy})`
+      : `${id} — admin`;
+  });
+
+  await sendMessage(
+    env,
+    chatId,
+    ["Adminlar:", "", ...lines].join("\n"),
+  );
+}
+
+async function handleAdminAdd(
+  env: Env,
+  chatId: number,
+  userId: number,
+  targetId: string,
+): Promise<void> {
+  if (!/^\d+$/.test(targetId)) {
+    await sendMessage(
+      env,
+      chatId,
+      "Foydalanish: /admin add 123456789\n\nID olish: @userinfobot",
+    );
+    return;
+  }
+
+  const result = await addAdmin(env, targetId, userId);
+
+  if (result === "exists") {
+    await sendMessage(env, chatId, `Admin allaqachon mavjud: ${targetId}`);
+    return;
+  }
+
+  await sendMessage(
+    env,
+    chatId,
+    `Yangi admin qo'shildi: ${targetId}\nEndi u botdan foydalanishi mumkin.`,
+  );
+}
+
+async function handleAdminRemove(
+  env: Env,
+  chatId: number,
+  targetId: string,
+): Promise<void> {
+  if (!/^\d+$/.test(targetId)) {
+    await sendMessage(env, chatId, "Foydalanish: /admin remove 123456789");
+    return;
+  }
+
+  const result = await removeAdmin(env, targetId);
+
+  if (result === "protected") {
+    await sendMessage(
+      env,
+      chatId,
+      `Asosiy adminni o'chirib bo'lmaydi: ${targetId}`,
+    );
+    return;
+  }
+
+  if (result === "not_found") {
+    await sendMessage(env, chatId, `Admin topilmadi: ${targetId}`);
+    return;
+  }
+
+  await sendMessage(env, chatId, `Admin olib tashlandi: ${targetId}`);
 }
 
 async function handleRepo(

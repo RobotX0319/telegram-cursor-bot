@@ -2,7 +2,8 @@ export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   CURSOR_API_KEY: string;
   TELEGRAM_WEBHOOK_SECRET: string;
-  ALLOWED_USER_ID: string;
+  ALLOWED_USER_ID?: string;
+  ALLOWED_USER_IDS?: string;
   DEFAULT_GITHUB_REPO?: string;
   DEFAULT_GITHUB_BRANCH?: string;
   ENVIRONMENT?: string;
