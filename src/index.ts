@@ -6,6 +6,7 @@ import {
   setBotCommands,
 } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
+import { VERSION } from "./version";
 
 export default {
   async fetch(
@@ -19,6 +20,7 @@ export default {
       return Response.json({
         ok: true,
         service: "telegram-cursor-bot",
+        version: VERSION,
         environment: env.ENVIRONMENT ?? "unknown",
       });
     }

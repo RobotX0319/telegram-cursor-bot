@@ -13,6 +13,7 @@ Telegram xabar → Worker webhook → Cursor Cloud Agents API → natija → Tel
 - `/new` — yangi cloud agent
 - `/ask <prompt>` yoki oddiy matn — agentga vazifa
 - `/status`, `/agent` — holat va agent ma'lumoti
+- `/version` — bot versiyasi
 - Agent repoda o'zgartirish kiritadi (`workOnCurrentBranch: true`)
 
 ## Talablar

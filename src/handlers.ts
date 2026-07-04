@@ -34,6 +34,7 @@ import {
 import { defaultRepo, getSession, updateSession } from "./session";
 import { sendChatAction, sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
+import { BUILD_DATE, VERSION } from "./version";
 
 const HELP_TEXT = `Telegram → Cursor Cloud Agent bot
 
@@ -49,6 +50,7 @@ Buyruqlar:
 /admin list — adminlar ro'yxati
 /admin add <id> — yangi admin qo'shish
 /admin remove <id> — adminni olib tashlash
+/version — bot versiyasi
 
 Oddiy matn yuboring — agentga vazifa ( /ask shart emas )
 
@@ -155,6 +157,18 @@ async function handleCommand(
 
     case "/ping":
       await sendMessage(env, chatId, "pong");
+      return;
+
+    case "/version":
+      await sendMessage(
+        env,
+        chatId,
+        [
+          `telegram-cursor-bot v${VERSION}`,
+          `Build: ${BUILD_DATE}`,
+          `Environment: ${env.ENVIRONMENT ?? "unknown"}`,
+        ].join("\n"),
+      );
       return;
 
     default:

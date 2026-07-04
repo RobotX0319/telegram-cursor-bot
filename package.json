@@ -1,12 +1,15 @@
 {
   "name": "telegram-cursor-bot",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
-    "setup-webhook": "node scripts/setup-webhook.mjs"
+    "setup-webhook": "node scripts/setup-webhook.mjs",
+    "check-health": "node ish/check-health.mjs",
+    "check-setup": "node ish/check-setup.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250701.0",

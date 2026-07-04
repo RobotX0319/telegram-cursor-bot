@@ -45,6 +45,7 @@ const commandsResponse = await fetch(
         { command: "agent", description: "Faol agent haqida" },
         { command: "admin", description: "Adminlar boshqaruvi" },
         { command: "ping", description: "Tekshirish" },
+        { command: "version", description: "Bot versiyasi" },
       ],
     }),
   },

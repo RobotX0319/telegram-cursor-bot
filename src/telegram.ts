@@ -13,6 +13,7 @@ export const BOT_COMMANDS = [
   { command: "agent", description: "Faol agent haqida" },
   { command: "admin", description: "Adminlar boshqaruvi" },
   { command: "ping", description: "Tekshirish" },
+  { command: "version", description: "Bot versiyasi" },
 ] as const;
 
 export async function setBotCommands(env: Env): Promise<boolean> {
