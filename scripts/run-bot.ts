@@ -81,6 +81,16 @@ async function main(): Promise<void> {
   } as unknown as Env;
 
   await deleteWebhook(vars.TELEGRAM_BOT_TOKEN);
+
+  if (!vars.CURSOR_API_KEY?.trim()) {
+    console.warn(
+      "⚠️  CURSOR_API_KEY yo'q — /new va agent buyruqlari ishlamaydi.\n" +
+        "   https://cursor.com/dashboard/integrations dan key oling va .dev.vars ga qo'shing.",
+    );
+  } else {
+    console.log("✅ CURSOR_API_KEY topildi.");
+  }
+
   console.log("✅ Telegram polling ishga tushdi. /ping yuboring.");
 
   let offset = 0;

@@ -9,6 +9,21 @@ import type {
 
 const CURSOR_API = "https://api.cursor.com/v1";
 
+export function getCursorApiKeyError(env: Env): string | null {
+  if (!env.CURSOR_API_KEY?.trim()) {
+    return [
+      "CURSOR_API_KEY sozlanmagan.",
+      "",
+      "1. https://cursor.com/dashboard/integrations ga kiring",
+      "2. User API Keys → yangi key yarating",
+      "3. .dev.vars fayliga qo'shing:",
+      "   CURSOR_API_KEY=key_...",
+      "4. Botni qayta ishga tushiring: npm run bot",
+    ].join("\n");
+  }
+  return null;
+}
+
 function authHeader(apiKey: string): string {
   return `Basic ${btoa(`${apiKey}:`)}`;
 }
@@ -18,6 +33,9 @@ async function cursorFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  const keyError = getCursorApiKeyError(env);
+  if (keyError) throw new Error(keyError);
+
   const response = await fetch(`${CURSOR_API}${path}`, {
     ...init,
     headers: {
