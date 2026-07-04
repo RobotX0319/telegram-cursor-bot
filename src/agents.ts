@@ -1,22 +1,19 @@
+import { getBootstrapAdminIds, isBootstrapAdmin } from "./admins";
 import { getAgent } from "./cursor";
-import { getSession, getSessionUserId, updateSession } from "./session";
+import { getSession, updateSession } from "./session";
 import type { CursorAgent, CursorRun, Env, StoredAgentEntry, UserSession } from "./types";
+
+const AGENT_META_PREFIX = "agentmeta:";
+
+function agentMetaKey(agentId: string): string {
+  return `${AGENT_META_PREFIX}${agentId}`;
+}
 
 export function normalizeSession(session: UserSession | null): UserSession | null {
   if (!session) return null;
 
   const activeAgentId = session.activeAgentId ?? session.agentId;
   const agents = session.agents ?? [];
-
-  if (activeAgentId && agents.length === 0) {
-    agents.push({
-      agentId: activeAgentId,
-      name: "Agent",
-      url: "",
-      latestRunId: session.latestRunId,
-      createdAt: session.updatedAt,
-    });
-  }
 
   return {
     ...session,
@@ -30,25 +27,117 @@ export async function getNormalizedSession(
   env: Env,
   userId: number,
 ): Promise<UserSession | null> {
-  const ownerId = getSessionUserId(env, userId);
-  return normalizeSession(await getSession(env, ownerId));
+  return normalizeSession(await getSession(env, userId));
+}
+
+async function saveAgentMeta(
+  env: Env,
+  entry: StoredAgentEntry,
+): Promise<void> {
+  await env.SESSIONS.put(agentMetaKey(entry.agentId), JSON.stringify(entry));
+}
+
+async function getAgentMeta(
+  env: Env,
+  agentId: string,
+): Promise<StoredAgentEntry | null> {
+  const raw = await env.SESSIONS.get(agentMetaKey(agentId));
+  if (!raw) return null;
+  return JSON.parse(raw) as StoredAgentEntry;
+}
+
+async function deleteAgentMeta(env: Env, agentId: string): Promise<void> {
+  await env.SESSIONS.delete(agentMetaKey(agentId));
+}
+
+function withCreatedBy(
+  entry: StoredAgentEntry,
+  fallbackOwner: number,
+): StoredAgentEntry & { createdBy: number } {
+  return {
+    ...entry,
+    createdBy: entry.createdBy ?? fallbackOwner,
+  };
+}
+
+async function listAllAgentMeta(env: Env): Promise<StoredAgentEntry[]> {
+  const list = await env.SESSIONS.list({ prefix: AGENT_META_PREFIX });
+  const agents = new Map<string, StoredAgentEntry>();
+
+  for (const key of list.keys) {
+    const raw = await env.SESSIONS.get(key.name);
+    if (!raw) continue;
+    const entry = withCreatedBy(JSON.parse(raw) as StoredAgentEntry, 0);
+    agents.set(entry.agentId, entry);
+  }
+
+  // Eski agentlar (faqat sessiyada saqlangan) ni migratsiya qilish
+  for (const idStr of getBootstrapAdminIds(env)) {
+    const ownerId = Number.parseInt(idStr, 10);
+    if (Number.isNaN(ownerId)) continue;
+
+    const session = normalizeSession(await getSession(env, ownerId));
+    for (const agent of session?.agents ?? []) {
+      const entry = withCreatedBy(agent, ownerId);
+      if (!agents.has(entry.agentId)) {
+        agents.set(entry.agentId, entry);
+        await saveAgentMeta(env, entry);
+      }
+    }
+  }
+
+  return [...agents.values()].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
+export async function listAccessibleAgents(
+  env: Env,
+  userId: number,
+): Promise<StoredAgentEntry[]> {
+  if (isBootstrapAdmin(env, userId)) {
+    return listAllAgentMeta(env);
+  }
+
+  const session = await getNormalizedSession(env, userId);
+  return (session?.agents ?? [])
+    .map((a) => withCreatedBy(a, userId))
+    .filter((a) => a.createdBy === userId);
+}
+
+export function canAccessAgent(
+  env: Env,
+  userId: number,
+  entry: StoredAgentEntry,
+): boolean {
+  if (isBootstrapAdmin(env, userId)) return true;
+  return entry.createdBy === userId;
 }
 
 export function getActiveAgentId(session: UserSession | null): string | null {
-  const normalized = normalizeSession(session);
-  return normalized?.activeAgentId ?? null;
+  return normalizeSession(session)?.activeAgentId ?? null;
 }
 
-export function getActiveAgentEntry(
+export async function getActiveAgentEntry(
+  env: Env,
+  userId: number,
   session: UserSession | null,
-): StoredAgentEntry | null {
+): Promise<StoredAgentEntry | null> {
   const normalized = normalizeSession(session);
-  if (!normalized?.activeAgentId || !normalized.agents?.length) return null;
+  const activeId = normalized?.activeAgentId;
+  if (!activeId) return null;
 
-  return (
-    normalized.agents.find((a) => a.agentId === normalized.activeAgentId) ??
-    null
-  );
+  const fromSession = normalized?.agents?.find((a) => a.agentId === activeId);
+  if (fromSession && canAccessAgent(env, userId, fromSession)) {
+    return fromSession;
+  }
+
+  const fromMeta = await getAgentMeta(env, activeId);
+  if (fromMeta && canAccessAgent(env, userId, fromMeta)) {
+    return fromMeta;
+  }
+
+  return null;
 }
 
 export async function registerAgent(
@@ -58,8 +147,7 @@ export async function registerAgent(
   run: CursorRun,
   repoUrl?: string,
 ): Promise<UserSession> {
-  const ownerId = getSessionUserId(env, userId);
-  const session = normalizeSession(await getSession(env, ownerId));
+  const session = normalizeSession(await getSession(env, userId));
   const agents = [...(session?.agents ?? [])];
 
   const existingIndex = agents.findIndex((a) => a.agentId === agent.id);
@@ -68,6 +156,7 @@ export async function registerAgent(
     name: agent.name,
     url: agent.url,
     latestRunId: run.id,
+    createdBy: userId,
     createdAt:
       existingIndex >= 0
         ? agents[existingIndex].createdAt
@@ -80,7 +169,9 @@ export async function registerAgent(
     agents.push(entry);
   }
 
-  return updateSession(env, ownerId, {
+  await saveAgentMeta(env, entry);
+
+  return updateSession(env, userId, {
     agents,
     activeAgentId: agent.id,
     agentId: agent.id,
@@ -95,17 +186,21 @@ export async function updateAgentRun(
   agentId: string,
   runId: string,
 ): Promise<UserSession> {
-  const ownerId = getSessionUserId(env, userId);
-  const session = normalizeSession(await getSession(env, ownerId));
-  const agents = [...(session?.agents ?? [])];
-  const index = agents.findIndex((a) => a.agentId === agentId);
-
-  if (index >= 0) {
-    agents[index] = { ...agents[index], latestRunId: runId };
+  const meta = await getAgentMeta(env, agentId);
+  if (meta) {
+    await saveAgentMeta(env, { ...meta, latestRunId: runId });
   }
 
-  return updateSession(env, ownerId, {
-    agents,
+  const creatorId = meta?.createdBy ?? userId;
+  const creatorSession = normalizeSession(await getSession(env, creatorId));
+  if (creatorSession?.agents?.length) {
+    const agents = creatorSession.agents.map((a) =>
+      a.agentId === agentId ? { ...a, latestRunId: runId } : a,
+    );
+    await updateSession(env, creatorId, { agents });
+  }
+
+  return updateSession(env, userId, {
     activeAgentId: agentId,
     agentId,
     latestRunId: runId,
@@ -117,11 +212,10 @@ export async function selectAgent(
   userId: number,
   selector: string,
 ): Promise<{ ok: true; entry: StoredAgentEntry } | { ok: false; error: string }> {
-  const session = await getNormalizedSession(env, userId);
-  const agents = session?.agents ?? [];
+  const agents = await listAccessibleAgents(env, userId);
 
   if (agents.length === 0) {
-    return { ok: false, error: "Saqlangan agent yo'q. /new bilan yangi agent oching." };
+    return { ok: false, error: "Agent yo'q. /new bilan yangi agent oching." };
   }
 
   let entry: StoredAgentEntry | undefined;
@@ -155,16 +249,12 @@ export async function selectAgent(
       url: agent.url,
       latestRunId: agent.latestRunId ?? entry.latestRunId,
     };
+    await saveAgentMeta(env, entry);
   } catch {
     // Saqlangan ma'lumot bilan davom etamiz
   }
 
-  const updatedAgents = agents.map((a) =>
-    a.agentId === entry!.agentId ? entry! : a,
-  );
-
-  await updateSession(env, getSessionUserId(env, userId), {
-    agents: updatedAgents,
+  await updateSession(env, userId, {
     activeAgentId: entry.agentId,
     agentId: entry.agentId,
     latestRunId: entry.latestRunId,
@@ -178,8 +268,7 @@ export async function removeAgentFromList(
   userId: number,
   selector: string,
 ): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
-  const session = await getNormalizedSession(env, userId);
-  const agents = [...(session?.agents ?? [])];
+  const agents = await listAccessibleAgents(env, userId);
 
   if (agents.length === 0) {
     return { ok: false, error: "O'chirish uchun agent yo'q." };
@@ -198,40 +287,83 @@ export async function removeAgentFromList(
     return { ok: false, error: `Agent topilmadi: ${selector}` };
   }
 
-  const [removed] = agents.splice(index, 1);
-  const nextActive = agents.at(-1);
+  const removed = withCreatedBy(agents[index], userId);
 
-  await updateSession(env, getSessionUserId(env, userId), {
-    agents,
-    activeAgentId: nextActive?.agentId,
-    agentId: nextActive?.agentId,
-    latestRunId: nextActive?.latestRunId,
-  });
+  if (!isBootstrapAdmin(env, userId) && removed.createdBy !== userId) {
+    return { ok: false, error: "Faqat o'z agentingizni o'chira olasiz." };
+  }
+
+  await deleteAgentMeta(env, removed.agentId);
+
+  const creatorId = removed.createdBy;
+  const creatorSession = normalizeSession(await getSession(env, creatorId));
+  if (creatorSession?.agents?.length) {
+    const creatorAgents = creatorSession.agents.filter(
+      (a) => a.agentId !== removed.agentId,
+    );
+    const nextActive = creatorAgents.at(-1);
+    await updateSession(env, creatorId, {
+      agents: creatorAgents,
+      activeAgentId: nextActive?.agentId,
+      agentId: nextActive?.agentId,
+      latestRunId: nextActive?.latestRunId,
+    });
+  }
+
+  const requesterSession = normalizeSession(await getSession(env, userId));
+  if (requesterSession?.activeAgentId === removed.agentId) {
+    await updateSession(env, userId, {
+      activeAgentId: undefined,
+      agentId: undefined,
+      latestRunId: undefined,
+    });
+  }
 
   return { ok: true, name: removed.name };
 }
 
-export function formatAgentsList(session: UserSession | null): string {
-  const normalized = normalizeSession(session);
-  const agents = normalized?.agents ?? [];
-  const activeId = normalized?.activeAgentId;
+export async function formatAgentsList(
+  env: Env,
+  userId: number,
+  session: UserSession | null,
+): Promise<string> {
+  const agents = await listAccessibleAgents(env, userId);
+  const activeId = normalizeSession(session)?.activeAgentId;
 
   if (agents.length === 0) {
-    return "Saqlangan agent yo'q.\n\nYangi agent: /new";
+    return isBootstrapAdmin(env, userId)
+      ? "Hozircha agent yo'q.\n\nYangi agent: /new"
+      : "Sizda agent yo'q.\n\nYangi agent: /new";
   }
 
   const lines = agents.map((agent, index) => {
     const activeMark = agent.agentId === activeId ? " ★" : "";
+    const ownerMark = isBootstrapAdmin(env, userId)
+      ? `\n   admin: ${agent.createdBy}`
+      : "";
     const runInfo = agent.latestRunId ? `\n   run: ${agent.latestRunId}` : "";
-    return `${index + 1}. ${agent.name}${activeMark}\n   ${agent.agentId}${runInfo}`;
+    return `${index + 1}. ${agent.name}${activeMark}\n   ${agent.agentId}${ownerMark}${runInfo}`;
   });
 
+  const header = isBootstrapAdmin(env, userId)
+    ? "Barcha agentlar (asosiy admin):"
+    : "Sizning agentlaringiz:";
+
   return [
-    "Umumiy agentlar (barcha adminlar bir xil ro'yxatni ko'radi):",
+    header,
     "",
     ...lines,
     "",
     "Tanlash: /use 2",
     "O'chirish: /agents remove 2",
   ].join("\n");
+}
+
+export async function resolveActiveAgentId(
+  env: Env,
+  userId: number,
+  session: UserSession | null,
+): Promise<string | null> {
+  const entry = await getActiveAgentEntry(env, userId, session);
+  return entry?.agentId ?? null;
 }

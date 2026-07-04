@@ -17,6 +17,7 @@ export interface StoredAgentEntry {
   url: string;
   latestRunId?: string;
   createdAt: string;
+  createdBy?: number;
 }
 
 export interface UserSession {

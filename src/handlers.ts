@@ -1,10 +1,10 @@
 import {
   formatAgentsList,
   getActiveAgentEntry,
-  getActiveAgentId,
   getNormalizedSession,
   registerAgent,
   removeAgentFromList,
+  resolveActiveAgentId,
   selectAgent,
   updateAgentRun,
 } from "./agents";
@@ -31,7 +31,7 @@ import {
   kickoffPendingPoll,
   notifyIfFinished,
 } from "./pending";
-import { defaultRepo, updateWorkspaceSession } from "./session";
+import { defaultRepo, updateSession } from "./session";
 import { sendChatAction, sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 import { BUILD_DATE, VERSION } from "./version";
@@ -53,6 +53,9 @@ Buyruqlar:
 /version — bot versiyasi
 
 Barcha adminlar bir xil agentlar va repo bilan ishlaydi.
+
+Asosiy admin barcha agentlarni ko'radi.
+Boshqa adminlar faqat o'z agentlarini ko'radi.
 
 Oddiy matn yuboring — agentga vazifa ( /ask shart emas )
 
@@ -316,7 +319,7 @@ async function handleAgents(
     await sendMessage(
       env,
       chatId,
-      `Ro'yxatdan olib tashlandi: ${result.name}\n\n${formatAgentsList(await getNormalizedSession(env, userId))}`,
+      `Ro'yxatdan olib tashlandi: ${result.name}\n\n${await formatAgentsList(env, userId, await getNormalizedSession(env, userId))}`,
     );
     return;
   }
@@ -331,7 +334,7 @@ async function handleAgents(
   }
 
   const session = await getNormalizedSession(env, userId);
-  await sendMessage(env, chatId, formatAgentsList(session));
+  await sendMessage(env, chatId, await formatAgentsList(env, userId, session));
 }
 
 async function handleUse(
@@ -387,8 +390,8 @@ async function handleRepo(
     return;
   }
 
-  await updateWorkspaceSession(env, userId, { repoUrl });
-  await sendMessage(env, chatId, `Repo saqlandi (umumiy):\n${repoUrl}`);
+  await updateSession(env, userId, { repoUrl });
+  await sendMessage(env, chatId, `Repo saqlandi:\n${repoUrl}`);
 }
 
 async function handleAgentInfo(
@@ -397,7 +400,7 @@ async function handleAgentInfo(
   userId: number,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
-  const activeId = getActiveAgentId(session);
+  const activeId = await resolveActiveAgentId(env, userId, session);
 
   if (!activeId) {
     await sendMessage(env, chatId, "Faol agent yo'q. /new yoki /agents");
@@ -406,7 +409,7 @@ async function handleAgentInfo(
 
   try {
     const agent = await getAgent(env, activeId);
-    const entry = getActiveAgentEntry(session);
+    const entry = await getActiveAgentEntry(env, userId, session);
     await sendMessage(
       env,
       chatId,
@@ -437,8 +440,8 @@ async function handleStatus(
   userId: number,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
-  const activeId = getActiveAgentId(session);
-  const entry = getActiveAgentEntry(session);
+  const activeId = await resolveActiveAgentId(env, userId, session);
+  const entry = await getActiveAgentEntry(env, userId, session);
   const runId = entry?.latestRunId ?? session?.latestRunId;
 
   if (!activeId || !runId) {
@@ -496,7 +499,7 @@ async function dispatchPrompt(
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
   const repoUrl = defaultRepo(env, session);
-  const activeId = getActiveAgentId(session);
+  const activeId = await resolveActiveAgentId(env, userId, session);
 
   if (activeId) {
     await continueAgentRun(env, chatId, userId, activeId, prompt, ctx, workerOrigin);
