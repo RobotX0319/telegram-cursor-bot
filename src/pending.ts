@@ -1,4 +1,4 @@
-import { formatRunResult, getRun, isTerminal } from "./cursor";
+import { formatRunResult, getRun, isTerminal, sleep } from "./cursor";
 import { sendMessage } from "./telegram";
 import type { Env } from "./types";
 
@@ -11,10 +11,16 @@ export interface PendingRun {
 }
 
 const PENDING_PREFIX = "pending:";
+const NOTIFIED_PREFIX = "notified:";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const POLL_INTERVAL_MS = 15_000;
 
 function pendingKey(runId: string): string {
   return `${PENDING_PREFIX}${runId}`;
+}
+
+function notifiedKey(runId: string): string {
+  return `${NOTIFIED_PREFIX}${runId}`;
 }
 
 export async function addPendingRun(
@@ -41,7 +47,21 @@ export async function listPendingRuns(env: Env): Promise<PendingRun[]> {
     pending.push(JSON.parse(raw) as PendingRun);
   }
 
-  return pending;
+  return pending.sort(
+    (a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
+async function claimNotification(env: Env, runId: string): Promise<boolean> {
+  const key = notifiedKey(runId);
+  const existing = await env.SESSIONS.get(key);
+  if (existing) return false;
+
+  await env.SESSIONS.put(key, new Date().toISOString(), {
+    expirationTtl: 60 * 60 * 24 * 7,
+  });
+  return true;
 }
 
 export async function notifyIfFinished(
@@ -49,21 +69,22 @@ export async function notifyIfFinished(
   pending: PendingRun,
 ): Promise<boolean> {
   const run = await getRun(env, pending.agentId, pending.runId);
-
   if (!isTerminal(run.status)) return false;
 
-  const key = pendingKey(pending.runId);
-  const raw = await env.SESSIONS.get(key);
-  if (!raw) return false;
+  const pendingRaw = await env.SESSIONS.get(pendingKey(pending.runId));
+  if (!pendingRaw) return false;
 
-  await env.SESSIONS.delete(key);
+  if (!(await claimNotification(env, pending.runId))) return false;
+
+  await env.SESSIONS.delete(pendingKey(pending.runId));
   await sendMessage(env, pending.chatId, formatRunResult(run));
   return true;
 }
 
-export async function processPendingRuns(env: Env): Promise<void> {
+export async function processPendingRuns(env: Env): Promise<number> {
   const pendingRuns = await listPendingRuns(env);
   const now = Date.now();
+  let notified = 0;
 
   for (const pending of pendingRuns) {
     try {
@@ -73,7 +94,9 @@ export async function processPendingRuns(env: Env): Promise<void> {
         continue;
       }
 
-      await notifyIfFinished(env, pending);
+      if (await notifyIfFinished(env, pending)) {
+        notified++;
+      }
     } catch (error) {
       console.error(
         `Pending run ${pending.runId} tekshirilmadi:`,
@@ -81,4 +104,56 @@ export async function processPendingRuns(env: Env): Promise<void> {
       );
     }
   }
+
+  return notified;
+}
+
+export async function continuePollingPendingRuns(
+  env: Env,
+  workerOrigin: string,
+): Promise<void> {
+  await processPendingRuns(env);
+
+  const remaining = await listPendingRuns(env);
+  if (remaining.length === 0) return;
+
+  await sleep(POLL_INTERVAL_MS);
+
+  const pollUrl = `${workerOrigin.replace(/\/$/, "")}/admin/poll-pending?key=${encodeURIComponent(env.TELEGRAM_WEBHOOK_SECRET)}`;
+
+  try {
+    const response = await fetch(pollUrl);
+    if (!response.ok) {
+      console.error("Poll chain failed:", response.status, await response.text());
+    }
+  } catch (error) {
+    console.error(
+      "Poll chain fetch failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+export async function kickoffPendingPoll(
+  env: Env,
+  workerOrigin: string,
+): Promise<void> {
+  const pollUrl = `${workerOrigin.replace(/\/$/, "")}/admin/poll-pending?key=${encodeURIComponent(env.TELEGRAM_WEBHOOK_SECRET)}`;
+
+  try {
+    await fetch(pollUrl);
+  } catch (error) {
+    console.error(
+      "Pending poll kickoff failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+export async function clearPendingForManualStatus(
+  env: Env,
+  runId: string,
+): Promise<void> {
+  await claimNotification(env, runId);
+  await removePendingRun(env, runId);
 }

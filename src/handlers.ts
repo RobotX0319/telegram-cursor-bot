@@ -9,6 +9,8 @@ import {
 } from "./cursor";
 import {
   addPendingRun,
+  clearPendingForManualStatus,
+  kickoffPendingPoll,
   notifyIfFinished,
 } from "./pending";
 import { defaultRepo, getSession, updateSession } from "./session";
@@ -37,6 +39,7 @@ export async function handleMessage(
   env: Env,
   message: TelegramMessage,
   ctx: ExecutionContext,
+  workerOrigin: string,
 ): Promise<void> {
   const userId = message.from?.id;
   const chatId = message.chat.id;
@@ -54,11 +57,11 @@ export async function handleMessage(
   }
 
   if (text.startsWith("/")) {
-    await handleCommand(env, chatId, userId, text, ctx);
+    await handleCommand(env, chatId, userId, text, ctx, workerOrigin);
     return;
   }
 
-  await dispatchPrompt(env, chatId, userId, text, ctx);
+  await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin);
 }
 
 async function handleCommand(
@@ -67,6 +70,7 @@ async function handleCommand(
   userId: number,
   text: string,
   ctx: ExecutionContext,
+  workerOrigin: string,
 ): Promise<void> {
   const [command, ...rest] = text.split(/\s+/);
   const args = rest.join(" ").trim();
@@ -94,7 +98,7 @@ async function handleCommand(
       return;
 
     case "/new":
-      await handleNew(env, chatId, userId, args || "Yangi agent tayyor.", ctx);
+      await handleNew(env, chatId, userId, args || "Yangi agent tayyor.", ctx, workerOrigin);
       return;
 
     case "/agent":
@@ -106,7 +110,7 @@ async function handleCommand(
         await sendMessage(env, chatId, "Foydalanish: /ask <prompt>");
         return;
       }
-      await dispatchPrompt(env, chatId, userId, args, ctx);
+      await dispatchPrompt(env, chatId, userId, args, ctx, workerOrigin);
       return;
 
     case "/ping":
@@ -185,6 +189,11 @@ async function handleStatus(
 
   try {
     const run = await getRun(env, session.agentId, session.latestRunId);
+
+    if (isTerminal(run.status)) {
+      await clearPendingForManualStatus(env, session.latestRunId);
+    }
+
     await sendMessage(env, chatId, formatRunResult(run));
   } catch (error) {
     await sendMessage(
@@ -201,6 +210,7 @@ async function handleNew(
   userId: number,
   prompt: string,
   ctx: ExecutionContext,
+  workerOrigin: string,
 ): Promise<void> {
   const session = await getSession(env, userId);
   const repoUrl = defaultRepo(env, session);
@@ -214,7 +224,7 @@ async function handleNew(
     return;
   }
 
-  await startAgentRun(env, chatId, userId, prompt, repoUrl, true, ctx);
+  await startAgentRun(env, chatId, userId, prompt, repoUrl, true, ctx, workerOrigin);
 }
 
 async function dispatchPrompt(
@@ -223,12 +233,13 @@ async function dispatchPrompt(
   userId: number,
   prompt: string,
   ctx: ExecutionContext,
+  workerOrigin: string,
 ): Promise<void> {
   const session = await getSession(env, userId);
   const repoUrl = defaultRepo(env, session);
 
   if (session?.agentId) {
-    await continueAgentRun(env, chatId, userId, session.agentId, prompt, ctx);
+    await continueAgentRun(env, chatId, userId, session.agentId, prompt, ctx, workerOrigin);
     return;
   }
 
@@ -241,7 +252,7 @@ async function dispatchPrompt(
     return;
   }
 
-  await startAgentRun(env, chatId, userId, prompt, repoUrl, false, ctx);
+  await startAgentRun(env, chatId, userId, prompt, repoUrl, false, ctx, workerOrigin);
 }
 
 async function startAgentRun(
@@ -252,6 +263,7 @@ async function startAgentRun(
   repoUrl: string,
   forceNew: boolean,
   ctx: ExecutionContext,
+  workerOrigin: string,
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
@@ -276,7 +288,9 @@ async function startAgentRun(
       ].join("\n"),
     );
 
-    ctx.waitUntil(trackRunUntilFinished(env, chatId, userId, agent.id, run.id));
+    ctx.waitUntil(
+      trackRunUntilFinished(env, chatId, userId, agent.id, run.id, workerOrigin),
+    );
   } catch (error) {
     await sendMessage(
       env,
@@ -293,6 +307,7 @@ async function continueAgentRun(
   agentId: string,
   prompt: string,
   ctx: ExecutionContext,
+  workerOrigin: string,
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
@@ -310,7 +325,9 @@ async function continueAgentRun(
       [`Buyruq yuborildi.`, `Run: ${run.id}`, "", "Kutilmoqda..."].join("\n"),
     );
 
-    ctx.waitUntil(trackRunUntilFinished(env, chatId, userId, agentId, run.id));
+    ctx.waitUntil(
+      trackRunUntilFinished(env, chatId, userId, agentId, run.id, workerOrigin),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
@@ -333,6 +350,7 @@ async function trackRunUntilFinished(
   userId: number,
   agentId: string,
   runId: string,
+  workerOrigin: string,
 ): Promise<void> {
   const pending = {
     chatId,
@@ -349,12 +367,14 @@ async function trackRunUntilFinished(
     const run = await pollRunAndFormat(env, agentId, runId, 5, 5000);
     if (isTerminal(run.status)) {
       await notifyIfFinished(env, pending);
+      return;
     }
   } catch (error) {
     console.error(
       `Run ${runId} kuzatilmadi:`,
       error instanceof Error ? error.message : String(error),
     );
-    // Cron trigger keyinroq tekshiradi
   }
+
+  await kickoffPendingPoll(env, workerOrigin);
 }

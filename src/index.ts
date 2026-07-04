@@ -1,5 +1,5 @@
 import { handleMessage } from "./handlers";
-import { processPendingRuns } from "./pending";
+import { continuePollingPendingRuns, processPendingRuns } from "./pending";
 import { configureWebhookFromEnv, getWebhookInfo } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
 
@@ -40,8 +40,8 @@ export default {
         return new Response("Unauthorized", { status: 401 });
       }
 
-      await processPendingRuns(env);
-      return Response.json({ ok: true });
+      ctx.waitUntil(continuePollingPendingRuns(env, url.origin));
+      return Response.json({ ok: true, polling: true });
     }
 
     if (request.method === "POST" && url.pathname === "/webhook") {
@@ -58,10 +58,8 @@ export default {
       }
 
       if (update.message) {
-        ctx.waitUntil(handleMessage(env, update.message, ctx));
+        ctx.waitUntil(handleMessage(env, update.message, ctx, url.origin));
       }
-
-      ctx.waitUntil(processPendingRuns(env));
 
       return new Response("ok");
     }
