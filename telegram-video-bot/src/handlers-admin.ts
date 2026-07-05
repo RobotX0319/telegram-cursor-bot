@@ -5,7 +5,12 @@ import {
   handleReplyButton,
 } from "./admin-reply-menu";
 import { ADMIN_BOT, USER_BOT, adminRedirectText } from "./bot-labels";
-import { getAdminIds, hasAdminBot, isAdmin, saveBotTokens } from "./bots";
+import {
+  getAdminIds,
+  hasAdminBot,
+  isAdmin,
+  saveBotTokens,
+} from "./bots";
 
 const KV_ADMIN_IDS = "config:admin_ids";
 
@@ -114,6 +119,22 @@ export async function handleAdminBotMessage(
     return;
   }
 
+  const text = message.text?.trim();
+  if (text?.startsWith("/")) {
+    const cmd = text.split(/\s+/)[0]!.toLowerCase().split("@")[0];
+    if (cmd === "/adminol" || cmd === "/meningid") {
+      await handleAdminCommand(
+        env,
+        chatId,
+        userId,
+        text,
+        workerOrigin,
+        botKind,
+      );
+      return;
+    }
+  }
+
   const allowed = await ensureDetiskebotAdmin(env, userId, viaUserBot);
   if (!allowed) {
     await sendMessage(
@@ -156,7 +177,6 @@ export async function handleAdminBotMessage(
     return;
   }
 
-  const text = message.text?.trim();
   if (!text) return;
 
   if (isReplyButton(text)) {
@@ -234,37 +254,26 @@ async function handleAdminCommand(
       return;
 
     case "/adminol": {
-      const kvAdmins = await env.VIDEOS.get(KV_ADMIN_IDS);
-      if (kvAdmins?.trim() && !(await isAdmin(env, userId))) {
-        await saveBotTokens(env, { adminIds: String(userId) });
-        await sendMessage(
-          env,
-          chatId,
-          [
-            "✅ Siz admin qilib qo'shildingiz!",
-            "",
-            "/panel — boshqaruv paneli",
-            "Video: ID (masalan 5), keyin video yuboring",
-          ].join("\n"),
-          {
-            bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-            replyMarkup: adminPanelKeyboard(env),
-          },
-        );
-        await sendAdminPanel(env, chatId, workerOrigin, botKind);
-        return;
-      }
       if (await isAdmin(env, userId)) {
         await sendMessage(env, chatId, "✅ Siz allaqachon adminsiz.", {
           bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
+          replyMarkup: adminPanelKeyboard(env),
         });
+        await sendAdminPanel(env, chatId, workerOrigin, botKind);
         return;
       }
-      await saveBotTokens(env, { adminIds: String(userId) });
+      const ids = await getAdminIds(env);
+      ids.add(String(userId));
+      await saveBotTokens(env, { adminIds: [...ids].join(",") });
       await sendMessage(
         env,
         chatId,
-        "✅ Admin ro'yxatiga qo'shildingiz! /panel yuboring.",
+        [
+          "✅ Siz admin qilib qo'shildingiz!",
+          "",
+          "/panel — boshqaruv paneli",
+          "Video: ID (masalan 5), keyin video yuboring",
+        ].join("\n"),
         {
           bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
           replyMarkup: adminPanelKeyboard(env),
