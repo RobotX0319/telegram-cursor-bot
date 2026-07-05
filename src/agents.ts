@@ -146,6 +146,7 @@ export async function registerAgent(
   agent: CursorAgent,
   run: CursorRun,
   repoUrl?: string,
+  workspaceFolder?: string,
 ): Promise<UserSession> {
   const session = normalizeSession(await getSession(env, userId));
   const agents = [...(session?.agents ?? [])];
@@ -157,6 +158,7 @@ export async function registerAgent(
     url: agent.url,
     latestRunId: run.id,
     createdBy: userId,
+    workspaceFolder: workspaceFolder ?? session?.workspaceFolder,
     createdAt:
       existingIndex >= 0
         ? agents[existingIndex].createdAt
@@ -341,8 +343,11 @@ export async function formatAgentsList(
     const ownerMark = isBootstrapAdmin(env, userId)
       ? `\n   admin: ${agent.createdBy}`
       : "";
+    const folderMark = agent.workspaceFolder
+      ? `\n   papka: ${agent.workspaceFolder}/`
+      : "";
     const runInfo = agent.latestRunId ? `\n   run: ${agent.latestRunId}` : "";
-    return `${index + 1}. ${agent.name}${activeMark}\n   ${agent.agentId}${ownerMark}${runInfo}`;
+    return `${index + 1}. ${agent.name}${activeMark}\n   ${agent.agentId}${ownerMark}${folderMark}${runInfo}`;
   });
 
   const header = isBootstrapAdmin(env, userId)

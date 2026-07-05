@@ -45,6 +45,20 @@ import { defaultRepo, updateSession } from "./session";
 import { sendChatAction, sendMessage, sendRunResult, configureWebhookFromEnv, getWebhookInfo } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 import { BUILD_DATE, VERSION } from "./version";
+import {
+  NO_WORKSPACE_MESSAGE,
+  detectFolderSetupIntent,
+  formatWorkspaceStatus,
+  getAdminWorkspaceFolder,
+  isLikelyWorkPrompt,
+  isSystemAdmin,
+  listLegacyWorkspaceMappings,
+  resolveWorkspaceScope,
+  setAdminWorkspaceFolder,
+  setLegacyWorkspaceMapping,
+  wrapPromptForAgent,
+  type WorkspaceScope,
+} from "./workspace";
 
 const HELP_TEXT = `Telegram → Cursor Cloud Agent bot
 
@@ -61,6 +75,8 @@ Buyruqlar:
 /admin add <id> — yangi admin qo'shish
 /admin remove <id> — adminni olib tashlash
 /setkey <key> — Cursor API kalitini saqlash (faqat admin)
+/papka — ish papkasi holati
+/papka <nom> — ish papkasini belgilash
 /version — bot versiyasi
 /setsticker finished — stickerga javob qilib natija stikeri saqlash
 /setup — bot sozlamalarini tekshirish va tuzatish (asosiy admin)
@@ -76,7 +92,13 @@ Masalan:
 README ga o'rnatish bo'limini qo'sh
 Yoki: src/index.ts dagi xatoni tuzat
 
-Agent Cloudflare Worker kodini ham shu repoda o'zgartirishi mumkin.`;
+Agent Cloudflare Worker kodini ham shu repoda o'zgartirishi mumkin.
+
+Papka qoidalari:
+• Asosiy admin — platforma kodi (src/, scripts/)
+• Boshqa adminlar — faqat o'z papkalarida
+• Yangi admin: /new → papka yarat → keyin ish buyrug'i
+• Papkasiz kod buyruqlari qabul qilinmaydi`;
 
 export async function handleMessage(
   env: Env,
@@ -139,6 +161,11 @@ async function handleCommand(
 
     case "/repo":
       await handleRepo(env, chatId, userId, args);
+      return;
+
+    case "/papka":
+    case "/folder":
+      await handleFolder(env, chatId, userId, args);
       return;
 
     case "/new":
@@ -361,11 +388,23 @@ async function handleAdmin(
       await handleAdminRemove(env, chatId, value);
       return;
 
+    case "workspace":
+    case "papka":
+      await handleAdminWorkspace(env, chatId, userId, value);
+      return;
+
     default:
       await sendMessage(
         env,
         chatId,
-        "Foydalanish:\n/admin list\n/admin add 123456789\n/admin remove 123456789",
+        [
+          "Foydalanish:",
+          "/admin list",
+          "/admin add 123456789",
+          "/admin remove 123456789",
+          "/admin workspace set 123 ish",
+          "/admin workspace list",
+        ].join("\n"),
       );
   }
 }
@@ -414,14 +453,27 @@ async function handleAdminList(env: Env, chatId: number): Promise<void> {
   const allIds = await listAllAdminIds(env);
   const stored = await listStoredAdmins(env);
   const storedById = new Map(stored.map((admin) => [admin.userId, admin]));
+  const workspaceMap = new Map(
+    (await listLegacyWorkspaceMappings(env)).map((w) => [w.userId, w.folder]),
+  );
 
-  const lines = allIds.map((id) => {
-    if (bootstrapIds.has(id)) return `${id} — asosiy admin (env)`;
-    const info = storedById.get(id);
-    return info
-      ? `${id} — qo'shilgan (${info.addedBy})`
-      : `${id} — admin`;
-  });
+  const lines = await Promise.all(
+    allIds.map(async (id) => {
+      if (bootstrapIds.has(id)) {
+        return `${id} — asosiy admin (tizim kodi)`;
+      }
+
+      const folder =
+        (await getAdminWorkspaceFolder(env, Number.parseInt(id, 10))) ??
+        workspaceMap.get(id);
+
+      const info = storedById.get(id);
+      const base = info
+        ? `${id} — qo'shilgan (${info.addedBy})`
+        : `${id} — admin`;
+      return folder ? `${base}, papka: ${folder}/` : `${base}, papka: —`;
+    }),
+  );
 
   await sendMessage(
     env,
@@ -455,7 +507,15 @@ async function handleAdminAdd(
   await sendMessage(
     env,
     chatId,
-    `Yangi admin qo'shildi: ${targetId}\nEndi u botdan foydalanishi mumkin.`,
+    [
+      `Yangi admin qo'shildi: ${targetId}`,
+      "",
+      "Foydalanuvchiga yo'riqnoma:",
+      "1. /new — agent ochish",
+      '2. Agentga: "loyiha papkasini yarat: nom"',
+      "3. Yoki: /papka nom",
+      "4. Keyin ish buyruqlarini yuborish",
+    ].join("\n"),
   );
 }
 
@@ -589,6 +649,171 @@ async function handleRepo(
   await sendMessage(env, chatId, `Repo saqlandi:\n${repoUrl}`);
 }
 
+async function handleFolder(
+  env: Env,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  const scope = await resolveWorkspaceScope(env, userId);
+
+  if (!args.trim()) {
+    await sendMessage(
+      env,
+      chatId,
+      [
+        formatWorkspaceStatus(scope),
+        "",
+        isSystemAdmin(env, userId)
+          ? "Siz tizim adminisiz — src/, scripts/ ni o'zgartira olasiz."
+          : "Papka belgilash: /papka my-loyiha",
+      ].join("\n"),
+    );
+    return;
+  }
+
+  if (isSystemAdmin(env, userId)) {
+    await sendMessage(
+      env,
+      chatId,
+      "Asosiy admin papka cheklovisiz — butun platforma kodiga kira olasiz.",
+    );
+    return;
+  }
+
+  try {
+    const folder = await setAdminWorkspaceFolder(env, userId, args);
+    await sendMessage(
+      env,
+      chatId,
+      [
+        `✅ Ish papkasi saqlandi: ${folder}/`,
+        "",
+        "Endi agent faqat shu papkada ishlaydi.",
+        "Keyingi qadam: /new yoki mavjud agentga vazifa yuboring.",
+      ].join("\n"),
+    );
+  } catch (error) {
+    await sendMessage(
+      env,
+      chatId,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+async function handleAdminWorkspace(
+  env: Env,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Faqat asosiy admin uchun.");
+    return;
+  }
+
+  const [sub, targetId, ...folderParts] = args.split(/\s+/);
+  const subcommand = (sub || "list").toLowerCase();
+
+  if (subcommand === "list") {
+    const mappings = await listLegacyWorkspaceMappings(env);
+    const allIds = await listAllAdminIds(env);
+    const bootstrapIds = new Set(getBootstrapAdminIds(env));
+
+    const lines = await Promise.all(
+      allIds
+        .filter((id) => !bootstrapIds.has(id))
+        .map(async (id) => {
+          const folder = await getAdminWorkspaceFolder(env, Number.parseInt(id, 10));
+          return `${id} → ${folder ?? "—"}`;
+        }),
+    );
+
+    await sendMessage(
+      env,
+      chatId,
+      [
+        "Admin papkalari:",
+        "",
+        ...lines,
+        "",
+        mappings.length ? "Legacy map ham saqlangan." : "",
+        "Belgilash: /admin workspace set 123456 ish",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    return;
+  }
+
+  if (subcommand === "set") {
+    const folder = folderParts.join(" ").trim();
+    if (!targetId || !/^\d+$/.test(targetId) || !folder) {
+      await sendMessage(
+        env,
+        chatId,
+        "Foydalanish: /admin workspace set 123456789 ish",
+      );
+      return;
+    }
+
+    try {
+      await setLegacyWorkspaceMapping(env, targetId, folder);
+      await sendMessage(
+        env,
+        chatId,
+        `✅ Admin ${targetId} papkasi: ${folder}/`,
+      );
+    } catch (error) {
+      await sendMessage(
+        env,
+        chatId,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    return;
+  }
+
+  await sendMessage(
+    env,
+    chatId,
+    "/admin workspace list\n/admin workspace set 123456789 ish",
+  );
+}
+
+async function preparePromptForDispatch(
+  env: Env,
+  userId: number,
+  prompt: string,
+  options: { isNewAgent: boolean },
+): Promise<
+  | { ok: true; wrappedPrompt: string; scope: WorkspaceScope; workspaceFolder?: string }
+  | { ok: false; message: string }
+> {
+  let scope = await resolveWorkspaceScope(env, userId);
+
+  if (scope.kind === "none") {
+    const folderFromPrompt = detectFolderSetupIntent(prompt);
+    if (folderFromPrompt) {
+      await setAdminWorkspaceFolder(env, userId, folderFromPrompt);
+      scope = { kind: "folder", folder: folderFromPrompt };
+    } else if (isLikelyWorkPrompt(prompt) && !options.isNewAgent) {
+      return { ok: false, message: NO_WORKSPACE_MESSAGE };
+    }
+  }
+
+  const wrappedPrompt = wrapPromptForAgent(prompt, scope, {
+    isNewAgent: options.isNewAgent,
+    awaitingFolder: scope.kind === "none",
+  });
+
+  const workspaceFolder =
+    scope.kind === "folder" ? scope.folder : undefined;
+
+  return { ok: true, wrappedPrompt, scope, workspaceFolder };
+}
+
 async function handleAgentInfo(
   env: Env,
   chatId: number,
@@ -681,7 +906,27 @@ async function handleNew(
     return;
   }
 
-  await startAgentRun(env, chatId, userId, prompt, repoUrl, true, ctx, workerOrigin);
+  const scope = await resolveWorkspaceScope(env, userId);
+  const wrappedPrompt = wrapPromptForAgent(
+    prompt || "Yangi agent tayyor.",
+    scope,
+    {
+      isNewAgent: true,
+      awaitingFolder: scope.kind === "none",
+    },
+  );
+
+  await startAgentRun(
+    env,
+    chatId,
+    userId,
+    wrappedPrompt,
+    repoUrl,
+    true,
+    ctx,
+    workerOrigin,
+    scope.kind === "folder" ? scope.folder : undefined,
+  );
 }
 
 async function dispatchPrompt(
@@ -697,7 +942,24 @@ async function dispatchPrompt(
   const activeId = await resolveActiveAgentId(env, userId, session);
 
   if (activeId) {
-    await continueAgentRun(env, chatId, userId, activeId, prompt, ctx, workerOrigin);
+    const prepared = await preparePromptForDispatch(env, userId, prompt, {
+      isNewAgent: false,
+    });
+    if (!prepared.ok) {
+      await sendMessage(env, chatId, prepared.message);
+      return;
+    }
+
+    await continueAgentRun(
+      env,
+      chatId,
+      userId,
+      activeId,
+      prepared.wrappedPrompt,
+      ctx,
+      workerOrigin,
+      prepared.workspaceFolder,
+    );
     return;
   }
 
@@ -710,7 +972,25 @@ async function dispatchPrompt(
     return;
   }
 
-  await startAgentRun(env, chatId, userId, prompt, repoUrl, false, ctx, workerOrigin);
+  const prepared = await preparePromptForDispatch(env, userId, prompt, {
+    isNewAgent: true,
+  });
+  if (!prepared.ok) {
+    await sendMessage(env, chatId, prepared.message);
+    return;
+  }
+
+  await startAgentRun(
+    env,
+    chatId,
+    userId,
+    prepared.wrappedPrompt,
+    repoUrl,
+    false,
+    ctx,
+    workerOrigin,
+    prepared.workspaceFolder,
+  );
 }
 
 async function startAgentRun(
@@ -722,21 +1002,37 @@ async function startAgentRun(
   forceNew: boolean,
   ctx: ExecutionContext,
   workerOrigin: string,
+  workspaceFolder?: string,
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
+  const scope = await resolveWorkspaceScope(env, userId);
+
   try {
     const { agent, run } = await createAgent(env, prompt, repoUrl);
-    const session = await registerAgent(env, userId, agent, run, repoUrl);
+    const session = await registerAgent(
+      env,
+      userId,
+      agent,
+      run,
+      repoUrl,
+      workspaceFolder,
+    );
     const agentNumber = session.agents?.findIndex((a) => a.agentId === agent.id);
+    const scopeLabel = formatWorkspaceStatus(scope);
 
     await sendMessage(
       env,
       chatId,
       [
         forceNew ? "Yangi agent ochildi." : "Agent ishga tushdi.",
+        scopeLabel,
         agentNumber != null && agentNumber >= 0
           ? `Ro'yxatdagi raqam: ${agentNumber + 1}`
+          : null,
+        workspaceFolder ? `Papka: ${workspaceFolder}/` : null,
+        scope.kind === "none"
+          ? "Avval papka yarating yoki /papka nom bering."
           : null,
         `Agent: ${agent.url}`,
         `Run: ${run.id}`,
@@ -769,6 +1065,7 @@ async function continueAgentRun(
   prompt: string,
   ctx: ExecutionContext,
   workerOrigin: string,
+  workspaceFolder?: string,
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
@@ -776,6 +1073,7 @@ async function continueAgentRun(
     const { run } = await createRun(env, agentId, prompt);
     const session = await updateAgentRun(env, userId, agentId, run.id);
     const entry = session.agents?.find((a) => a.agentId === agentId);
+    const folder = workspaceFolder ?? entry?.workspaceFolder;
 
     await sendMessage(
       env,
@@ -783,6 +1081,7 @@ async function continueAgentRun(
       [
         `Buyruq yuborildi.`,
         entry ? `Agent: ${entry.name}` : null,
+        folder ? `Papka: ${folder}/` : null,
         `Run: ${run.id}`,
         "",
         "Kutilmoqda...",

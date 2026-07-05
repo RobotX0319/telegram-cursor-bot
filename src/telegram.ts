@@ -17,6 +17,7 @@ export const BOT_COMMANDS = [
   { command: "help", description: "Yordam" },
   { command: "status", description: "Agent holati" },
   { command: "repo", description: "GitHub repo belgilash" },
+  { command: "papka", description: "Ish papkasi" },
   { command: "new", description: "Yangi agent ochish" },
   { command: "agents", description: "Agentlar ro'yxati" },
   { command: "use", description: "Agent tanlash" },

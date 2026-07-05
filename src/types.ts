@@ -19,6 +19,7 @@ export interface StoredAgentEntry {
   latestRunId?: string;
   createdAt: string;
   createdBy?: number;
+  workspaceFolder?: string;
 }
 
 export interface UserSession {
@@ -27,6 +28,7 @@ export interface UserSession {
   agents?: StoredAgentEntry[];
   repoUrl?: string;
   latestRunId?: string;
+  workspaceFolder?: string;
   updatedAt: string;
 }
 

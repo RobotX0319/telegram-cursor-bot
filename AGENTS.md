@@ -1,6 +1,20 @@
 # Cloud Agent qoidalari
 
-Bu loyiha **Cloudflare Workers** da ishlaydi. Cloud Agent quyidagicha ishlashi kerak:
+Bu loyiha **Cloudflare Workers** da ishlaydi.
+
+## Papka tizimi
+
+| Kim | Qayerda ishlaydi |
+|-----|------------------|
+| **Asosiy admin (tizim agenti)** | `src/`, `scripts/`, `wrangler.jsonc` — platforma kodi |
+| **Boshqa adminlar** | Faqat o'z papkalarida (`ish/`, `telegram-video-bot/`, ...) |
+
+### Qoidalar
+
+- Tizim agenti boshqa adminlar papkalariga **tegmaydi**
+- Loyiha agentlari `src/` va platforma kodiga **tegmaydi**
+- Papka belgilanmagan holda kod buyruqlari **qabul qilinmaydi**
+- Yangi admin: `/new` → papka yarat → keyin ish
 
 ## Muhim
 
