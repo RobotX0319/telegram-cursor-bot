@@ -7,6 +7,7 @@ import {
   removeRequiredChannel,
   setSubscriptionEnabled,
 } from "./subscription";
+import { getAdminStatsJson } from "./stats";
 import type { Env } from "./types";
 
 function isAuthorized(url: URL, env: Env): boolean {
@@ -100,6 +101,11 @@ export async function handleAdminRequest(
 
     const config = await removeRequiredChannel(env, channelId);
     return Response.json({ ok: true, config });
+  }
+
+  if (request.method === "GET" && url.pathname === `${panelPath}/api/stats`) {
+    const stats = await getAdminStatsJson(env);
+    return Response.json(stats);
   }
 
   if (request.method === "GET" && url.pathname === `${panelPath}/api/videos`) {
@@ -325,6 +331,18 @@ function renderAdminPage(key: string, panelPath: string): string {
         <div class="stat-value" id="total">—</div>
       </div>
       <div class="stat">
+        <div class="stat-label">Bot foydalanuvchilari</div>
+        <div class="stat-value" id="bot-users">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Faol (7 kun)</div>
+        <div class="stat-value" id="active-users">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Video yetkazildi</div>
+        <div class="stat-value" id="delivered">—</div>
+      </div>
+      <div class="stat">
         <div class="stat-label">Majburiy obuna</div>
         <div class="stat-value" id="sub-status">—</div>
       </div>
@@ -332,6 +350,11 @@ function renderAdminPage(key: string, panelPath: string): string {
         <div class="stat-label">Obuna kanallari</div>
         <div class="stat-value" id="sub-count">—</div>
       </div>
+    </div>
+
+    <div class="section" id="channel-stats-section" style="display:none">
+      <h2>📡 Kanal obunachilari</h2>
+      <ul class="channel-list" id="channel-stats"></ul>
     </div>
 
     <div class="section">
@@ -512,12 +535,38 @@ function renderAdminPage(key: string, panelPath: string): string {
         .replace(/"/g, "&quot;");
     }
 
+    async function loadStats() {
+      const res = await fetch("${apiBase}/stats?key=" + encodeURIComponent(KEY));
+      if (!res.ok) throw new Error("Statistika yuklanmadi");
+      return res.json();
+    }
+
+    function renderStats(stats) {
+      document.getElementById("bot-users").textContent = stats.users;
+      document.getElementById("active-users").textContent = stats.activeUsers7d;
+      document.getElementById("delivered").textContent = stats.videoDelivered;
+
+      const section = document.getElementById("channel-stats-section");
+      const list = document.getElementById("channel-stats");
+      if (!stats.channelStats || !stats.channelStats.length) {
+        section.style.display = "none";
+        return;
+      }
+      section.style.display = "block";
+      list.innerHTML = stats.channelStats.map(function(ch) {
+        const count = ch.memberCount != null ? ch.memberCount.toLocaleString("uz-UZ") + " obunachi" : "noma'lum";
+        const bot = ch.botCanCheck ? "✅ bot admin" : "⚠️ bot admin emas";
+        return '<li><div><strong>' + escapeHtml(ch.title) + '</strong><div class="channel-meta">' + count + ' · ' + bot + '</div></div></li>';
+      }).join("");
+    }
+
     async function refresh() {
       try {
-        const [videoData, subData] = await Promise.all([loadVideos(), loadSubscription()]);
+        const [videoData, subData, statsData] = await Promise.all([loadVideos(), loadSubscription(), loadStats()]);
         document.getElementById("total").textContent = videoData.total;
         renderVideos(videoData.videos);
         renderSubscription(subData);
+        renderStats(statsData);
       } catch (e) {
         showError(e.message || "Xatolik");
       }

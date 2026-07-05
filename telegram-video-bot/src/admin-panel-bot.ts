@@ -16,7 +16,7 @@ import {
   subscriptionInlineKeyboard,
   toggleSubscription,
 } from "./subscription-ui";
-import { getSubscriptionConfig } from "./subscription";
+import { buildAdminStatsText } from "./stats";
 import {
   answerCallbackQuery,
   editMessageText,
@@ -161,35 +161,12 @@ async function showStats(
   chatId: number,
   messageId: number,
 ): Promise<void> {
-  const total = await countVideos(env);
-  const videos = await listVideos(env);
-  const sub = await getSubscriptionConfig(env);
+  const text = await buildAdminStatsText(env);
 
-  let lastUpload = "—";
-  if (videos.length > 0) {
-    const last = videos[videos.length - 1]!;
-    lastUpload = new Date(last.uploadedAt).toLocaleString("uz-UZ", {
-      timeZone: "Asia/Tashkent",
-    });
-  }
-
-  await editMessageText(
-    env,
-    chatId,
-    messageId,
-    [
-      "📊 Statistika",
-      "",
-      `Jami videolar: ${total}`,
-      `Oxirgi yuklash: ${lastUpload}`,
-      `Obuna: ${sub.enabled ? "Yoniq" : "O'chiq"}`,
-      `Kanallar: ${sub.channels.length}`,
-    ].join("\n"),
-    {
-      bot: "admin",
-      replyMarkup: { inline_keyboard: [backRow()] },
-    },
-  );
+  await editMessageText(env, chatId, messageId, text, {
+    bot: "admin",
+    replyMarkup: { inline_keyboard: [backRow()] },
+  });
 }
 
 async function showVideoList(
