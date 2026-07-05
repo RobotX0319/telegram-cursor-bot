@@ -1,5 +1,4 @@
 import { ADMIN_REPLY_KEYBOARD, BTN_PANEL } from "./admin-keyboard";
-import { sendAdminPanel } from "./panel";
 import {
   clearAdminState,
   getAdminState,
@@ -19,8 +18,16 @@ import {
 } from "./subscription-ui";
 import { setAdChannel } from "./ad-channel";
 import { addVipUser, removeVipUser } from "./vip";
-import { handlePanelStateInput } from "./panel";
+import {
+  handlePanelStateInput,
+  resolvePanelBot,
+  sendAdminPanel,
+} from "./panel";
 import type { Env } from "./types";
+
+function panelBot(env: Env, chatId: number) {
+  return resolvePanelBot(env, chatId);
+}
 
 export async function handleReplyButton(
   env: Env,
@@ -30,7 +37,7 @@ export async function handleReplyButton(
   workerOrigin: string,
 ): Promise<boolean> {
   if (text.trim() === BTN_PANEL) {
-    await sendAdminPanel(env, chatId, workerOrigin);
+    await sendAdminPanel(env, chatId, workerOrigin, panelBot(env, chatId));
     return true;
   }
   return false;
@@ -45,7 +52,7 @@ export async function handleAdminStateInput(
   if (text.toLowerCase() === "/cancel") {
     await clearAdminState(env, userId);
     await sendMessage(env, chatId, "Bekor qilindi.", {
-      bot: "admin",
+      bot: panelBot(env, chatId),
       replyMarkup: ADMIN_REPLY_KEYBOARD,
     });
     return true;
@@ -96,7 +103,7 @@ async function handleChannelInput(
       env,
       chatId,
       `✅ Kanal o'chirildi.\nQolgan: ${config.channels.length}`,
-      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return true;
   }
@@ -104,7 +111,7 @@ async function handleChannelInput(
   const result = await addChannelFromText(env, text);
   if (!result.ok) {
     await sendMessage(env, chatId, result.error, {
-      bot: "admin",
+      bot: panelBot(env, chatId),
       replyMarkup: ADMIN_REPLY_KEYBOARD,
     });
     return true;
@@ -122,7 +129,7 @@ async function handleChannelInput(
     ]
       .filter(Boolean)
       .join("\n"),
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
   return true;
 }
@@ -136,7 +143,7 @@ async function handleAdChannelInput(
   const result = await setAdChannel(env, text);
   if (!result.ok) {
     await sendMessage(env, chatId, result.error, {
-      bot: "admin",
+      bot: panelBot(env, chatId),
       replyMarkup: ADMIN_REPLY_KEYBOARD,
     });
     return true;
@@ -151,7 +158,7 @@ async function handleAdChannelInput(
       "",
       "Endi 🖼 Rasm shablon yuboring (Sozlamalar → Reklama).",
     ].join("\n"),
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
   return true;
 }
@@ -164,7 +171,7 @@ async function handleVipAddInput(
 ): Promise<boolean> {
   if (!/^\d+$/.test(text.trim())) {
     await sendMessage(env, chatId, "Telegram ID raqam bo'lishi kerak.", {
-      bot: "admin",
+      bot: panelBot(env, chatId),
       replyMarkup: ADMIN_REPLY_KEYBOARD,
     });
     return true;
@@ -177,7 +184,7 @@ async function handleVipAddInput(
     env,
     chatId,
     result.ok ? `✅ VIP qo'shildi: ${id}` : result.error,
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
   return true;
 }
@@ -195,7 +202,7 @@ async function handleVipRemoveInput(
     env,
     chatId,
     ok ? `✅ VIP o'chirildi: ${id}` : "VIP topilmadi.",
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
   return true;
 }
@@ -211,7 +218,7 @@ async function handleCardInput(
     const idStr = text.replace(/^o'?chirish\s+/i, "").trim();
     if (!/^\d+$/.test(idStr)) {
       await sendMessage(env, chatId, "Foydalanish: o'chirish 1", {
-        bot: "admin",
+        bot: panelBot(env, chatId),
         replyMarkup: ADMIN_REPLY_KEYBOARD,
       });
       return true;
@@ -222,7 +229,7 @@ async function handleCardInput(
       env,
       chatId,
       ok ? "✅ Karta o'chirildi." : "Karta topilmadi.",
-      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return true;
   }
@@ -233,7 +240,7 @@ async function handleCardInput(
       env,
       chatId,
       "Format: Nomi | 8600123456789012\nYoki: Nomi | https://...",
-      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return true;
   }
@@ -251,7 +258,7 @@ async function handleCardInput(
     result.ok
       ? `✅ Karta qo'shildi (#${result.card.id}): ${result.card.title}`
       : result.error,
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
   return true;
 }
@@ -275,7 +282,7 @@ export async function startVipAddFlow(
     env,
     chatId,
     "VIP qo'shish — Telegram user ID yuboring.\n\nBekor: /cancel",
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
 }
 
@@ -287,7 +294,7 @@ export async function sendVipList(env: Env, chatId: number): Promise<void> {
       ? "VIP ro'yxat bo'sh."
       : ["VIP mijozlar:", "", ...records.map(formatVipRecord)].join("\n");
   await sendMessage(env, chatId, text, {
-    bot: "admin",
+    bot: panelBot(env, chatId),
     replyMarkup: ADMIN_REPLY_KEYBOARD,
   });
 }

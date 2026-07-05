@@ -1,6 +1,6 @@
 import { hasAdminBot, isAdmin } from "./bots";
 import { tryAdminOnUserBot, openUserAdminPanel } from "./admin-via-user";
-import { handleAdminPanelCallback } from "./panel";
+import { handleAdminPanelCallback, parsePanelCallback } from "./panel";
 import {
   trackNotFound,
   trackUserStart,
@@ -164,6 +164,14 @@ async function handleUserCommand(
 
     case "/ping":
       await sendMessage(env, chatId, "🏓 pong");
+      return;
+
+    case "/meningid":
+      await sendMessage(
+        env,
+        chatId,
+        `🆔 Sizning Telegram ID: \`${userId}\``,
+      );
       return;
 
     case "/check":
@@ -434,7 +442,7 @@ export async function handleCallbackQuery(
   if ((data.startsWith("p:") || data.startsWith("pu:")) && (await isAdmin(env, userId))) {
     const messageId = query.message?.message_id;
     if (messageId) {
-      const answerBot = data.startsWith("pu:") ? "user" : "admin";
+      const answerBot = parsePanelCallback(data, chatId, env).botKind;
       await answerCallbackQuery(env, query.id, undefined, answerBot);
       await handleAdminPanelCallback(
         env,

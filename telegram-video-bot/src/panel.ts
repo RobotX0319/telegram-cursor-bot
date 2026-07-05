@@ -72,7 +72,7 @@ import {
   listVipRecords,
   removeVipUser,
 } from "./vip";
-import type { BotKind } from "./bots";
+import { hasAdminBot, type BotKind } from "./bots";
 import type { Env } from "./types";
 
 const PAGE = 6;
@@ -82,35 +82,43 @@ function setPanelBot(chatId: number, bot: BotKind): void {
   panelBotSession.set(chatId, bot);
 }
 
-function getPanelBot(chatId: number): BotKind {
+function getPanelBot(chatId: number, env: Env): BotKind {
+  if (!hasAdminBot(env)) return "user";
   return panelBotSession.get(chatId) ?? "admin";
+}
+
+export function resolvePanelBot(env: Env, chatId: number): BotKind {
+  return getPanelBot(chatId, env);
 }
 
 export function parsePanelCallback(
   data: string,
-  chatId?: number,
+  chatId: number | undefined,
+  env: Env,
 ): { data: string; botKind: BotKind } {
   if (data.startsWith("pu:")) {
     return { data: `p:${data.slice(3)}`, botKind: "user" };
   }
-  if (chatId !== undefined && getPanelBot(chatId) === "user") {
+  if (!hasAdminBot(env)) {
+    return { data, botKind: "user" };
+  }
+  if (chatId !== undefined && getPanelBot(chatId, env) === "user") {
     return { data, botKind: "user" };
   }
   return { data, botKind: "admin" };
 }
 
-function cb(data: string, chatId: number): string {
-  if (getPanelBot(chatId) === "user" && data.startsWith("p:")) {
+function cb(data: string, chatId: number, env: Env): string {
+  if (getPanelBot(chatId, env) === "user" && data.startsWith("p:")) {
     return `pu:${data.slice(2)}`;
   }
   return data;
 }
 
-
 type Btn = { text: string; url?: string; callback_data?: string };
 
-function back(chatId: number, to = "p:menu"): Btn[] {
-  return [{ text: "◀️ Orqaga", callback_data: cb(to, chatId) }];
+function back(chatId: number, env: Env, to = "p:menu"): Btn[] {
+  return [{ text: "◀️ Orqaga", callback_data: cb(to, chatId, env) }];
 }
 
 function kb(rows: Btn[][]): { inline_keyboard: Btn[][] } {
@@ -121,9 +129,10 @@ export async function sendAdminPanel(
   env: Env,
   chatId: number,
   _workerOrigin: string,
-  botKind: BotKind = "admin",
+  botKind?: BotKind,
 ): Promise<void> {
-  setPanelBot(chatId, botKind);
+  const panelBot = botKind ?? (hasAdminBot(env) ? "admin" : "user");
+  setPanelBot(chatId, panelBot);
   const total = await countVideos(env);
   const users = await listUsers(env);
   const stats = await getBotStats(env);
@@ -140,23 +149,23 @@ export async function sendAdminPanel(
       "",
       "Bo'limni tanlang 👇",
     ].join("\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb(mainMenu(chatId)) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(mainMenu(chatId, env)) },
   );
 }
 
-function mainMenu(chatId: number): Btn[][] {
+function mainMenu(chatId: number, env: Env): Btn[][] {
   return [
     [
-      { text: "🎬 Kontent", callback_data: cb("p:cnt", chatId) },
-      { text: "👥 Foydalanuvchilar", callback_data: cb("p:usr", chatId) },
+      { text: "🎬 Kontent", callback_data: cb("p:cnt", chatId, env) },
+      { text: "👥 Foydalanuvchilar", callback_data: cb("p:usr", chatId, env) },
     ],
     [
-      { text: "📊 Statistika", callback_data: cb("p:st", chatId) },
-      { text: "📣 Broadcast", callback_data: cb("p:bc", chatId) },
+      { text: "📊 Statistika", callback_data: cb("p:st", chatId, env) },
+      { text: "📣 Broadcast", callback_data: cb("p:bc", chatId, env) },
     ],
     [
-      { text: "⚙️ Sozlamalar", callback_data: cb("p:set", chatId) },
-      { text: "🔐 Xavfsizlik", callback_data: cb("p:sec", chatId) },
+      { text: "⚙️ Sozlamalar", callback_data: cb("p:set", chatId, env) },
+      { text: "🔐 Xavfsizlik", callback_data: cb("p:sec", chatId, env) },
     ],
   ];
 }
@@ -169,8 +178,9 @@ export async function handleAdminPanelCallback(
   adminId: number,
   workerOrigin: string,
 ): Promise<void> {
-  const { data, botKind } = parsePanelCallback(rawData, chatId);
-  setPanelBot(chatId, botKind);
+  const { data, botKind } = parsePanelCallback(rawData, chatId, env);
+  const panelBot = botKind ?? (hasAdminBot(env) ? "admin" : "user");
+  setPanelBot(chatId, panelBot);
   const parts = data.split(":");
   const section = parts[1];
 
@@ -320,8 +330,8 @@ export async function handleAdminPanelCallback(
       break;
     default:
       await editMessageText(env, chatId, messageId, "Noma'lum.", {
-        bot: getPanelBot(chatId),
-        replyMarkup: kb([back(chatId)]),
+        bot: getPanelBot(chatId, env),
+        replyMarkup: kb([back(chatId, env)]),
       });
   }
 }
@@ -342,7 +352,7 @@ export async function handleAdminBotCallback(
   }
 
   const answerBot =
-    parsePanelCallback(rawData, chatId).botKind === "user" ? "user" : "admin";
+    parsePanelCallback(rawData, chatId, env).botKind === "user" ? "user" : "admin";
   await answerCallbackQuery(env, query.id, undefined, answerBot);
 
   if (rawData.startsWith("p:") || rawData.startsWith("pu:")) {
@@ -376,7 +386,7 @@ async function showMain(
       "",
       "Bo'limni tanlang 👇",
     ].join("\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb(mainMenu(chatId)) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(mainMenu(chatId, env)) },
   );
 }
 
@@ -402,14 +412,14 @@ async function showContentMenu(
       "Yuklash: ID yuboring (masalan: 5), keyin video.",
     ].join("\n"),
     {
-      bot: getPanelBot(chatId),
+      bot: getPanelBot(chatId, env),
       replyMarkup: kb([
         [
-          { text: "📋 Ro'yxat", callback_data: "p:lst:0" },
-          { text: "🔍 Qidiruv", callback_data: "p:srch" },
+          { text: "📋 Ro'yxat", callback_data: cb("p:lst:0", chatId, env) },
+          { text: "🔍 Qidiruv", callback_data: cb("p:srch", chatId, env) },
         ],
-        [{ text: "📦 Toplu yuklash", callback_data: "p:bulk" }],
-        back(chatId),
+        [{ text: "📦 Toplu yuklash", callback_data: cb("p:bulk", chatId, env) }],
+        back(chatId, env),
       ]),
     },
   );
@@ -424,8 +434,8 @@ async function showMovieList(
   const movies = await listVideos(env);
   if (movies.length === 0) {
     await editMessageText(env, chatId, messageId, "📋 Hozircha kino yo'q.", {
-      bot: getPanelBot(chatId),
-      replyMarkup: kb([back(chatId, "p:cnt")]),
+      bot: getPanelBot(chatId, env),
+      replyMarkup: kb([back(chatId, env, "p:cnt")]),
     });
     return;
   }
@@ -438,15 +448,15 @@ async function showMovieList(
     (m) => `#${m.id} · ${movieName(m)} · 👁${m.views ?? 0}`,
   );
   const rows: Btn[][] = slice.map((m) => [
-    { text: `ℹ️ #${m.id}`, callback_data: cb(`p:minf:${m.id}`, chatId) },
-    { text: "🗑", callback_data: cb(`p:mdel:${m.id}`, chatId) },
+    { text: `ℹ️ #${m.id}`, callback_data: cb(`p:minf:${m.id}`, chatId, env) },
+    { text: "🗑", callback_data: cb(`p:mdel:${m.id}`, chatId, env) },
   ]);
 
   const nav: Btn[] = [];
-  if (p > 0) nav.push({ text: "⬅️", callback_data: cb(`p:lst:${p - 1}`, chatId) });
-  if (p < pages - 1) nav.push({ text: "➡️", callback_data: cb(`p:lst:${p + 1}`, chatId) });
+  if (p > 0) nav.push({ text: "⬅️", callback_data: cb(`p:lst:${p - 1}`, chatId, env) });
+  if (p < pages - 1) nav.push({ text: "➡️", callback_data: cb(`p:lst:${p + 1}`, chatId, env) });
   if (nav.length) rows.push(nav);
-  rows.push(back(chatId, "p:cnt"));
+  rows.push(back(chatId, env, "p:cnt"));
 
   await editMessageText(
     env,
@@ -455,7 +465,7 @@ async function showMovieList(
     [`📋 Kinolar (${movies.length})`, `Sahifa ${p + 1}/${pages}`, "", ...lines].join(
       "\n",
     ),
-    { bot: getPanelBot(chatId), replyMarkup: kb(rows) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(rows) },
   );
 }
 
@@ -469,7 +479,7 @@ async function startMovieSearch(
     env,
     chatId,
     "🔍 Qidiruv — kod, nom yoki janr yuboring.\n\nBekor: /cancel",
-    { bot: getPanelBot(chatId) },
+    { bot: getPanelBot(chatId, env) },
   );
 }
 
@@ -493,7 +503,7 @@ async function startBulkUpload(
       "",
       "Bekor: /cancel",
     ].join("\n"),
-    { bot: getPanelBot(chatId) },
+    { bot: getPanelBot(chatId, env) },
   );
 }
 
@@ -506,8 +516,8 @@ async function showMovieInfo(
   const movie = await getVideo(env, id);
   if (!movie) {
     await editMessageText(env, chatId, messageId, `Kino topilmadi: ${id}`, {
-      bot: getPanelBot(chatId),
-      replyMarkup: kb([back(chatId, "p:lst:0")]),
+      bot: getPanelBot(chatId, env),
+      replyMarkup: kb([back(chatId, env, "p:lst:0")]),
     });
     return;
   }
@@ -518,21 +528,21 @@ async function showMovieInfo(
     messageId,
     formatMovieInfo(movie, true),
     {
-      bot: getPanelBot(chatId),
+      bot: getPanelBot(chatId, env),
       replyMarkup: kb([
         [
-          { text: "✏️ Nom", callback_data: cb(`p:medit:${id}:name`, chatId) },
-          { text: "📝 Tavsif", callback_data: cb(`p:medit:${id}:description`, chatId) },
+          { text: "✏️ Nom", callback_data: cb(`p:medit:${id}:name`, chatId, env) },
+          { text: "📝 Tavsif", callback_data: cb(`p:medit:${id}:description`, chatId, env) },
         ],
         [
-          { text: "🎭 Janr", callback_data: cb(`p:medit:${id}:genre`, chatId) },
-          { text: "📅 Yil", callback_data: cb(`p:medit:${id}:year`, chatId) },
+          { text: "🎭 Janr", callback_data: cb(`p:medit:${id}:genre`, chatId, env) },
+          { text: "📅 Yil", callback_data: cb(`p:medit:${id}:year`, chatId, env) },
         ],
         [
-          { text: "🗑 O'chirish", callback_data: cb(`p:mdel:${id}`, chatId) },
-          { text: "📋 Ro'yxat", callback_data: "p:lst:0" },
+          { text: "🗑 O'chirish", callback_data: cb(`p:mdel:${id}`, chatId, env) },
+          { text: "📋 Ro'yxat", callback_data: cb("p:lst:0", chatId, env) },
         ],
-        back(chatId, "p:cnt"),
+        back(chatId, env, "p:cnt"),
       ]),
     },
   );
@@ -556,7 +566,7 @@ async function startMovieEdit(
     env,
     chatId,
     `✏️ Kino #${id} — yangi ${labels[field] ?? field} yuboring.\n\nBekor: /cancel`,
-    { bot: getPanelBot(chatId) },
+    { bot: getPanelBot(chatId, env) },
   );
 }
 
@@ -575,11 +585,11 @@ async function confirmMovieDelete(
       "\n",
     ),
     {
-      bot: getPanelBot(chatId),
+      bot: getPanelBot(chatId, env),
       replyMarkup: kb([
         [
-          { text: "✅ Ha", callback_data: cb(`p:mdelok:${id}`, chatId) },
-          { text: "❌ Yo'q", callback_data: cb(`p:minf:${id}`, chatId) },
+          { text: "✅ Ha", callback_data: cb(`p:mdelok:${id}`, chatId, env) },
+          { text: "❌ Yo'q", callback_data: cb(`p:minf:${id}`, chatId, env) },
         ],
       ]),
     },
@@ -603,10 +613,10 @@ async function doMovieDelete(
     messageId,
     ok ? `✅ Kino #${id} o'chirildi.` : `Kino topilmadi: ${id}`,
     {
-      bot: getPanelBot(chatId),
+      bot: getPanelBot(chatId, env),
       replyMarkup: kb([
-        [{ text: "📋 Ro'yxat", callback_data: "p:lst:0" }],
-        back(chatId, "p:cnt"),
+        [{ text: "📋 Ro'yxat", callback_data: cb("p:lst:0", chatId, env) }],
+        back(chatId, env, "p:cnt"),
       ]),
     },
   );
@@ -632,13 +642,13 @@ async function showUsersMenu(
       "Ro'yxat, qidiruv, bloklash va VIP boshqaruvi.",
     ].join("\n"),
     {
-      bot: getPanelBot(chatId),
+      bot: getPanelBot(chatId, env),
       replyMarkup: kb([
         [
-          { text: "📋 Ro'yxat", callback_data: "p:ulst:0" },
-          { text: "🔍 Qidiruv", callback_data: "p:usrc" },
+          { text: "📋 Ro'yxat", callback_data: cb("p:ulst:0", chatId, env) },
+          { text: "🔍 Qidiruv", callback_data: cb("p:usrc", chatId, env) },
         ],
-        back(chatId),
+        back(chatId, env),
       ]),
     },
   );
@@ -653,8 +663,8 @@ async function showUserList(
   const users = await listUsers(env);
   if (users.length === 0) {
     await editMessageText(env, chatId, messageId, "Foydalanuvchi yo'q.", {
-      bot: getPanelBot(chatId),
-      replyMarkup: kb([back(chatId, "p:usr")]),
+      bot: getPanelBot(chatId, env),
+      replyMarkup: kb([back(chatId, env, "p:usr")]),
     });
     return;
   }
@@ -665,14 +675,14 @@ async function showUserList(
 
   const lines = slice.map(formatUserLine);
   const rows: Btn[][] = slice.map((u) => [
-    { text: `👤 ${u.id}`, callback_data: cb(`p:uinf:${u.id}`, chatId) },
+    { text: `👤 ${u.id}`, callback_data: cb(`p:uinf:${u.id}`, chatId, env) },
   ]);
 
   const nav: Btn[] = [];
-  if (p > 0) nav.push({ text: "⬅️", callback_data: cb(`p:ulst:${p - 1}`, chatId) });
-  if (p < pages - 1) nav.push({ text: "➡️", callback_data: cb(`p:ulst:${p + 1}`, chatId) });
+  if (p > 0) nav.push({ text: "⬅️", callback_data: cb(`p:ulst:${p - 1}`, chatId, env) });
+  if (p < pages - 1) nav.push({ text: "➡️", callback_data: cb(`p:ulst:${p + 1}`, chatId, env) });
   if (nav.length) rows.push(nav);
-  rows.push(back(chatId, "p:usr"));
+  rows.push(back(chatId, env, "p:usr"));
 
   await editMessageText(
     env,
@@ -681,7 +691,7 @@ async function showUserList(
     [`👥 Foydalanuvchilar`, `Sahifa ${p + 1}/${pages}`, "", ...lines].join(
       "\n",
     ),
-    { bot: getPanelBot(chatId), replyMarkup: kb(rows) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(rows) },
   );
 }
 
@@ -695,7 +705,7 @@ async function startUserSearch(
     env,
     chatId,
     "🔍 ID, ism yoki username yuboring.\n\nBekor: /cancel",
-    { bot: getPanelBot(chatId) },
+    { bot: getPanelBot(chatId, env) },
   );
 }
 
@@ -729,22 +739,22 @@ async function showUserInfo(
     [
       {
         text: user?.blocked ? "✅ Blokdan chiqarish" : "🚫 Bloklash",
-        callback_data: cb(`p:ublk:${userId}`, chatId),
+        callback_data: cb(`p:ublk:${userId}`, chatId, env),
       },
     ],
   ];
 
   if (isVip) {
     rows.push([
-      { text: "❌ VIP olib tashlash", callback_data: cb(`p:uviprm:${userId}`, chatId) },
+      { text: "❌ VIP olib tashlash", callback_data: cb(`p:uviprm:${userId}`, chatId, env) },
     ]);
   } else {
-    rows.push([{ text: "⭐ VIP berish", callback_data: cb(`p:uvip:${userId}`, chatId) }]);
+    rows.push([{ text: "⭐ VIP berish", callback_data: cb(`p:uvip:${userId}`, chatId, env) }]);
   }
-  rows.push(back(chatId, "p:ulst:0"));
+  rows.push(back(chatId, env, "p:ulst:0"));
 
   await editMessageText(env, chatId, messageId, lines.filter(Boolean).join("\n"), {
-    bot: getPanelBot(chatId),
+    bot: getPanelBot(chatId, env),
     replyMarkup: kb(rows),
   });
 }
@@ -788,7 +798,7 @@ async function startVipForUser(
       "",
       "Bekor: /cancel",
     ].join("\n"),
-    { bot: getPanelBot(chatId) },
+    { bot: getPanelBot(chatId, env) },
   );
 }
 
@@ -815,17 +825,17 @@ async function showStatsMenu(
     messageId,
     "📊 Statistika va monitoring",
     {
-      bot: getPanelBot(chatId),
+      bot: getPanelBot(chatId, env),
       replyMarkup: kb([
         [
-          { text: "📈 Umumiy", callback_data: "p:stmain" },
-          { text: "🏆 Top kinolar", callback_data: "p:sttop" },
+          { text: "📈 Umumiy", callback_data: cb("p:stmain", chatId, env) },
+          { text: "🏆 Top kinolar", callback_data: cb("p:sttop", chatId, env) },
         ],
         [
-          { text: "❌ Topilmadi (404)", callback_data: "p:st404" },
-          { text: "📅 O'sish", callback_data: "p:stgr" },
+          { text: "❌ Topilmadi (404)", callback_data: cb("p:st404", chatId, env) },
+          { text: "📅 O'sish", callback_data: cb("p:stgr", chatId, env) },
         ],
-        back(chatId),
+        back(chatId, env),
       ]),
     },
   );
@@ -838,8 +848,8 @@ async function showMainStats(
 ): Promise<void> {
   const text = await buildAdminStatsText(env);
   await editMessageText(env, chatId, messageId, text, {
-    bot: getPanelBot(chatId),
-    replyMarkup: kb([back(chatId, "p:st")]),
+    bot: getPanelBot(chatId, env),
+    replyMarkup: kb([back(chatId, env, "p:st")]),
   });
 }
 
@@ -862,7 +872,7 @@ async function show404Stats(
     ["❌ Topilmagan kodlar (404)", "", "Qaysi kinoni qo'shish kerak:", "", ...lines].join(
       "\n",
     ),
-    { bot: getPanelBot(chatId), replyMarkup: kb([back(chatId, "p:st")]) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb([back(chatId, env, "p:st")]) },
   );
 }
 
@@ -884,7 +894,7 @@ async function showTopMovies(
     chatId,
     messageId,
     ["🏆 Eng ko'p ko'rilgan kinolar", "", ...lines].join("\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb([back(chatId, "p:st")]) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb([back(chatId, env, "p:st")]) },
   );
 }
 
@@ -907,7 +917,7 @@ async function showGrowthStats(
       `Bu oy: ${countNewUsersThisMonth(stats)}`,
       `Jami: ${Object.keys(stats.users).length}`,
     ].join("\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb([back(chatId, "p:st")]) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb([back(chatId, env, "p:st")]) },
   );
 }
 
@@ -928,14 +938,14 @@ async function showBroadcastMenu(
       "Rejalashtirish mumkin.",
     ].join("\n"),
     {
-      bot: getPanelBot(chatId),
+      bot: getPanelBot(chatId, env),
       replyMarkup: kb([
         [
-          { text: "📨 Hammaga", callback_data: "p:bcnew:all" },
-          { text: "⭐ VIP", callback_data: "p:bcnew:vip" },
+          { text: "📨 Hammaga", callback_data: cb("p:bcnew:all", chatId, env) },
+          { text: "⭐ VIP", callback_data: cb("p:bcnew:vip", chatId, env) },
         ],
-        [{ text: "📋 Tarix", callback_data: "p:bclst" }],
-        back(chatId),
+        [{ text: "📋 Tarix", callback_data: cb("p:bclst", chatId, env) }],
+        back(chatId, env),
       ]),
     },
   );
@@ -964,7 +974,7 @@ async function startBroadcast(
       "",
       "Bekor: /cancel",
     ].join("\n"),
-    { bot: getPanelBot(chatId) },
+    { bot: getPanelBot(chatId, env) },
   );
 }
 
@@ -983,17 +993,17 @@ async function showBroadcastList(
     .filter((j) => j.status === "pending" && !j.scheduledAt)
     .slice(0, 3)
     .map((j) => [
-      { text: `▶️ Yuborish`, callback_data: cb(`p:bcrun:${j.id}`, chatId) },
+      { text: `▶️ Yuborish`, callback_data: cb(`p:bcrun:${j.id}`, chatId, env) },
     ]);
 
-  rows.push(back(chatId, "p:bc"));
+  rows.push(back(chatId, env, "p:bc"));
 
   await editMessageText(
     env,
     chatId,
     messageId,
     ["📋 Broadcast tarixi", "", ...lines].join("\n\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb(rows) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(rows) },
   );
 }
 
@@ -1005,7 +1015,7 @@ async function executeBroadcast(
   adminId: number,
 ): Promise<void> {
   await editMessageText(env, chatId, messageId, "⏳ Yuborilmoqda...", {
-    bot: getPanelBot(chatId),
+    bot: getPanelBot(chatId, env),
   });
   const job = await runBroadcast(env, jobId);
   if (job) {
@@ -1021,7 +1031,7 @@ async function executeBroadcast(
     chatId,
     messageId,
     job ? formatBroadcastJob(job) : "Broadcast topilmadi.",
-    { bot: getPanelBot(chatId), replyMarkup: kb([back(chatId, "p:bc")]) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb([back(chatId, env, "p:bc")]) },
   );
 }
 
@@ -1036,14 +1046,14 @@ async function showSettingsMenu(
     messageId,
     "⚙️ Sozlamalar",
     {
-      bot: getPanelBot(chatId),
+      bot: getPanelBot(chatId, env),
       replyMarkup: kb([
         [
-          { text: "📢 Obuna", callback_data: "p:setsub" },
-          { text: "📡 Reklama", callback_data: "p:setad" },
+          { text: "📢 Obuna", callback_data: cb("p:setsub", chatId, env) },
+          { text: "📡 Reklama", callback_data: cb("p:setad", chatId, env) },
         ],
-        [{ text: "💬 Bot matnlari", callback_data: "p:settxt" }],
-        back(chatId),
+        [{ text: "💬 Bot matnlari", callback_data: cb("p:settxt", chatId, env) }],
+        back(chatId, env),
       ]),
     },
   );
@@ -1063,10 +1073,10 @@ async function showSubSettings(
           .replace("adm:suboff", "p:suboff")
           .replace("adm:ch:add", "p:chadd")
           .replace(/^adm:ch:del:(\d+)$/, "p:chdel:$1") ?? "p:set";
-      return { text: b.text, callback_data: cb(raw, chatId) };
+      return { text: b.text, callback_data: cb(raw, chatId, env) };
     }),
   );
-  keyboard.push(back(chatId, "p:set"));
+  keyboard.push(back(chatId, env, "p:set"));
 
   await editMessageText(
     env,
@@ -1077,7 +1087,7 @@ async function showSubSettings(
       "",
       "Kanal qo'shing — majburiy obuna ishlaydi.",
     ].join("\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb(keyboard) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(keyboard) },
   );
 }
 
@@ -1098,17 +1108,17 @@ async function showAdSettings(
             .replace("adm:ad:off", "p:adoff")
             .replace("adm:ad:chdel", "p:adchdel")
             .replace("adm:ad:tpldel", "p:adtpldel") ?? "p:set";
-        return { text: b.text, callback_data: cb(raw, chatId) };
+        return { text: b.text, callback_data: cb(raw, chatId, env) };
       }),
   );
-  keyboard.push(back(chatId, "p:set"));
+  keyboard.push(back(chatId, env, "p:set"));
 
   await editMessageText(
     env,
     chatId,
     messageId,
     formatChannelsMenuLines(subConfig, adConfig, vipCount).join("\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb(keyboard) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(keyboard) },
   );
 }
 
@@ -1129,17 +1139,17 @@ async function showTextSettings(
       "O'zgaruvchi: {total}, {code}",
     ].join("\n"),
     {
-      bot: getPanelBot(chatId),
+      bot: getPanelBot(chatId, env),
       replyMarkup: kb([
         [
-          { text: "👋 Welcome", callback_data: "p:edtxt:welcome" },
-          { text: "❓ Help", callback_data: "p:edtxt:help" },
+          { text: "👋 Welcome", callback_data: cb("p:edtxt:welcome", chatId, env) },
+          { text: "❓ Help", callback_data: cb("p:edtxt:help", chatId, env) },
         ],
         [
-          { text: "❌ Not found", callback_data: "p:edtxt:notFound" },
-          { text: "🚫 Blocked", callback_data: "p:edtxt:blocked" },
+          { text: "❌ Not found", callback_data: cb("p:edtxt:notFound", chatId, env) },
+          { text: "🚫 Blocked", callback_data: cb("p:edtxt:blocked", chatId, env) },
         ],
-        back(chatId, "p:set"),
+        back(chatId, env, "p:set"),
       ]),
     },
   );
@@ -1163,7 +1173,7 @@ async function startTextEdit(
     [`✏️ Yangi matn (${key}):`, "", `Hozirgi:`, current.slice(0, 500), "", "Bekor: /cancel"].join(
       "\n",
     ),
-    { bot: getPanelBot(chatId) },
+    { bot: getPanelBot(chatId, env) },
   );
 }
 
@@ -1199,15 +1209,15 @@ async function showSecurityMenu(
 ): Promise<void> {
   const super_ = await isSuperAdmin(env, adminId);
   const rows: Btn[][] = [
-    [{ text: "📜 Admin loglar", callback_data: "p:logs" }],
-    [{ text: "👑 Adminlar", callback_data: "p:admins" }],
+    [{ text: "📜 Admin loglar", callback_data: cb("p:logs", chatId, env) }],
+    [{ text: "👑 Adminlar", callback_data: cb("p:admins", chatId, env) }],
   ];
   if (super_) {
     rows.push([
-      { text: "➕ Admin qo'shish", callback_data: "p:admadd:admin" },
+      { text: "➕ Admin qo'shish", callback_data: cb("p:admadd:admin", chatId, env) },
     ]);
   }
-  rows.push(back(chatId));
+  rows.push(back(chatId, env));
 
   await editMessageText(
     env,
@@ -1219,7 +1229,7 @@ async function showSecurityMenu(
       "Admin loglar va adminlar ro'yxati.",
       super_ ? "Siz super-adminsiz." : "Siz oddiy adminsiz.",
     ].join("\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb(rows) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(rows) },
   );
 }
 
@@ -1239,7 +1249,7 @@ async function showAdminLogs(
     chatId,
     messageId,
     ["📜 Admin loglar", "", ...lines].join("\n\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb([back(chatId, "p:sec")]) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb([back(chatId, env, "p:sec")]) },
   );
 }
 
@@ -1262,19 +1272,19 @@ async function showAdminsList(
         .map((a) => [
           {
             text: `🗑 ${a.userId}`,
-            callback_data: cb(`p:admdel:${a.userId}`, chatId),
+            callback_data: cb(`p:admdel:${a.userId}`, chatId, env),
           },
         ])
     : [];
 
-  rows.push(back(chatId, "p:sec"));
+  rows.push(back(chatId, env, "p:sec"));
 
   await editMessageText(
     env,
     chatId,
     messageId,
     ["👑 Adminlar", "", ...lines].join("\n"),
-    { bot: getPanelBot(chatId), replyMarkup: kb(rows) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(rows) },
   );
 }
 
@@ -1289,7 +1299,7 @@ async function startAddAdmin(
     env,
     chatId,
     `➕ Yangi ${roleLabel(role)} — Telegram ID yuboring.\n\nBekor: /cancel`,
-    { bot: getPanelBot(chatId) },
+    { bot: getPanelBot(chatId, env) },
   );
 }
 
@@ -1319,7 +1329,7 @@ export async function handlePanelStateInput(
       const results = await searchMovies(env, text);
       await clearAdminState(env, adminId);
       if (results.length === 0) {
-        await sendMessage(env, chatId, "Hech narsa topilmadi.", { bot: getPanelBot(chatId) });
+        await sendMessage(env, chatId, "Hech narsa topilmadi.", { bot: getPanelBot(chatId, env) });
         return true;
       }
       const lines = results
@@ -1329,7 +1339,7 @@ export async function handlePanelStateInput(
         env,
         chatId,
         ["🔍 Natijalar:", "", ...lines].join("\n"),
-        { bot: getPanelBot(chatId) },
+        { bot: getPanelBot(chatId, env) },
       );
       return true;
     }
@@ -1339,7 +1349,7 @@ export async function handlePanelStateInput(
       const ids = parseBulkIds(text);
       if (ids.length === 0) {
         await sendMessage(env, chatId, "Kodlar topilmadi. Masalan: 1,2,3", {
-          bot: getPanelBot(chatId),
+          bot: getPanelBot(chatId, env),
         });
         return true;
       }
@@ -1353,7 +1363,7 @@ export async function handlePanelStateInput(
           "",
           `Endi ID ${ids[0]} uchun videoni yuboring.`,
         ].join("\n"),
-        { bot: getPanelBot(chatId) },
+        { bot: getPanelBot(chatId, env) },
       );
       return true;
     }
@@ -1365,7 +1375,7 @@ export async function handlePanelStateInput(
       const result = await updateMovieField(env, id, field, text);
       await clearAdminState(env, adminId);
       if (!result.ok) {
-        await sendMessage(env, chatId, result.error, { bot: getPanelBot(chatId) });
+        await sendMessage(env, chatId, result.error, { bot: getPanelBot(chatId, env) });
         return true;
       }
       await logAdminAction(env, adminId, "kino_tahrir", `#${id} ${field}`);
@@ -1373,7 +1383,7 @@ export async function handlePanelStateInput(
         env,
         chatId,
         `✅ Kino #${id} yangilandi.\n\n${formatMovieInfo(result.video, true)}`,
-        { bot: getPanelBot(chatId) },
+        { bot: getPanelBot(chatId, env) },
       );
       return true;
     }
@@ -1404,7 +1414,7 @@ export async function handlePanelStateInput(
         scheduledAt
           ? `📅 Rejalashtirildi: ${scheduleMatch![1]}\n\nRasm/video yuboring (ixtiyoriy) yoki /skip`
           : "✅ Matn saqlandi.\n\nRasm/video yuboring (ixtiyoriy) yoki /skip",
-        { bot: getPanelBot(chatId) },
+        { bot: getPanelBot(chatId, env) },
       );
       return true;
     }
@@ -1421,7 +1431,7 @@ export async function handlePanelStateInput(
       await clearAdminState(env, adminId);
       await logAdminAction(env, adminId, "matn_tahrir", key);
       await sendMessage(env, chatId, `✅ ${key} matni yangilandi.`, {
-        bot: getPanelBot(chatId),
+        bot: getPanelBot(chatId, env),
       });
       return true;
     }
@@ -1430,7 +1440,7 @@ export async function handlePanelStateInput(
       const role = (state.data?.adminRole ?? "admin") as "super" | "admin";
       const id = Number.parseInt(text.trim(), 10);
       if (!Number.isFinite(id)) {
-        await sendMessage(env, chatId, "Noto'g'ri ID", { bot: getPanelBot(chatId) });
+        await sendMessage(env, chatId, "Noto'g'ri ID", { bot: getPanelBot(chatId, env) });
         return true;
       }
       const result = await addAdminRecord(env, id, role, adminId);
@@ -1442,7 +1452,7 @@ export async function handlePanelStateInput(
         env,
         chatId,
         result.ok ? `✅ Admin qo'shildi: ${id}` : result.error,
-        { bot: getPanelBot(chatId) },
+        { bot: getPanelBot(chatId, env) },
       );
       return true;
     }
@@ -1452,7 +1462,7 @@ export async function handlePanelStateInput(
       const results = await searchUsers(env, text);
       await clearAdminState(env, adminId);
       if (results.length === 0) {
-        await sendMessage(env, chatId, "Topilmadi.", { bot: getPanelBot(chatId) });
+        await sendMessage(env, chatId, "Topilmadi.", { bot: getPanelBot(chatId, env) });
         return true;
       }
       const lines = results.slice(0, 15).map(formatUserLine);
@@ -1460,7 +1470,7 @@ export async function handlePanelStateInput(
         env,
         chatId,
         ["🔍 Natijalar:", "", ...lines].join("\n"),
-        { bot: getPanelBot(chatId) },
+        { bot: getPanelBot(chatId, env) },
       );
       return true;
     }
@@ -1481,7 +1491,7 @@ export async function handlePanelStateInput(
         result.ok
           ? `✅ VIP berildi: ${userId}${expiresAt ? `\nMuddat: ${expiresAt.slice(0, 10)}` : " (cheksiz)"}`
           : result.error,
-        { bot: getPanelBot(chatId) },
+        { bot: getPanelBot(chatId, env) },
       );
       return true;
     }
@@ -1522,14 +1532,14 @@ export async function handleBroadcastMedia(
       env,
       chatId,
       `✅ Broadcast yuborildi.\n\n${formatBroadcastJob(job)}`,
-      { bot: getPanelBot(chatId) },
+      { bot: getPanelBot(chatId, env) },
     );
   } else {
     await sendMessage(
       env,
       chatId,
       `✅ Broadcast rejalashtirildi.\n\n${formatBroadcastJob(job)}`,
-      { bot: getPanelBot(chatId) },
+      { bot: getPanelBot(chatId, env) },
     );
   }
   return true;
@@ -1557,14 +1567,14 @@ export async function skipBroadcastMedia(
       env,
       chatId,
       job ? `✅ Broadcast yuborildi.\n\n${formatBroadcastJob(job)}` : "Xato",
-      { bot: getPanelBot(chatId) },
+      { bot: getPanelBot(chatId, env) },
     );
   } else if (job) {
     await sendMessage(
       env,
       chatId,
       `✅ Rejalashtirildi.\n\n${formatBroadcastJob(job)}`,
-      { bot: getPanelBot(chatId) },
+      { bot: getPanelBot(chatId, env) },
     );
   }
   return true;
