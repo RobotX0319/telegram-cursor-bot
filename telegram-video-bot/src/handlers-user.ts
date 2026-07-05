@@ -69,7 +69,7 @@ export async function handleUserMessage(
   }
 
   if (/^\d+$/.test(text)) {
-    await sendVideoById(env, chatId, Number.parseInt(text, 10));
+    await sendVideoById(env, chatId, userId, Number.parseInt(text, 10));
     return;
   }
 
@@ -104,7 +104,7 @@ async function handleUserCommand(
       return;
 
     case "/info":
-      await handleInfo(env, chatId, args, false);
+      await handleInfo(env, chatId, userId, args, false);
       return;
 
     case "/ping":
@@ -133,8 +133,13 @@ function isVideoDocument(message: TelegramMessage): boolean {
 export async function sendVideoById(
   env: Env,
   chatId: number,
+  userId: number,
   id: number,
 ): Promise<void> {
+  if (!(await ensureSubscribed(env, chatId, userId))) {
+    return;
+  }
+
   const video = await getVideo(env, id);
 
   if (!video) {
@@ -161,10 +166,14 @@ export async function sendVideoById(
 export async function handleInfo(
   env: Env,
   chatId: number,
+  userId: number,
   args: string,
   showAdminMeta: boolean,
-  uploadedBy?: number,
 ): Promise<void> {
+  if (!showAdminMeta && !(await ensureSubscribed(env, chatId, userId))) {
+    return;
+  }
+
   if (!/^\d+$/.test(args)) {
     await sendMessage(env, chatId, "Foydalanish: /info 3");
     return;

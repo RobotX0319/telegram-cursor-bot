@@ -13,7 +13,7 @@ import { ADMIN_REPLY_KEYBOARD } from "./admin-keyboard";
 type InlineBtn = { text: string; callback_data?: string };
 
 export function subscriptionOn(config: SubscriptionConfig): boolean {
-  return config.enabled && config.channels.length > 0;
+  return config.channels.length > 0;
 }
 
 export function formatSubscriptionLines(

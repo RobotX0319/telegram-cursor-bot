@@ -226,7 +226,7 @@ async function handleAdminCommand(
       return;
 
     case "/info":
-      await handleInfo(env, chatId, args, true);
+      await handleInfo(env, chatId, userId, args, true);
       return;
 
     case "/ping":

@@ -8,7 +8,6 @@ const SUBSCRIBED_STATUSES = new Set([
   "creator",
   "administrator",
   "member",
-  "restricted",
 ]);
 
 export type { RequiredChannel };
@@ -81,7 +80,7 @@ export async function saveSubscriptionConfig(
 
 export async function getRequiredChannels(env: Env): Promise<RequiredChannel[]> {
   const config = await getSubscriptionConfig(env);
-  if (!config.enabled || config.channels.length === 0) return [];
+  if (config.channels.length === 0) return [];
 
   return config.channels.map((channel) => ({
     id: channel.id,
@@ -201,7 +200,9 @@ export async function sendSubscriptionRequired(
 ): Promise<void> {
   const channels = await getRequiredChannels(env);
   const lines = [
-    "Botdan foydalanish uchun quyidagi kanal(lar)ga obuna bo'ling:",
+    "⛔ Video olish uchun avval kanal(lar)ga obuna bo'ling.",
+    "",
+    "Obuna bo'lmagan foydalanuvchiga video berilmaydi.",
     "",
     ...channels.map((c) => `• ${c.title}`),
     "",
