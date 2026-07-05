@@ -165,7 +165,7 @@ export async function sendMessage(
             Array<{ text: string; web_app?: { url: string } }>
           >;
           resize_keyboard?: boolean;
-          persistent?: boolean;
+          is_persistent?: boolean;
         }
       | { remove_keyboard: true };
   },

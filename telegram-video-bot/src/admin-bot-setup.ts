@@ -68,7 +68,7 @@ let adminWebhookReady = false;
 
 export async function ensureDetiskebotReady(
   env: Env,
-  workerOrigin: string,
+  _workerOrigin: string,
 ): Promise<void> {
   if (adminWebhookReady) return;
 
@@ -87,9 +87,6 @@ export async function ensureDetiskebotReady(
 
   if (!hasAdminBot(env)) return;
 
-  const origin = workerOrigin.replace(/\/$/, "");
-  const secret = getWebhookSecret(env);
-  await setWebhook(adminToken, `${origin}/webhook-admin`, secret);
   await setBotCommands(env, "admin");
   await setAdminPanelMenuButton(env);
   adminWebhookReady = true;

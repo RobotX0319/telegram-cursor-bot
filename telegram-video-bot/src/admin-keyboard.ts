@@ -37,6 +37,6 @@ export function adminPanelKeyboard(env: Env, workerOrigin?: string) {
   return {
     keyboard: rows,
     resize_keyboard: true,
-    persistent: true,
+    is_persistent: true,
   };
 }
