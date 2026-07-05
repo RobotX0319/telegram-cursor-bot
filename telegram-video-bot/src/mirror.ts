@@ -9,6 +9,14 @@ type MirrorResult = {
   mirrorMessageId: number;
 } | null;
 
+export type AdminMediaDelivery = {
+  ok: true;
+  fileId: string;
+} | {
+  ok: false;
+  error: string;
+};
+
 /** Admin bot photo file_id → foydalanuvchi bot file_id. */
 export async function mirrorPhotoToUserBot(
   env: Env,
@@ -46,6 +54,54 @@ export async function mirrorFileToUserBot(
   return result?.fileId ?? null;
 }
 
+/** Admin bot faylini foydalanuvchiga to'g'ridan-to'g'ri yuborish (ko'rinadigan xabar). */
+export async function deliverMediaFromAdminFile(
+  env: Env,
+  adminFileId: string,
+  kind: "video" | "document",
+  targetChatId: number,
+  caption?: string,
+): Promise<AdminMediaDelivery> {
+  const adminToken = getAdminBotToken(env);
+  const userToken = getUserBotToken(env);
+  if (!adminToken || !userToken) {
+    return { ok: false, error: "Bot token sozlanmagan" };
+  }
+
+  const filePath = await getAdminFilePath(adminToken, adminFileId);
+  if (!filePath) {
+    return { ok: false, error: "Admin fayl topilmadi" };
+  }
+
+  const viaUrl = await sendMediaViaUrl(
+    userToken,
+    adminToken,
+    filePath,
+    kind,
+    targetChatId,
+    caption,
+    false,
+  );
+  if (viaUrl?.fileId) {
+    return { ok: true, fileId: viaUrl.fileId };
+  }
+
+  const viaDownload = await sendMediaViaDownload(
+    userToken,
+    adminToken,
+    filePath,
+    kind,
+    targetChatId,
+    caption,
+    false,
+  );
+  if (viaDownload?.fileId) {
+    return { ok: true, fileId: viaDownload.fileId };
+  }
+
+  return { ok: false, error: "Video yuborilmadi" };
+}
+
 async function mirrorFileToUserBotDetailed(
   env: Env,
   adminFileId: string,
@@ -59,21 +115,25 @@ async function mirrorFileToUserBotDetailed(
   const filePath = await getAdminFilePath(adminToken, adminFileId);
   if (!filePath) return null;
 
-  const viaUrl = await sendMirrorViaUrl(
+  const viaDownload = await sendMediaViaDownload(
     userToken,
     adminToken,
     filePath,
     kind,
     mirrorChatId,
+    undefined,
+    true,
   );
-  if (viaUrl) return viaUrl;
+  if (viaDownload) return viaDownload;
 
-  return sendMirrorViaDownload(
+  return sendMediaViaUrl(
     userToken,
     adminToken,
     filePath,
     kind,
     mirrorChatId,
+    undefined,
+    true,
   );
 }
 
@@ -91,12 +151,14 @@ async function getAdminFilePath(
   return fileInfo.result?.file_path ?? null;
 }
 
-async function sendMirrorViaUrl(
+async function sendMediaViaUrl(
   userToken: string,
   adminToken: string,
   filePath: string,
   kind: "video" | "document" | "photo",
-  mirrorChatId: number,
+  targetChatId: number,
+  caption: string | undefined,
+  silent: boolean,
 ): Promise<MirrorResult> {
   const fileUrl = `${TELEGRAM_API}/file/bot${adminToken}/${filePath}`;
   const method =
@@ -112,29 +174,37 @@ async function sendMirrorViaUrl(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      chat_id: mirrorChatId,
+      chat_id: targetChatId,
       [field]: fileUrl,
-      disable_notification: true,
+      disable_notification: silent,
+      ...(caption ? { caption } : {}),
       ...(kind === "video" ? { supports_streaming: true } : {}),
     }),
   });
 
-  return parseMirrorResponse(sendRes);
+  return parseMirrorResponse(sendRes, `${method} via URL`);
 }
 
-async function sendMirrorViaDownload(
+async function sendMediaViaDownload(
   userToken: string,
   adminToken: string,
   filePath: string,
   kind: "video" | "document" | "photo",
-  mirrorChatId: number,
+  targetChatId: number,
+  caption: string | undefined,
+  silent: boolean,
 ): Promise<MirrorResult> {
   const fileRes = await fetch(`${TELEGRAM_API}/file/bot${adminToken}/${filePath}`);
-  if (!fileRes.ok) return null;
+  if (!fileRes.ok) {
+    console.error("Admin file download failed:", fileRes.status);
+    return null;
+  }
 
   const formData = new FormData();
-  formData.append("chat_id", String(mirrorChatId));
-  formData.append("disable_notification", "true");
+  formData.append("chat_id", String(targetChatId));
+  formData.append("disable_notification", String(silent));
+  if (caption) formData.append("caption", caption);
+
   const blob = await fileRes.blob();
   if (kind === "video") {
     formData.append("video", blob, "video.mp4");
@@ -155,14 +225,16 @@ async function sendMirrorViaDownload(
     body: formData,
   });
 
-  return parseMirrorResponse(sendRes);
+  return parseMirrorResponse(sendRes, `${method} via download`);
 }
 
 async function parseMirrorResponse(
   sendRes: Response,
+  label: string,
 ): Promise<MirrorResult> {
   const sendJson = (await sendRes.json()) as {
     ok?: boolean;
+    description?: string;
     result?: {
       message_id?: number;
       chat?: { id: number };
@@ -172,7 +244,10 @@ async function parseMirrorResponse(
     };
   };
 
-  if (!sendJson.ok || !sendJson.result) return null;
+  if (!sendJson.ok || !sendJson.result) {
+    console.error(`Mirror ${label} failed:`, sendRes.status, sendJson.description);
+    return null;
+  }
 
   const fileId =
     sendJson.result.video?.file_id ??

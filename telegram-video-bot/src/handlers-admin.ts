@@ -90,7 +90,7 @@ export async function handleAdminBotMessage(
     return;
   }
 
-  if (message.video || isVideoDocument(message)) {
+  if (message.video || isVideoDocument(message) || message.animation) {
     await handleAdminUpload(env, chatId, userId, message);
     return;
   }
@@ -403,8 +403,9 @@ async function handleAdminUpload(
 ): Promise<void> {
   const video = message.video;
   const document = message.document;
+  const animation = message.animation;
 
-  if (!video && !document) {
+  if (!video && !document && !animation) {
     await sendMessage(env, chatId, "Video topilmadi. Qayta yuboring.", {
       bot: "admin",
     });
@@ -439,9 +440,13 @@ async function handleAdminUpload(
     return;
   }
 
-  const kind = video ? "video" : "document";
-  const adminFileId = video?.file_id ?? document!.file_id;
-  const adminUniqueId = video?.file_unique_id ?? document!.file_unique_id;
+  const kind = video || animation ? "video" : "document";
+  const adminFileId =
+    video?.file_id ?? animation?.file_id ?? document!.file_id;
+  const adminUniqueId =
+    video?.file_unique_id ??
+    animation?.file_unique_id ??
+    document!.file_unique_id;
   const displayCaption = title ?? undefined;
 
   const userFileId = await mirrorFileToUserBot(
@@ -451,24 +456,11 @@ async function handleAdminUpload(
     userId,
   );
 
-  if (!userFileId) {
-    await sendMessage(
-      env,
-      chatId,
-      [
-        "Video saqlanmadi.",
-        "",
-        "Avval @Detskebot da /start bosing, keyin qayta yuklang.",
-      ].join("\n"),
-      { bot: "admin" },
-    );
-    return;
-  }
-
   const stored: StoredVideo = video
     ? {
         id,
-        fileId: userFileId,
+        fileId: userFileId ?? "",
+        adminFileId,
         fileUniqueId: adminUniqueId,
         kind: "video",
         caption: displayCaption,
@@ -478,7 +470,8 @@ async function handleAdminUpload(
       }
     : {
         id,
-        fileId: userFileId,
+        fileId: userFileId ?? "",
+        adminFileId,
         fileUniqueId: adminUniqueId,
         kind: "document",
         caption: displayCaption,
@@ -508,6 +501,10 @@ async function handleAdminUpload(
     "",
     "Foydalanuvchilar @Detskebot ga shu raqamni yuboradi.",
   ];
+
+  if (!userFileId) {
+    lines.push("", "ℹ️ Video birinchi so'rovda yuboriladi.");
+  }
 
   if (adResult.ok) {
     lines.push("", "📢 Reklama kanalga yuborildi.");

@@ -3,7 +3,9 @@ import {
   deleteVideo,
   getVideo,
   listVideos,
+  saveVideo,
 } from "./storage";
+import { deliverMediaFromAdminFile } from "./mirror";
 import { sendPaymentCardsToUser } from "./admin-reply-menu";
 import {
   ensureSubscribed,
@@ -169,17 +171,44 @@ export async function sendVideoById(
 
   const caption = video.caption ? `ID: ${id}\n${video.caption}` : `ID: ${id}`;
 
-  const sent =
-    video.kind === "video"
-      ? await sendVideoByFileId(env, chatId, video.fileId, caption)
-      : await sendDocumentByFileId(env, chatId, video.fileId, caption);
+  if (video.fileId) {
+    const sent =
+      video.kind === "video"
+        ? await sendVideoByFileId(env, chatId, video.fileId, caption)
+        : await sendDocumentByFileId(env, chatId, video.fileId, caption);
 
-  if (!sent) {
+    if (sent) return;
+  }
+
+  const adminFileId = video.adminFileId ?? video.fileId;
+  if (!adminFileId) {
     await sendMessage(
       env,
       chatId,
       `Video yuborilmadi (ID: ${id}). Admin bilan bog'laning.`,
     );
+    return;
+  }
+
+  const delivered = await deliverMediaFromAdminFile(
+    env,
+    adminFileId,
+    video.kind,
+    chatId,
+    caption,
+  );
+
+  if (!delivered.ok) {
+    await sendMessage(
+      env,
+      chatId,
+      `Video yuborilmadi (ID: ${id}). Admin bilan bog'laning.`,
+    );
+    return;
+  }
+
+  if (delivered.fileId !== video.fileId) {
+    await saveVideo(env, { ...video, fileId: delivered.fileId });
   }
 }
 
