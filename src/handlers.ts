@@ -26,6 +26,8 @@ import {
   pollRunAndFormat,
 } from "./cursor";
 import {
+  TRACK_RUN_INTERVAL_MS,
+  TRACK_RUN_MAX_ATTEMPTS,
   addPendingRun,
   clearPendingForManualStatus,
   kickoffPendingPoll,
@@ -770,7 +772,13 @@ async function trackRunUntilFinished(
   await addPendingRun(env, pending);
 
   try {
-    const run = await pollRunAndFormat(env, agentId, runId, 3, 3000);
+    const run = await pollRunAndFormat(
+      env,
+      agentId,
+      runId,
+      TRACK_RUN_MAX_ATTEMPTS,
+      TRACK_RUN_INTERVAL_MS,
+    );
     if (isTerminal(run.status)) {
       await notifyIfFinished(env, pending);
     }

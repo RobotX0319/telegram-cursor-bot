@@ -1,5 +1,9 @@
 import { handleMessage } from "./handlers";
-import { continuePollingPendingRuns, processPendingRuns } from "./pending";
+import {
+  continuePollingPendingRuns,
+  listPendingRuns,
+  processPendingRuns,
+} from "./pending";
 import { pollTelegramUpdates } from "./poll";
 import {
   configureWebhookFromEnv,
@@ -63,8 +67,13 @@ export default {
         return new Response("Unauthorized", { status: 401 });
       }
 
+      const pending = await listPendingRuns(env);
       ctx.waitUntil(continuePollingPendingRuns(env, url.origin));
-      return Response.json({ ok: true, polling: true });
+      return Response.json({
+        ok: true,
+        polling: true,
+        pending: pending.length,
+      });
     }
 
     if (request.method === "GET" && url.pathname === "/admin/poll-telegram") {
@@ -106,13 +115,23 @@ export default {
   },
 
   async scheduled(
-    event: ScheduledEvent,
+    _event: ScheduledEvent,
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
-    const origin =
-      env.WORKER_PUBLIC_URL?.replace(/\/$/, "") ??
-      "https://telegram-cursor-bot.invincible-wanderer.workers.dev";
-    ctx.waitUntil(pollTelegramUpdates(env, ctx, origin));
+    const origin = env.WORKER_PUBLIC_URL?.replace(/\/$/, "") ?? "";
+    ctx.waitUntil(
+      (async () => {
+        const notified = await processPendingRuns(env);
+        if (notified > 0) {
+          console.log(`Cron poll: ${notified} ta natija yuborildi`);
+        }
+
+        const remaining = await listPendingRuns(env);
+        if (remaining.length > 0) {
+          await continuePollingPendingRuns(env, origin);
+        }
+      })(),
+    );
   },
 };

@@ -2,7 +2,7 @@ name: Poll pending agent runs
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/2 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -10,6 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check pending runs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
         run: |
-          curl -sf \
-            "https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/poll-pending?key=${{ secrets.TELEGRAM_WEBHOOK_SECRET }}"
+          BASE="https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/poll-pending"
+          BOT_ID="${TELEGRAM_BOT_TOKEN%%:*}"
+          BOOTSTRAP="tg_${BOT_ID}_bootstrap"
+
+          if [ -n "$TELEGRAM_WEBHOOK_SECRET" ]; then
+            curl -sf "$BASE?key=$TELEGRAM_WEBHOOK_SECRET" && exit 0
+          fi
+
+          if [ -n "$BOT_ID" ]; then
+            curl -sf "$BASE?key=$BOOTSTRAP" && exit 0
+          fi
+
+          echo "TELEGRAM_WEBHOOK_SECRET yoki TELEGRAM_BOT_TOKEN GitHub Secrets da kerak"
+          exit 1

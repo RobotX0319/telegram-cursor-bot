@@ -14,6 +14,11 @@ const PENDING_PREFIX = "pending:";
 const NOTIFIED_PREFIX = "notified:";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 10_000;
+/** Har bir HTTP chaqiruv ~30s limit ichida 2 marta tekshiradi, keyin zanjir davom etadi. */
+const CYCLES_PER_INVOCATION = 2;
+
+export const TRACK_RUN_MAX_ATTEMPTS = 4;
+export const TRACK_RUN_INTERVAL_MS = 5000;
 
 function resolveWorkerOrigin(env: Env, origin?: string): string {
   const url = env.WORKER_PUBLIC_URL || origin || "";
@@ -128,12 +133,20 @@ export async function continuePollingPendingRuns(
     return;
   }
 
-  await processPendingRuns(env);
+  for (let cycle = 0; cycle < CYCLES_PER_INVOCATION; cycle++) {
+    const notified = await processPendingRuns(env);
+    if (notified > 0) {
+      console.log(`Pending poll: ${notified} ta natija yuborildi`);
+    }
+
+    const remaining = await listPendingRuns(env);
+    if (remaining.length === 0) return;
+
+    await sleep(POLL_INTERVAL_MS);
+  }
 
   const remaining = await listPendingRuns(env);
   if (remaining.length === 0) return;
-
-  await sleep(POLL_INTERVAL_MS);
 
   try {
     const response = await fetch(pollPendingUrl(env, origin));
@@ -158,20 +171,26 @@ export async function kickoffPendingPoll(
     return;
   }
 
-  try {
-    const response = await fetch(pollPendingUrl(env, origin));
-    if (!response.ok) {
+  await processPendingRuns(env);
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(pollPendingUrl(env, origin));
+      if (response.ok) return;
+
       console.error(
         "Pending poll kickoff failed:",
         response.status,
         await response.text(),
       );
+    } catch (error) {
+      console.error(
+        "Pending poll kickoff failed:",
+        error instanceof Error ? error.message : String(error),
+      );
     }
-  } catch (error) {
-    console.error(
-      "Pending poll kickoff failed:",
-      error instanceof Error ? error.message : String(error),
-    );
+
+    await sleep(1000);
   }
 }
 
