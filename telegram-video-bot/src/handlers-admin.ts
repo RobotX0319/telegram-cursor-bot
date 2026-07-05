@@ -72,7 +72,7 @@ function adminBot(env: Env, userId: number): { bot: BotKind } {
 
 const ADMIN_HELP = `${ADMIN_BOT} — Admin bot
 
-🎛 /panel — boshqaruv paneli
+🎛 Admin panel — yuqori menyu (⋮) → «Admin panel»
 📤 Kino yuklash — avval ID (masalan: 5), keyin video
 📋 /list — kinolar ro'yxati
 📊 /stats — statistika
@@ -282,8 +282,10 @@ async function handleAdminCommand(
           "",
           `${ADMIN_BOT} — kino boshqaruv boti`,
           "",
-          "/panel — boshqaruv paneli",
-          "Video yuklash: ID yuboring (5), keyin video",
+          "🎛 Admin panel: yuqori o'ng ⋮ menyu → «Admin panel»",
+          "📤 Video: ID yuboring (5), keyin video",
+          "",
+          "/panel — chat ichidagi panel",
         ].join("\n"),
         { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
       );

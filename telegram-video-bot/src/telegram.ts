@@ -5,7 +5,7 @@ import {
   getBotToken,
   getUserBotToken,
 } from "./bots";
-import { getWebhookSecret } from "./config";
+import { getAdminPanelPath, getWebhookSecret } from "./config";
 import type { Env } from "./types";
 
 const TELEGRAM_API = "https://api.telegram.org";
@@ -47,6 +47,44 @@ export async function deleteBotCommands(
   if (!response.ok) {
     const body = await response.text();
     console.error(`Telegram deleteMyCommands (${kind}) failed:`, response.status, body);
+    return false;
+  }
+
+  return true;
+}
+
+export async function setAdminPanelMenuButton(env: Env): Promise<boolean> {
+  const token = getAdminBotToken(env);
+  if (!token.trim()) return false;
+
+  const origin = env.WORKER_PUBLIC_URL?.trim();
+  if (!origin) return false;
+
+  const { getAdminPanelUrl } = await import("./admin");
+  const panelUrl = getAdminPanelUrl(
+    origin,
+    getWebhookSecret(env),
+    getAdminPanelPath(env),
+  );
+
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${token}/setChatMenuButton`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        menu_button: {
+          type: "web_app",
+          text: "🎛 Admin panel",
+          web_app: { url: panelUrl },
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("setAdminPanelMenuButton failed:", response.status, body);
     return false;
   }
 
@@ -115,6 +153,10 @@ export async function setBotCommands(
 
   if (kind === "user") {
     await resetBotMenuButton(env, "user");
+  }
+
+  if (kind === "admin") {
+    await setAdminPanelMenuButton(env);
   }
 
   return true;

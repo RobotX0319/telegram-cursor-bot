@@ -1,9 +1,9 @@
 /** Admin panel — bitta tugma */
 export const BTN_PANEL = "🎛 Admin panel";
 
+/** Eski reply klaviatura o'rniga menyu tugmasi ishlatiladi */
 export const ADMIN_REPLY_KEYBOARD = {
-  keyboard: [[{ text: BTN_PANEL }]],
-  resize_keyboard: true,
+  remove_keyboard: true as const,
 };
 
 export const REPLY_BUTTON_TEXTS = new Set([BTN_PANEL]);

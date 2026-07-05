@@ -160,7 +160,8 @@ function renderAdminPage(key: string, panelPath: string): string {
 <html lang="uz">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <title>Video Bot — Admin</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -607,6 +608,10 @@ function renderAdminPage(key: string, panelPath: string): string {
       toggleSubscription(e.target.checked);
     });
     refresh();
+    if (window.Telegram && window.Telegram.WebApp) {
+      window.Telegram.WebApp.ready();
+      window.Telegram.WebApp.expand();
+    }
   </script>
 </body>
 </html>`;

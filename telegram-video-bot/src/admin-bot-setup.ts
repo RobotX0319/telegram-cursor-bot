@@ -6,6 +6,7 @@ import {
 } from "./bots";
 import {
   getBotUsername,
+  setAdminPanelMenuButton,
   setBotCommands,
   setWebhook,
 } from "./telegram";
@@ -43,6 +44,7 @@ export async function connectAdminBotToken(
 
   if (response.ok) {
     await setBotCommands(env, "admin");
+    await setAdminPanelMenuButton(env);
   }
 
   return {
@@ -89,5 +91,6 @@ export async function ensureDetiskebotReady(
   const secret = getWebhookSecret(env);
   await setWebhook(adminToken, `${origin}/webhook-admin`, secret);
   await setBotCommands(env, "admin");
+  await setAdminPanelMenuButton(env);
   adminWebhookReady = true;
 }
