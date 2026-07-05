@@ -83,6 +83,16 @@ export interface TelegramCallbackQuery {
   data?: string;
 }
 
+export interface MovieVariant {
+  label: string;
+  fileId: string;
+  adminFileId?: string;
+  fileUniqueId: string;
+  kind: "video" | "document";
+  mimeType?: string;
+  fileName?: string;
+}
+
 export interface StoredVideo {
   id: number;
   fileId: string;
@@ -94,6 +104,73 @@ export interface StoredVideo {
   mimeType?: string;
   uploadedBy: number;
   uploadedAt: string;
+  name?: string;
+  description?: string;
+  posterFileId?: string;
+  year?: number;
+  genre?: string;
+  variants?: MovieVariant[];
+  views?: number;
+  updatedAt?: string;
+}
+
+export interface StoredUser {
+  id: number;
+  firstSeen: string;
+  lastSeen: string;
+  name?: string;
+  username?: string;
+  videosWatched: number;
+  blocked: boolean;
+  blockedAt?: string;
+  blockedBy?: number;
+}
+
+export interface VipRecord {
+  userId: string;
+  expiresAt?: string;
+  addedBy: number;
+  addedAt: string;
+  note?: string;
+}
+
+export interface BotTexts {
+  welcome: string;
+  help: string;
+  notFound: string;
+  blocked: string;
+  deliveryMessages: string[];
+}
+
+export type AdminRole = "super" | "admin";
+
+export interface AdminRecord {
+  userId: number;
+  role: AdminRole;
+  name?: string;
+  addedAt: string;
+  addedBy: number;
+}
+
+export interface AdminLogEntry {
+  id: string;
+  adminId: number;
+  action: string;
+  detail?: string;
+  at: string;
+}
+
+export interface BroadcastJob {
+  id: string;
+  text: string;
+  mediaFileId?: string;
+  mediaType?: "photo" | "video";
+  target: "all" | "vip";
+  scheduledAt?: string;
+  status: "pending" | "running" | "done" | "cancelled";
+  stats: { total: number; sent: number; failed: number };
+  createdBy: number;
+  createdAt: string;
 }
 
 export interface StoredChannel {

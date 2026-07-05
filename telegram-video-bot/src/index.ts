@@ -1,11 +1,12 @@
 import { handleAdminRequest } from "./admin";
 import { ensureBotTokens, hasAdminBot } from "./bots";
 import { getWebhookSecret, isAdminPanelPath } from "./config";
-import { handleAdminBotCallback } from "./admin-panel-bot";
+import { handleAdminBotCallback } from "./panel";
 import { handleAdminBotMessage } from "./handlers-admin";
 import { handleCallbackQuery, handleUserMessage } from "./handlers-user";
 import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
 import { resetBotData, resetBotFully } from "./reset";
+import { processDueBroadcasts } from "./broadcast";
 import type { Env, TelegramUpdate } from "./types";
 
 export default {
@@ -101,7 +102,12 @@ export default {
       }
 
       if (update.message) {
-        ctx.waitUntil(handleUserMessage(env, update.message));
+        ctx.waitUntil(
+          (async () => {
+            await processDueBroadcasts(env);
+            await handleUserMessage(env, update.message!);
+          })(),
+        );
       }
 
       if (update.callback_query) {
@@ -130,7 +136,10 @@ export default {
 
       if (update.message) {
         ctx.waitUntil(
-          handleAdminBotMessage(env, update.message, url.origin),
+          (async () => {
+            await processDueBroadcasts(env);
+            await handleAdminBotMessage(env, update.message!, url.origin);
+          })(),
         );
       }
 

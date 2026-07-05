@@ -1,26 +1,30 @@
 import {
   countActiveUsers,
+  countNewUsersInPeriod,
+  countNewUsersThisMonth,
   getBotStats,
+  topNotFound,
   topUsers,
 } from "./analytics";
+import { getTopMovies, movieName } from "./content";
 import { countVideos, listVideos } from "./storage";
 import {
   getChannelMemberStats,
   getSubscriptionConfig,
   subscriptionActive,
 } from "./subscription";
-import { listVipUserIds } from "./vip";
+import { listVipRecords } from "./vip";
 import type { Env } from "./types";
 
 export async function buildAdminStatsText(env: Env): Promise<string> {
-  const [total, videos, sub, stats, channelStats, vipCount] =
+  const [total, videos, sub, stats, channelStats, vipRecords] =
     await Promise.all([
       countVideos(env),
       listVideos(env),
       getSubscriptionConfig(env),
       getBotStats(env),
       getChannelMemberStats(env),
-      listVipUserIds(env),
+      listVipRecords(env),
     ]);
 
   let lastUpload = "—";
@@ -34,18 +38,22 @@ export async function buildAdminStatsText(env: Env): Promise<string> {
   const activeUsers = countActiveUsers(stats, 7);
   const totalUsers = Object.keys(stats.users).length;
   const top = topUsers(stats, 3);
+  const notFound = topNotFound(stats, 5);
+  const topMovies = await getTopMovies(env, 5);
 
   const lines = [
     "📊 Bot statistikasi",
     "",
-    "🎬 Videolar",
+    "🎬 Kinolar",
     `  Jami: ${total}`,
     `  Oxirgi yuklash: ${lastUpload}`,
     "",
     "👥 Foydalanuvchilar",
-    `  Bot foydalanuvchilari: ${totalUsers}`,
+    `  Jami: ${totalUsers}`,
     `  Faol (7 kun): ${activeUsers}`,
-    `  Video so'rovlar: ${stats.totalVideoRequests}`,
+    `  Yangi (30 kun): ${countNewUsersInPeriod(stats, 30)}`,
+    `  Bu oy: ${countNewUsersThisMonth(stats)}`,
+    `  So'rovlar: ${stats.totalVideoRequests}`,
     `  Yetkazilgan: ${stats.totalVideoDelivered}`,
     "",
     "📢 Obuna",
@@ -53,7 +61,7 @@ export async function buildAdminStatsText(env: Env): Promise<string> {
     `  Kanallar: ${sub.channels.length}`,
     `  Tekshiruvlar: ${stats.subscriptionChecks}`,
     `  O'tgan: ${stats.subscriptionPassed}`,
-    `  ⭐ VIP: ${vipCount.length}`,
+    `  ⭐ VIP: ${vipRecords.length}`,
   ];
 
   if (channelStats.length > 0) {
@@ -68,11 +76,25 @@ export async function buildAdminStatsText(env: Env): Promise<string> {
     }
   }
 
+  if (topMovies.length > 0) {
+    lines.push("", "🏆 Top kinolar:");
+    for (const m of topMovies) {
+      lines.push(`  #${m.id} ${movieName(m)} — 👁${m.views ?? 0}`);
+    }
+  }
+
+  if (notFound.length > 0) {
+    lines.push("", "❌ Ko'p qidirilgan (topilmadi):");
+    for (const n of notFound) {
+      lines.push(`  Kod ${n.code} — ${n.count} marta`);
+    }
+  }
+
   if (top.length > 0) {
-    lines.push("", "🏆 Top ko'ruvchilar:");
+    lines.push("", "👤 Top ko'ruvchilar:");
     for (const u of top) {
       const name = u.name ?? u.username ?? "Foydalanuvchi";
-      lines.push(`  🥇 ${name} — ${u.videos} ta video`);
+      lines.push(`  ${name} — ${u.videos} ta`);
     }
   }
 
@@ -80,25 +102,29 @@ export async function buildAdminStatsText(env: Env): Promise<string> {
 }
 
 export async function getAdminStatsJson(env: Env): Promise<Record<string, unknown>> {
-  const [total, sub, stats, channelStats, vipCount] = await Promise.all([
+  const [total, sub, stats, channelStats, vipRecords] = await Promise.all([
     countVideos(env),
     getSubscriptionConfig(env),
     getBotStats(env),
     getChannelMemberStats(env),
-    listVipUserIds(env),
+    listVipRecords(env),
   ]);
 
   return {
     videos: total,
     users: Object.keys(stats.users).length,
     activeUsers7d: countActiveUsers(stats, 7),
+    newUsers30d: countNewUsersInPeriod(stats, 30),
+    newUsersMonth: countNewUsersThisMonth(stats),
     videoRequests: stats.totalVideoRequests,
     videoDelivered: stats.totalVideoDelivered,
     subscriptionChecks: stats.subscriptionChecks,
     subscriptionPassed: stats.subscriptionPassed,
+    notFoundTop: topNotFound(stats, 10),
     subscription: sub,
     channelStats,
-    vipCount: vipCount.length,
+    vipCount: vipRecords.length,
     topUsers: topUsers(stats, 5),
+    topMovies: await getTopMovies(env, 10),
   };
 }

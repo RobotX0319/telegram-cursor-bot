@@ -1,13 +1,5 @@
-import {
-  ADMIN_REPLY_KEYBOARD,
-  BTN_CARDS,
-  BTN_CHANNELS,
-  BTN_PANEL,
-  BTN_SUBSCRIPTION,
-  BTN_VIDEO,
-  BTN_VIP,
-} from "./admin-keyboard";
-import { sendAdminPanel } from "./admin-panel-bot";
+import { ADMIN_REPLY_KEYBOARD, BTN_PANEL } from "./admin-keyboard";
+import { sendAdminPanel } from "./panel";
 import {
   clearAdminState,
   getAdminState,
@@ -23,42 +15,12 @@ import { sendMessage } from "./telegram";
 import { removeRequiredChannel } from "./subscription";
 import {
   addChannelFromText,
-  formatSubscriptionLines,
-  getSubscriptionSummary,
-  removeChannelByIndex,
-  startChannelAddFlow,
-  subscriptionInlineKeyboard,
   subscriptionOn,
 } from "./subscription-ui";
-import {
-  channelsMenuInlineKeyboard,
-  formatChannelsMenuLines,
-  getChannelsMenuData,
-  startAdChannelFlow,
-} from "./ad-channel-ui";
 import { setAdChannel } from "./ad-channel";
-import { addVipUser, listVipUserIds, removeVipUser } from "./vip";
+import { addVipUser, removeVipUser } from "./vip";
+import { handlePanelStateInput } from "./panel";
 import type { Env } from "./types";
-
-type InlineBtn = { text: string; callback_data?: string };
-
-function withKeyboard(
-  text: string,
-  inline?: InlineBtn[][],
-): {
-  text: string;
-  replyMarkup:
-    | { inline_keyboard: InlineBtn[][] }
-    | typeof ADMIN_REPLY_KEYBOARD;
-} {
-  if (inline) {
-    return {
-      text,
-      replyMarkup: { inline_keyboard: inline },
-    };
-  }
-  return { text, replyMarkup: ADMIN_REPLY_KEYBOARD };
-}
 
 export async function handleReplyButton(
   env: Env,
@@ -67,152 +29,11 @@ export async function handleReplyButton(
   text: string,
   workerOrigin: string,
 ): Promise<boolean> {
-  switch (text.trim()) {
-    case BTN_VIDEO:
-      await showVideoUploadHelp(env, chatId);
-      return true;
-    case BTN_SUBSCRIPTION:
-      await showSubscriptionMenu(env, chatId);
-      return true;
-    case BTN_CHANNELS:
-      await showChannelsMenu(env, chatId, userId);
-      return true;
-    case BTN_VIP:
-      await showVipMenu(env, chatId);
-      return true;
-    case BTN_CARDS:
-      await showCardsMenu(env, chatId, userId);
-      return true;
-    case BTN_PANEL:
-      await sendAdminPanel(env, chatId, workerOrigin);
-      return true;
-    default:
-      return false;
+  if (text.trim() === BTN_PANEL) {
+    await sendAdminPanel(env, chatId, workerOrigin);
+    return true;
   }
-}
-
-async function showVideoUploadHelp(env: Env, chatId: number): Promise<void> {
-  const msg = withKeyboard(
-    [
-      "📤 Video yuklash",
-      "",
-      "1) Avval ID raqam yuboring: 5",
-      "2) Ixtiyoriy: reklama rasm shablon yuboring",
-      "3) Keyin videoni yuboring",
-      "",
-      "Yoki videoga caption: 5",
-      "yoki: 5 | Film nomi",
-      "",
-      "Reklama kanal: 📡 Kanallar sozlamalari",
-    ].join("\n"),
-  );
-  await sendMessage(env, chatId, msg.text, {
-    bot: "admin",
-    replyMarkup: msg.replyMarkup,
-  });
-}
-
-async function showSubscriptionMenu(env: Env, chatId: number): Promise<void> {
-  const { config, vipCount } = await getSubscriptionSummary(env);
-  const msg = withKeyboard(
-    formatSubscriptionLines(config, vipCount).join("\n"),
-    subscriptionInlineKeyboard(config),
-  );
-
-  await sendMessage(env, chatId, msg.text, {
-    bot: "admin",
-    replyMarkup: msg.replyMarkup,
-  });
-}
-
-async function showChannelsMenu(
-  env: Env,
-  chatId: number,
-  _userId: number,
-): Promise<void> {
-  const { subConfig, adConfig, vipCount } = await getChannelsMenuData(env);
-  const msg = withKeyboard(
-    formatChannelsMenuLines(subConfig, adConfig, vipCount).join("\n"),
-    channelsMenuInlineKeyboard(subConfig, adConfig),
-  );
-
-  await sendMessage(env, chatId, msg.text, {
-    bot: "admin",
-    replyMarkup: msg.replyMarkup,
-  });
-}
-
-async function showVipMenu(env: Env, chatId: number): Promise<void> {
-  const { config, vipCount } = await getSubscriptionSummary(env);
-  const ids = await listVipUserIds(env);
-  const vipLines =
-    ids.length === 0
-      ? ["VIP mijoz yo'q."]
-      : ids.map((id, i) => `${i + 1}. ${id}`);
-
-  const inline: InlineBtn[][] = [
-    [{ text: "➕ VIP qo'shish", callback_data: "adm:vip:add" }],
-    [{ text: "📋 VIP ro'yxati", callback_data: "adm:vip:list" }],
-    [{ text: "➕ Kanal qo'shish", callback_data: "adm:ch:add" }],
-    ...subscriptionInlineKeyboard(config).filter(
-      (row) => !row.some((b) => b.callback_data === "adm:ch:add"),
-    ),
-  ];
-
-  const msg = withKeyboard(
-    [
-      "⭐ VIP & Majburiy obuna",
-      "",
-      ...vipLines,
-      "",
-      `Obuna: ${subscriptionOn(config) ? "✅ Yoniq" : "⏸ O'chiq"}`,
-      `Kanallar: ${config.channels.length}`,
-      "",
-      "VIP — kanalga obuna bo'lmasdan video oladi.",
-      "Oddiy foydalanuvchi — kanalga obuna bo'lishi shart.",
-    ].join("\n"),
-    inline,
-  );
-
-  await sendMessage(env, chatId, msg.text, {
-    bot: "admin",
-    replyMarkup: msg.replyMarkup,
-  });
-}
-
-async function showCardsMenu(
-  env: Env,
-  chatId: number,
-  userId: number,
-): Promise<void> {
-  const cards = await listPaymentCards(env);
-  const lines =
-    cards.length === 0
-      ? ["Karta/havola yo'q."]
-      : cards.map((c) => `${c.id}. ${c.title}\n   ${c.value}`);
-
-  await setAdminState(env, userId, "await_card");
-
-  const msg = withKeyboard(
-    [
-      "💳 Karta ulash",
-      "",
-      "To'lov kartalari yoki havolalar (@Detskebot da ko'rsatiladi).",
-      "",
-      ...lines,
-      "",
-      "➕ Qo'shish: Nomi | 8600123456789012",
-      "   yoki: Nomi | https://...",
-      "➖ O'chirish: o'chirish 1",
-      "",
-      "Bekor: /cancel",
-    ].join("\n"),
-  );
-
-  await sendMessage(env, chatId, msg.text, {
-    bot: "admin",
-    replyMarkup: msg.replyMarkup,
-  });
+  return false;
 }
 
 export async function handleAdminStateInput(
@@ -227,6 +48,15 @@ export async function handleAdminStateInput(
       bot: "admin",
       replyMarkup: ADMIN_REPLY_KEYBOARD,
     });
+    return true;
+  }
+
+  if (text.toLowerCase() === "/skip") {
+    const { skipBroadcastMedia } = await import("./panel");
+    if (await skipBroadcastMedia(env, chatId, userId)) return true;
+  }
+
+  if (await handlePanelStateInput(env, chatId, userId, text)) {
     return true;
   }
 
@@ -319,7 +149,7 @@ async function handleAdChannelInput(
     [
       `✅ Reklama kanali ulandi: ${result.config.channelTitle ?? result.config.channelId}`,
       "",
-      "Endi 🖼 Rasm shablon yuboring (Kanallar sozlamalari).",
+      "Endi 🖼 Rasm shablon yuboring (Sozlamalar → Reklama).",
     ].join("\n"),
     { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
@@ -341,7 +171,7 @@ async function handleVipAddInput(
   }
 
   const id = Number.parseInt(text.trim(), 10);
-  const result = await addVipUser(env, id);
+  const result = await addVipUser(env, id, userId);
   await clearAdminState(env, userId);
   await sendMessage(
     env,
@@ -450,36 +280,17 @@ export async function startVipAddFlow(
 }
 
 export async function sendVipList(env: Env, chatId: number): Promise<void> {
-  const ids = await listVipUserIds(env);
+  const { listVipRecords, formatVipRecord } = await import("./vip");
+  const records = await listVipRecords(env);
   const text =
-    ids.length === 0
+    records.length === 0
       ? "VIP ro'yxat bo'sh."
-      : ["VIP mijozlar:", "", ...ids.map((id) => `• ${id}`)].join("\n");
+      : ["VIP mijozlar:", "", ...records.map(formatVipRecord)].join("\n");
   await sendMessage(env, chatId, text, {
     bot: "admin",
     replyMarkup: ADMIN_REPLY_KEYBOARD,
   });
 }
-
-export async function sendChannelsMenu(
-  env: Env,
-  chatId: number,
-): Promise<void> {
-  const { subConfig, adConfig, vipCount } = await getChannelsMenuData(env);
-  await sendMessage(
-    env,
-    chatId,
-    formatChannelsMenuLines(subConfig, adConfig, vipCount).join("\n"),
-    {
-      bot: "admin",
-      replyMarkup: {
-        inline_keyboard: channelsMenuInlineKeyboard(subConfig, adConfig),
-      },
-    },
-  );
-}
-
-export { startAdChannelFlow, startAdTemplateFlow } from "./ad-channel-ui";
 
 export async function sendPaymentCardsToUser(
   env: Env,
@@ -495,3 +306,5 @@ export async function sendPaymentCardsToUser(
   ];
   await sendMessage(env, chatId, lines.join("\n"));
 }
+
+export { startAdChannelFlow, startAdTemplateFlow } from "./ad-channel-ui";

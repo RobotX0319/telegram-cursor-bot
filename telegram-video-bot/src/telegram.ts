@@ -22,12 +22,12 @@ export const USER_BOT_COMMANDS = [
 export const ADMIN_BOT_COMMANDS = [
   { command: "start", description: "Admin botni boshlash" },
   { command: "help", description: "Yordam" },
-  { command: "id", description: "Keyingi video ID si" },
-  { command: "list", description: "Videolar ro'yxati" },
-  { command: "delete", description: "Video o'chirish" },
+  { command: "panel", description: "Admin panel" },
+  { command: "id", description: "Keyingi kino ID si" },
+  { command: "list", description: "Kinolar ro'yxati" },
+  { command: "delete", description: "Kino o'chirish" },
   { command: "stats", description: "Statistika" },
-  { command: "panel", description: "Admin panel (bot ichida)" },
-  { command: "info", description: "Video haqida ma'lumot" },
+  { command: "info", description: "Kino haqida" },
   { command: "ping", description: "Tekshirish" },
 ] as const;
 

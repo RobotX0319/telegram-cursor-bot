@@ -1,5 +1,5 @@
 import { ADMIN_REPLY_KEYBOARD, isReplyButton } from "./admin-keyboard";
-import { sendAdminPanel } from "./admin-panel-bot";
+import { sendAdminPanel, handleBroadcastMedia } from "./panel";
 import {
   handleAdminStateInput,
   handleReplyButton,
@@ -18,6 +18,8 @@ import { resetBotData, resetBotFully } from "./reset";
 import {
   clearAdminState,
   getAdminState,
+  peekBulkId,
+  popBulkId,
 } from "./admin-state";
 import {
   clearPendingAdTemplate,
@@ -41,15 +43,10 @@ import type { Env, StoredVideo, TelegramMessage } from "./types";
 
 const ADMIN_HELP = `Admin bot — @Detiskebot
 
-📤 Video yuklash — pastki panel
-📢 Majburiy obuna — yoqish/o'chirish
-📡 Kanallar — obuna + reklama
-⭐ VIP mijozlar — obunasiz foydalanadi
-💳 Karta ulash — to'lov kartalari
-
-Video ID: avval 5, keyin rasm (ixtiyoriy), keyin video
-/reset RESET — ma'lumotlarni o'chirish (tokenlar qoladi)
-/reset FULL — butun tizimni o'chirish (0 dan yangi)
+🎛 /panel — to'liq admin panel
+📤 Video yuklash — ID yuboring, keyin video
+/reset RESET — ma'lumotlarni tozalash
+/reset FULL — butun tizimni yangilash
 /cancel — bekor qilish
 
 Foydalanuvchilar: @Detskebot`;
@@ -95,6 +92,15 @@ export async function handleAdminBotMessage(
   }
 
   if (message.video || isVideoDocument(message) || message.animation) {
+    const state = await getAdminState(env, userId);
+    if (state?.mode === "await_broadcast_media") {
+      const fileId =
+        message.video?.file_id ??
+        message.animation?.file_id ??
+        message.document!.file_id;
+      await handleBroadcastMedia(env, chatId, userId, fileId, "video");
+      return;
+    }
     await handleAdminUpload(env, chatId, userId, message);
     return;
   }
@@ -159,7 +165,7 @@ export async function handleAdminBotMessage(
   await sendMessage(
     env,
     chatId,
-    "Pastki panel tugmalaridan foydalaning yoki video ID yuboring.\n\n/help — yordam",
+    "🎛 Admin panel: /panel\n\nVideo yuklash: ID yuboring (masalan: 5), keyin video.\n\n/help — yordam",
     { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
 }
@@ -180,7 +186,7 @@ async function handleAdminCommand(
       await sendMessage(
         env,
         chatId,
-        "Salom, admin!\n\nPastki panel orqali boshqaring.",
+        "Salom, admin!\n\n/panel — boshqaruv paneli",
         { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
       await sendAdminPanel(env, chatId, workerOrigin);
@@ -407,13 +413,19 @@ async function handleAdminPhoto(
   const photos = message.photo!;
   const largest = photos[photos.length - 1]!;
 
+  if (state?.mode === "await_broadcast_media") {
+    await handleBroadcastMedia(env, chatId, userId, largest.file_id, "photo");
+    return;
+  }
+
   if (state?.mode === "await_ad_template") {
     await saveAdminImageTemplate(env, chatId, userId, largest.file_id, "global");
     return;
   }
 
   const pendingId = await getPendingVideoId(env, userId);
-  if (pendingId !== null) {
+  const bulkId = await peekBulkId(env, userId);
+  if (pendingId !== null || bulkId !== null) {
     await saveAdminImageTemplate(env, chatId, userId, largest.file_id, "upload");
     return;
   }
@@ -423,7 +435,7 @@ async function handleAdminPhoto(
     chatId,
     [
       "Reklama rasmi uchun avval video ID yuboring: 5",
-      "yoki 📡 Kanallar sozlamalari → 🖼 Rasm shablon",
+      "yoki Sozlamalar → Reklama → Rasm shablon",
     ].join("\n"),
     { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
@@ -454,6 +466,9 @@ async function resolveUploadId(
   const pending = await getPendingVideoId(env, userId);
   if (pending !== null) return { id: pending };
 
+  const bulk = await peekBulkId(env, userId);
+  if (bulk !== null) return { id: bulk };
+
   return null;
 }
 
@@ -482,13 +497,16 @@ async function handleAdminUpload(
       [
         "Video uchun ID kerak.",
         "",
-        "📤 Video yuklash tugmasini bosing yoki",
-        "avval raqam yuboring: 5",
+        "ID yuboring: 5",
+        "yoki /panel → Toplu yuklash",
       ].join("\n"),
       { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return;
   }
+
+  const hadPending = (await getPendingVideoId(env, userId)) !== null;
+  const usedBulk = !hadPending && (await peekBulkId(env, userId)) !== null;
 
   const { id, title } = resolved;
   const slot = await resolveExistingVideoForUpload(env, id);
@@ -556,10 +574,12 @@ async function handleAdminUpload(
         adminFileId,
         fileUniqueId: adminUniqueId,
         kind: "video",
+        name: displayCaption,
         caption: displayCaption,
         mimeType: "video/mp4",
         uploadedBy: userId,
         uploadedAt: new Date().toISOString(),
+        views: 0,
       }
     : {
         id,
@@ -567,16 +587,20 @@ async function handleAdminUpload(
         adminFileId,
         fileUniqueId: adminUniqueId,
         kind: "document",
+        name: displayCaption,
         caption: displayCaption,
         fileName: document!.file_name,
         mimeType: document!.mime_type,
         uploadedBy: userId,
         uploadedAt: new Date().toISOString(),
+        views: 0,
       };
 
   await saveVideo(env, stored);
   await ensureCounterAtLeast(env, id);
   await clearPendingVideoId(env, userId);
+
+  const bulkNext = await popBulkId(env, userId);
 
   const pendingTemplate = await getPendingAdTemplate(env, userId);
   const adResult = await postVideoAd(
@@ -612,6 +636,10 @@ async function handleAdminUpload(
 
   if (displayCaption) {
     lines.push("", displayCaption);
+  }
+
+  if (bulkNext !== null) {
+    lines.push("", `📦 Keyingi ID: ${bulkNext} — videoni yuboring.`);
   }
 
   await sendMessage(env, chatId, lines.join("\n"), {

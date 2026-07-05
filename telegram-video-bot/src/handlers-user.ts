@@ -1,9 +1,12 @@
 import {
+  trackNotFound,
   trackUserStart,
   trackVideoDelivered,
   trackVideoRequest,
 } from "./analytics";
+import { incrementMovieViews, movieName } from "./content";
 import { deliverMediaFromAdminFile } from "./mirror";
+import { applyTextTemplate, getBotTexts } from "./settings";
 import { removeBrokenVideo, isVideoPlayable } from "./video-health";
 import { sendPaymentCardsToUser } from "./admin-reply-menu";
 import {
@@ -14,7 +17,6 @@ import {
   handleSubscriptionCheck,
   sendSubscriptionRequired,
 } from "./subscription";
-import { buildAdminStatsText } from "./stats";
 import {
   countVideos,
   deleteVideo,
@@ -22,6 +24,7 @@ import {
   listVideos,
   saveVideo,
 } from "./storage";
+import { isUserBlocked, syncUser, trackUserVideo } from "./users";
 import {
   answerCallbackQuery,
   sendDocumentByFileId,
@@ -30,23 +33,9 @@ import {
 } from "./telegram";
 import type { Env, TelegramCallbackQuery, TelegramMessage } from "./types";
 
-const DELIVERY_MESSAGES = [
-  "🎬 Tayyor! Yoqimli tomosha!",
-  "🔥 Mana video — zavqlan!",
-  "✨ Sizning videongiz yetkazildi!",
-  "🍿 Tomosha qiling!",
-  "🚀 Video tayyor — yoqimli vaqt!",
-];
-
-const USER_HELP = `🎬 Video bot — @Detskebot
-
-📌 Qanday ishlaydi:
-• 1, 2, 3 ... yuboring — video olasiz
-• /info 3 — video haqida
-• /check — obunani tekshirish
-• /karta — to'lov kartalari
-
-👑 Admin: @Detiskebot`;
+const USER_START_KEYBOARD = {
+  remove_keyboard: true as const,
+};
 
 const ADMIN_ONLY_COMMANDS = new Set([
   "/panel",
@@ -58,14 +47,8 @@ const ADMIN_ONLY_COMMANDS = new Set([
   "/vipremove",
 ]);
 
-const USER_START_KEYBOARD = {
-  remove_keyboard: true,
-};
-
-function pickDeliveryMessage(): string {
-  return DELIVERY_MESSAGES[
-    Math.floor(Math.random() * DELIVERY_MESSAGES.length)
-  ]!;
+function pickDeliveryMessage(messages: string[]): string {
+  return messages[Math.floor(Math.random() * messages.length)]!;
 }
 
 function isPublicCommand(text: string): boolean {
@@ -81,6 +64,16 @@ export async function handleUserMessage(
   const chatId = message.chat.id;
 
   if (!userId) return;
+
+  if (message.from) {
+    await syncUser(env, message.from);
+  }
+
+  if (await isUserBlocked(env, userId)) {
+    const texts = await getBotTexts(env);
+    await sendMessage(env, chatId, texts.blocked);
+    return;
+  }
 
   const text = message.text?.trim();
 
@@ -117,7 +110,7 @@ export async function handleUserMessage(
   await sendMessage(
     env,
     chatId,
-    "🎯 Video olish uchun raqam yuboring.\nMasalan: 1\n\n/help — yordam",
+    "🎯 Kino olish uchun raqam yuboring.\nMasalan: 1\n\n/help — yordam",
   );
 }
 
@@ -131,6 +124,7 @@ async function handleUserCommand(
   const [command, ...rest] = text.split(/\s+/);
   const args = rest.join(" ").trim();
   const cmd = command.toLowerCase().split("@")[0];
+  const texts = await getBotTexts(env);
 
   switch (cmd) {
     case "/start":
@@ -139,7 +133,7 @@ async function handleUserCommand(
       return;
 
     case "/help":
-      await sendMessage(env, chatId, USER_HELP);
+      await sendMessage(env, chatId, texts.help);
       return;
 
     case "/info":
@@ -181,26 +175,17 @@ async function sendWelcome(
   const sub = await getSubscriptionConfig(env);
   const channels = await getRequiredChannels(env);
   const result = await checkUserSubscription(env, userId);
+  const texts = await getBotTexts(env);
 
-  const lines = [
-    "👋 Salom! @Detskebot ga xush kelibsiz!",
-    "",
-    `🎬 Kutubxonada ${total} ta video bor`,
-    "",
-  ];
+  let welcome = applyTextTemplate(texts.welcome, { total });
 
   if (channels.length > 0 && sub.enabled) {
-    lines.push(
-      result.subscribed
-        ? "✅ Obuna tasdiqlangan — video olishingiz mumkin!"
-        : "📢 Avval kanalga obuna bo'ling 👇",
-      "",
-    );
+    welcome += result.subscribed
+      ? "\n\n✅ Obuna tasdiqlangan — kino olishingiz mumkin!"
+      : "\n\n📢 Avval kanalga obuna bo'ling 👇";
   }
 
-  lines.push("Video olish: raqam yuboring (masalan: 1)");
-
-  await sendMessage(env, chatId, lines.join("\n"), {
+  await sendMessage(env, chatId, welcome, {
     replyMarkup: USER_START_KEYBOARD,
   });
 
@@ -230,7 +215,13 @@ export async function sendVideoById(
   const video = await getVideo(env, id);
 
   if (!video) {
-    await sendMessage(env, chatId, `❌ Video topilmadi: ${id}`);
+    await trackNotFound(env, id);
+    const texts = await getBotTexts(env);
+    await sendMessage(
+      env,
+      chatId,
+      applyTextTemplate(texts.notFound, { code: id }),
+    );
     return;
   }
 
@@ -240,14 +231,13 @@ export async function sendVideoById(
     await sendMessage(
       env,
       chatId,
-      `❌ Video (ID: ${id}) ishlamaydi va o'chirildi.\nAdmin yangi video yuklaydi.`,
+      `❌ Kino (ID: ${id}) ishlamaydi va o'chirildi.\nAdmin yangi kino yuklaydi.`,
     );
     return;
   }
 
-  const caption = video.caption
-    ? `🎬 ID: ${id}\n${video.caption}`
-    : `🎬 ID: ${id}`;
+  const title = movieName(video);
+  const caption = `🎬 ID: ${id}\n${title}`;
 
   let delivered = false;
 
@@ -265,7 +255,7 @@ export async function sendVideoById(
       await sendMessage(
         env,
         chatId,
-        `❌ Video (ID: ${id}) topilmadi va o'chirildi.`,
+        `❌ Kino (ID: ${id}) topilmadi va o'chirildi.`,
       );
       return;
     }
@@ -283,7 +273,7 @@ export async function sendVideoById(
       await sendMessage(
         env,
         chatId,
-        `❌ Video (ID: ${id}) yuborilmadi va o'chirildi.\nAdmin qayta yuklaydi.`,
+        `❌ Kino (ID: ${id}) yuborilmadi va o'chirildi.\nAdmin qayta yuklaydi.`,
       );
       return;
     }
@@ -296,7 +286,10 @@ export async function sendVideoById(
 
   if (delivered) {
     await trackVideoDelivered(env, userId);
-    await sendMessage(env, chatId, pickDeliveryMessage());
+    await trackUserVideo(env, userId);
+    await incrementMovieViews(env, id);
+    const texts = await getBotTexts(env);
+    await sendMessage(env, chatId, pickDeliveryMessage(texts.deliveryMessages));
   }
 }
 
@@ -320,45 +313,38 @@ export async function handleInfo(
   const video = await getVideo(env, id);
 
   if (!video) {
-    await sendMessage(env, chatId, `Video topilmadi: ${id}`);
+    await sendMessage(env, chatId, `Kino topilmadi: ${id}`);
     return;
   }
 
-  const title = video.caption ?? video.fileName ?? "Video";
+  const { formatMovieInfo } = await import("./content");
   const lines = [
-    `🎬 Video #${video.id}`,
-    `📌 ${title}`,
-    `📁 Turi: ${video.kind}`,
-    video.mimeType ? `🎞 ${video.mimeType}` : null,
-    `📅 ${formatDate(video.uploadedAt)}`,
+    formatMovieInfo(video, showAdminMeta),
+    "",
+    "Olish uchun shu raqamni yuboring 👆",
   ];
 
   if (showAdminMeta) {
-    lines.push(`👤 Admin ID: ${video.uploadedBy}`);
+    lines.splice(1, 0, `👤 Admin ID: ${video.uploadedBy}`);
   }
 
-  lines.push("", "Olish uchun shu raqamni yuboring 👆");
-
-  await sendMessage(env, chatId, lines.filter(Boolean).join("\n"));
+  await sendMessage(env, chatId, lines.join("\n"));
 }
 
 export async function handleList(env: Env, chatId: number): Promise<void> {
   const videos = await listVideos(env);
 
   if (videos.length === 0) {
-    await sendMessage(env, chatId, "Hozircha video yo'q.", { bot: "admin" });
+    await sendMessage(env, chatId, "Hozircha kino yo'q.", { bot: "admin" });
     return;
   }
 
-  const lines = videos.map((video) => {
-    const title = video.caption ?? video.fileName ?? "Video";
-    return `${video.id}. ${title}`;
-  });
+  const lines = videos.map((video) => `${video.id}. ${movieName(video)}`);
 
   await sendMessage(
     env,
     chatId,
-    ["Videolar:", "", ...lines].join("\n"),
+    ["Kinolar:", "", ...lines].join("\n"),
     { bot: "admin" },
   );
 }
@@ -377,14 +363,15 @@ export async function handleDelete(
   const deleted = await deleteVideo(env, id);
 
   if (!deleted) {
-    await sendMessage(env, chatId, `Video topilmadi: ${id}`, { bot: "admin" });
+    await sendMessage(env, chatId, `Kino topilmadi: ${id}`, { bot: "admin" });
     return;
   }
 
-  await sendMessage(env, chatId, `Video o'chirildi: ${id}`, { bot: "admin" });
+  await sendMessage(env, chatId, `Kino o'chirildi: ${id}`, { bot: "admin" });
 }
 
 export async function handleStats(env: Env, chatId: number): Promise<void> {
+  const { buildAdminStatsText } = await import("./stats");
   const text = await buildAdminStatsText(env);
   await sendMessage(env, chatId, text, { bot: "admin" });
 }
@@ -408,7 +395,7 @@ export async function handleCallbackQuery(
     return;
   }
 
-  if (data.startsWith("adm:")) {
+  if (data.startsWith("adm:") || data.startsWith("p:")) {
     await answerCallbackQuery(env, query.id);
     return;
   }
@@ -427,7 +414,7 @@ export async function handleCallbackQuery(
       [
         "🎉 Zo'r! Obuna tasdiqlandi!",
         "",
-        "Endi video ID yuboring 🎬",
+        "Endi kino ID yuboring 🎬",
         "Masalan: 1",
       ].join("\n"),
     );

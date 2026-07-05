@@ -16,6 +16,7 @@ export interface BotStats {
   totalVideoDelivered: number;
   subscriptionChecks: number;
   subscriptionPassed: number;
+  notFoundCounts: Record<string, number>;
   users: Record<string, UserStat>;
 }
 
@@ -26,6 +27,7 @@ function emptyStats(): BotStats {
     totalVideoDelivered: 0,
     subscriptionChecks: 0,
     subscriptionPassed: 0,
+    notFoundCounts: {},
     users: {},
   };
 }
@@ -116,4 +118,42 @@ export function topUsers(stats: BotStats, limit = 5): UserStat[] {
   return Object.values(stats.users)
     .sort((a, b) => b.videos - a.videos)
     .slice(0, limit);
+}
+
+export async function trackNotFound(
+  env: Env,
+  code: number,
+): Promise<void> {
+  const stats = await getBotStats(env);
+  const key = String(code);
+  stats.notFoundCounts[key] = (stats.notFoundCounts[key] ?? 0) + 1;
+  await saveBotStats(env, stats);
+}
+
+export function topNotFound(
+  stats: BotStats,
+  limit = 10,
+): Array<{ code: string; count: number }> {
+  return Object.entries(stats.notFoundCounts ?? {})
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
+export function countNewUsersInPeriod(
+  stats: BotStats,
+  days: number,
+): number {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  return Object.values(stats.users).filter(
+    (u) => new Date(u.firstSeen).getTime() >= cutoff,
+  ).length;
+}
+
+export function countNewUsersThisMonth(stats: BotStats): number {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  return Object.values(stats.users).filter(
+    (u) => new Date(u.firstSeen).getTime() >= monthStart,
+  ).length;
 }
