@@ -1,5 +1,5 @@
 import { handleAdminRequest } from "./admin";
-import { ensureBotTokens, hasAdminBot } from "./bots";
+import { ensureBotTokens, hasAdminBot, saveBotTokens } from "./bots";
 import {
   connectAdminBotToken,
   ensureDetiskebotReady,
@@ -73,6 +73,29 @@ export default {
       }
       const result = await connectAdminBotToken(env, url.origin, body.token);
       return Response.json(result, { status: result.ok ? 200 : 500 });
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/set-admins") {
+      const key = url.searchParams.get("key");
+      if (!key || key !== getWebhookSecret(env)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      let body: { adminIds?: string };
+      try {
+        body = (await request.json()) as { adminIds?: string };
+      } catch {
+        return Response.json({ ok: false, error: "JSON kerak" }, { status: 400 });
+      }
+      if (body.adminIds === undefined) {
+        return Response.json({ ok: false, error: "adminIds kerak" }, { status: 400 });
+      }
+      const ids = body.adminIds.trim();
+      if (!ids) {
+        await env.VIDEOS.delete("config:admin_ids");
+      } else {
+        await saveBotTokens(env, { adminIds: ids });
+      }
+      return Response.json({ ok: true, adminIds: ids || null });
     }
 
     if (request.method === "GET" && url.pathname === "/admin/setup-webhook") {

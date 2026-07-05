@@ -58,8 +58,13 @@ export async function saveBotTokens(
   if (tokens.adminToken?.trim()) {
     await env.VIDEOS.put(KV_ADMIN_TOKEN, tokens.adminToken.trim());
   }
-  if (tokens.adminIds?.trim()) {
-    await env.VIDEOS.put(KV_ADMIN_IDS, tokens.adminIds.trim());
+  if (tokens.adminIds !== undefined) {
+    const trimmed = tokens.adminIds.trim();
+    if (trimmed) {
+      await env.VIDEOS.put(KV_ADMIN_IDS, trimmed);
+    } else {
+      await env.VIDEOS.delete(KV_ADMIN_IDS);
+    }
   }
   invalidateBotTokenCache();
   await ensureBotTokens(env);

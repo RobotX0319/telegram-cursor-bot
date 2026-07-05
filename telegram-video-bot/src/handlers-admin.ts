@@ -123,7 +123,8 @@ export async function handleAdminBotMessage(
         "",
         `Sizning ID: ${userId}`,
         "",
-        "Video olish: @Detskebot",
+        "/meningid — ID ko'rish",
+        "/adminol — o'zingizni admin qilish (birinchi marta)",
       ].join("\n"),
       { bot: adminMsgBot.get(userId) ?? replyBot(env, userId) },
     );
@@ -222,6 +223,56 @@ async function handleAdminCommand(
   const cmd = command.toLowerCase().split("@")[0];
 
   switch (cmd) {
+    case "/meningid":
+      await sendMessage(
+        env,
+        chatId,
+        `🆔 Sizning Telegram ID: \`${userId}\``,
+        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId) },
+      );
+      return;
+
+    case "/adminol": {
+      const kvAdmins = await env.VIDEOS.get(KV_ADMIN_IDS);
+      if (kvAdmins?.trim() && !(await isAdmin(env, userId))) {
+        await saveBotTokens(env, { adminIds: String(userId) });
+        await sendMessage(
+          env,
+          chatId,
+          [
+            "✅ Siz admin qilib qo'shildingiz!",
+            "",
+            "/panel — boshqaruv paneli",
+            "Video: ID (masalan 5), keyin video yuboring",
+          ].join("\n"),
+          {
+            bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
+            replyMarkup: ADMIN_REPLY_KEYBOARD,
+          },
+        );
+        await sendAdminPanel(env, chatId, workerOrigin, botKind);
+        return;
+      }
+      if (await isAdmin(env, userId)) {
+        await sendMessage(env, chatId, "✅ Siz allaqachon adminsiz.", {
+          bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
+        });
+        return;
+      }
+      await saveBotTokens(env, { adminIds: String(userId) });
+      await sendMessage(
+        env,
+        chatId,
+        "✅ Admin ro'yxatiga qo'shildingiz! /panel yuboring.",
+        {
+          bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
+          replyMarkup: ADMIN_REPLY_KEYBOARD,
+        },
+      );
+      await sendAdminPanel(env, chatId, workerOrigin, botKind);
+      return;
+    }
+
     case "/start":
       await sendMessage(
         env,

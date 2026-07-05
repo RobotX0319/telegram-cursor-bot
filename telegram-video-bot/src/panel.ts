@@ -72,7 +72,7 @@ import {
   listVipRecords,
   removeVipUser,
 } from "./vip";
-import { hasAdminBot, type BotKind } from "./bots";
+import { hasAdminBot, isAdmin, type BotKind } from "./bots";
 import type { Env } from "./types";
 
 const PAGE = 6;
@@ -348,6 +348,12 @@ export async function handleAdminBotCallback(
     return;
   }
 
+  if (!(await isAdmin(env, adminId))) {
+    await answerCallbackQuery(env, query.id, "Ruxsat yo'q. /adminol yuboring.", "admin");
+    return;
+  }
+
+  setPanelBot(chatId, "admin");
   const answerBot =
     parsePanelCallback(rawData, chatId, env).botKind === "user" ? "user" : "admin";
   await answerCallbackQuery(env, query.id, undefined, answerBot);

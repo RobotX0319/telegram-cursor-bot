@@ -23,6 +23,8 @@ export const ADMIN_BOT_COMMANDS = [
   { command: "start", description: "Admin botni boshlash" },
   { command: "help", description: "Yordam" },
   { command: "panel", description: "Admin panel" },
+  { command: "adminol", description: "Admin bo'lish" },
+  { command: "meningid", description: "Telegram ID" },
   { command: "id", description: "Keyingi kino ID si" },
   { command: "list", description: "Kinolar ro'yxati" },
   { command: "delete", description: "Kino o'chirish" },
