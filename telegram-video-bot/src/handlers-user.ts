@@ -1,12 +1,9 @@
-import { getAdminPanelPath, getWebhookSecret } from "./config";
 import {
   countVideos,
   deleteVideo,
   getVideo,
   listVideos,
 } from "./storage";
-import { getAdminPanelUrl } from "./admin";
-import { sendAdminPanel } from "./admin-panel-bot";
 import { sendPaymentCardsToUser } from "./admin-reply-menu";
 import {
   ensureSubscribed,
@@ -31,6 +28,20 @@ const USER_HELP = `Video bot — @Detskebot
 - /karta — to'lov kartalari
 
 Adminlar uchun: @Detiskebot`;
+
+const ADMIN_ONLY_COMMANDS = new Set([
+  "/panel",
+  "/list",
+  "/delete",
+  "/stats",
+  "/id",
+  "/upload",
+  "/vipremove",
+]);
+
+const USER_START_KEYBOARD = {
+  remove_keyboard: true,
+};
 
 export async function handleUserMessage(
   env: Env,
@@ -96,6 +107,7 @@ async function handleUserCommand(
         env,
         chatId,
         "Salom! Video olish uchun ID yuboring.\nMasalan: 1\n\n/help — yordam",
+        { replyMarkup: USER_START_KEYBOARD },
       );
       return;
 
@@ -120,6 +132,14 @@ async function handleUserCommand(
       return;
 
     default:
+      if (ADMIN_ONLY_COMMANDS.has(cmd)) {
+        await sendMessage(
+          env,
+          chatId,
+          "Bu buyruq faqat admin botda: @Detiskebot",
+        );
+        return;
+      }
       await sendMessage(env, chatId, "Noma'lum buyruq. /help");
   }
 }
@@ -258,38 +278,25 @@ export function formatDate(iso: string): string {
   return date.toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
 }
 
-export async function handlePanel(
-  env: Env,
-  chatId: number,
-  workerOrigin: string,
-): Promise<void> {
-  const url = getAdminPanelUrl(
-    workerOrigin,
-    getWebhookSecret(env),
-    getAdminPanelPath(env),
-  );
-  await sendMessage(
-    env,
-    chatId,
-    [
-      "Admin panel:",
-      url,
-      "",
-      "Videolarni ko'rish va o'chirish mumkin.",
-      "Havolani hech kimga bermang.",
-    ].join("\n"),
-    { bot: "admin" },
-  );
-}
-
 export async function handleCallbackQuery(
   env: Env,
   query: TelegramCallbackQuery,
 ): Promise<void> {
   const userId = query.from.id;
   const chatId = query.message?.chat.id;
+  const data = query.data;
 
-  if (!chatId || query.data !== "check_sub") {
+  if (!chatId || !data) {
+    await answerCallbackQuery(env, query.id);
+    return;
+  }
+
+  if (data.startsWith("adm:")) {
+    await answerCallbackQuery(env, query.id);
+    return;
+  }
+
+  if (data !== "check_sub") {
     await answerCallbackQuery(env, query.id);
     return;
   }

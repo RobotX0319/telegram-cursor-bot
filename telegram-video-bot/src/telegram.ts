@@ -31,6 +31,64 @@ export const ADMIN_BOT_COMMANDS = [
   { command: "ping", description: "Tekshirish" },
 ] as const;
 
+export async function deleteBotCommands(
+  env: Env,
+  kind: BotKind,
+): Promise<boolean> {
+  const token = getBotToken(env, kind);
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/deleteMyCommands`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error(`Telegram deleteMyCommands (${kind}) failed:`, response.status, body);
+    return false;
+  }
+
+  return true;
+}
+
+export async function resetBotMenuButton(
+  env: Env,
+  kind: BotKind,
+): Promise<boolean> {
+  const token = getBotToken(env, kind);
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${token}/setChatMenuButton`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ menu_button: { type: "default" } }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error(`Telegram setChatMenuButton (${kind}) failed:`, response.status, body);
+    return false;
+  }
+
+  return true;
+}
+
+export async function getBotUsername(
+  env: Env,
+  kind: BotKind,
+): Promise<string | null> {
+  const token = getBotToken(env, kind);
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/getMe`);
+  if (!response.ok) return null;
+
+  const data = (await response.json()) as {
+    ok?: boolean;
+    result?: { username?: string };
+  };
+  return data.ok && data.result?.username ? `@${data.result.username}` : null;
+}
+
 export async function setBotCommands(
   env: Env,
   kind: BotKind,
@@ -38,6 +96,8 @@ export async function setBotCommands(
   const token = getBotToken(env, kind);
   const commands =
     kind === "admin" ? ADMIN_BOT_COMMANDS : USER_BOT_COMMANDS;
+
+  await deleteBotCommands(env, kind);
 
   const response = await fetch(`${TELEGRAM_API}/bot${token}/setMyCommands`, {
     method: "POST",
@@ -49,6 +109,10 @@ export async function setBotCommands(
     const body = await response.text();
     console.error(`Telegram setMyCommands (${kind}) failed:`, response.status, body);
     return false;
+  }
+
+  if (kind === "user") {
+    await resetBotMenuButton(env, "user");
   }
 
   return true;
@@ -69,7 +133,8 @@ export async function sendMessage(
       | {
           keyboard: Array<Array<{ text: string }>>;
           resize_keyboard?: boolean;
-        };
+        }
+      | { remove_keyboard: true };
   },
 ): Promise<void> {
   const token = getBotToken(env, options?.bot ?? "user");
@@ -244,8 +309,8 @@ export async function configureWebhookFromEnv(
   env: Env,
   workerOrigin: string,
 ): Promise<{
-  user: { ok: boolean; status: number; body: string };
-  admin?: { ok: boolean; status: number; body: string };
+  user: { ok: boolean; status: number; body: string; username?: string | null };
+  admin?: { ok: boolean; status: number; body: string; username?: string | null };
 }> {
   await ensureBotTokens(env);
   const origin = workerOrigin.replace(/\/$/, "");
@@ -259,18 +324,21 @@ export async function configureWebhookFromEnv(
     secret,
   );
   const userBody = await userResponse.text();
+  let userUsername: string | null = null;
   if (userResponse.ok) {
     await setBotCommands(env, "user");
+    userUsername = await getBotUsername(env, "user");
   }
 
   const result: {
-    user: { ok: boolean; status: number; body: string };
-    admin?: { ok: boolean; status: number; body: string };
+    user: { ok: boolean; status: number; body: string; username?: string | null };
+    admin?: { ok: boolean; status: number; body: string; username?: string | null };
   } = {
     user: {
       ok: userResponse.ok,
       status: userResponse.status,
       body: userBody,
+      username: userUsername,
     },
   };
 
@@ -282,13 +350,16 @@ export async function configureWebhookFromEnv(
       secret,
     );
     const adminBody = await adminResponse.text();
+    let adminUsername: string | null = null;
     if (adminResponse.ok) {
       await setBotCommands(env, "admin");
+      adminUsername = await getBotUsername(env, "admin");
     }
     result.admin = {
       ok: adminResponse.ok,
       status: adminResponse.status,
       body: adminBody,
+      username: adminUsername,
     };
   }
 

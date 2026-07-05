@@ -54,5 +54,7 @@ jobs:
       - name: Setup webhook and commands
         if: success()
         run: |
-          curl -sf \
-            "https://telegram-video-bot.fxjournaluz.workers.dev/admin/setup-webhook?key=${{ secrets.TELEGRAM_VIDEO_WEBHOOK_SECRET || secrets.TELEGRAM_WEBHOOK_SECRET || 'my-super-secret-abc123' }}"
+          KEY="${{ secrets.TELEGRAM_VIDEO_WEBHOOK_SECRET || secrets.TELEGRAM_WEBHOOK_SECRET || 'my-super-secret-abc123' }}"
+          BASE="https://telegram-video-bot.fxjournaluz.workers.dev"
+          curl -sf "${BASE}/admin/setup-webhook?key=${KEY}"
+          curl -sf "${BASE}/admin/setup-commands?key=${KEY}"
