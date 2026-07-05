@@ -1,3 +1,4 @@
+import { getWebhookSecret } from "./config";
 import {
   countVideos,
   deleteVideo,
@@ -351,7 +352,7 @@ async function handlePanel(
   chatId: number,
   workerOrigin: string,
 ): Promise<void> {
-  const url = getAdminPanelUrl(workerOrigin, env.TELEGRAM_WEBHOOK_SECRET);
+  const url = getAdminPanelUrl(workerOrigin, getWebhookSecret(env));
   await sendMessage(
     env,
     chatId,

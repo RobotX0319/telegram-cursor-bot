@@ -1,3 +1,4 @@
+import { getWebhookSecret } from "./config";
 import type { Env } from "./types";
 
 const TELEGRAM_API = "https://api.telegram.org";
@@ -164,7 +165,7 @@ export async function configureWebhookFromEnv(
   const response = await setWebhook(
     env.TELEGRAM_BOT_TOKEN,
     webhookUrl,
-    env.TELEGRAM_WEBHOOK_SECRET,
+    getWebhookSecret(env),
   );
   const body = await response.text();
   const commandsSet = response.ok ? await setBotCommands(env) : false;

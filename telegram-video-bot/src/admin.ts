@@ -1,3 +1,4 @@
+import { getWebhookSecret } from "./config";
 import { countVideos, deleteVideo, listVideos } from "./storage";
 import {
   addRequiredChannel,
@@ -9,7 +10,7 @@ import type { Env } from "./types";
 
 function isAuthorized(url: URL, env: Env): boolean {
   const key = url.searchParams.get("key");
-  return Boolean(key && key === env.TELEGRAM_WEBHOOK_SECRET);
+  return Boolean(key && key === getWebhookSecret(env));
 }
 
 export async function handleAdminRequest(

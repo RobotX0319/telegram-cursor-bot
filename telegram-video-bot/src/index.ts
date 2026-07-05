@@ -1,4 +1,5 @@
 import { handleAdminRequest } from "./admin";
+import { getWebhookSecret } from "./config";
 import { handleCallbackQuery, handleMessage } from "./handlers";
 import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
@@ -21,7 +22,7 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/admin/setup-webhook") {
       const key = url.searchParams.get("key");
-      if (!key || key !== env.TELEGRAM_WEBHOOK_SECRET) {
+      if (!key || key !== getWebhookSecret(env)) {
         return new Response("Unauthorized", { status: 401 });
       }
 
@@ -36,7 +37,7 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/admin/setup-commands") {
       const key = url.searchParams.get("key");
-      if (!key || key !== env.TELEGRAM_WEBHOOK_SECRET) {
+      if (!key || key !== getWebhookSecret(env)) {
         return new Response("Unauthorized", { status: 401 });
       }
 
@@ -50,7 +51,7 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/webhook") {
       const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
-      if (!secret || secret !== env.TELEGRAM_WEBHOOK_SECRET) {
+      if (!secret || secret !== getWebhookSecret(env)) {
         return new Response("Unauthorized", { status: 401 });
       }
 

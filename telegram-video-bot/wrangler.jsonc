@@ -6,7 +6,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "ENVIRONMENT": "production",
-    "WORKER_PUBLIC_URL": "https://telegram-video-bot.fxjournaluz.workers.dev"
+    "WORKER_PUBLIC_URL": "https://telegram-video-bot.fxjournaluz.workers.dev",
+    "WEBHOOK_KEY": "my-super-secret-abc123"
   },
   "kv_namespaces": [
     {
