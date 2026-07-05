@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleMessage } from "../src/handlers";
@@ -6,6 +6,11 @@ import { setBotCommands } from "../src/telegram";
 import type { Env } from "../src/types";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const heartbeatPath = resolve(root, ".heartbeat");
+
+function touchHeartbeat(): void {
+  writeFileSync(heartbeatPath, String(Date.now()));
+}
 
 function loadVars(): Record<string, string> {
   const vars: Record<string, string> = {};
@@ -41,10 +46,12 @@ async function main(): Promise<void> {
 
   await deleteWebhook(vars.TELEGRAM_BOT_TOKEN);
   await setBotCommands(env);
+  touchHeartbeat();
   console.log("✅ @Glabalashganbot echo bot ishga tushdi.");
 
   let offset = 0;
   while (true) {
+    touchHeartbeat();
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 60_000);
@@ -64,16 +71,32 @@ async function main(): Promise<void> {
       );
       clearTimeout(timer);
 
-      const data = (await response.json()) as {
+      const raw = await response.text();
+      let data: {
         ok: boolean;
+        error_code?: number;
+        description?: string;
         result: Array<{
           update_id: number;
           message?: import("../src/types").TelegramUpdate["message"];
         }>;
       };
 
-      if (!data.ok) {
-        console.error("getUpdates failed:", data);
+      try {
+        data = JSON.parse(raw) as typeof data;
+      } catch {
+        console.error("getUpdates javob xato:", response.status, raw);
+        await sleep(3000);
+        continue;
+      }
+
+      if (!response.ok || !data.ok) {
+        if (data.error_code === 409 || response.status === 409) {
+          console.error("Polling ziddiyat (409) — 10s kutamiz");
+          await sleep(10_000);
+          continue;
+        }
+        console.error("getUpdates failed:", response.status, data);
         await sleep(3000);
         continue;
       }
