@@ -5,7 +5,7 @@ import { handleAdminBotCallback } from "./admin-panel-bot";
 import { handleAdminBotMessage } from "./handlers-admin";
 import { handleCallbackQuery, handleUserMessage } from "./handlers-user";
 import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
-import { resetBotData } from "./reset";
+import { resetBotData, resetBotFully } from "./reset";
 import type { Env, TelegramUpdate } from "./types";
 
 export default {
@@ -64,14 +64,20 @@ export default {
       if (!key || key !== getWebhookSecret(env)) {
         return new Response("Unauthorized", { status: 401 });
       }
-      if (confirm !== "RESET") {
+      if (confirm !== "RESET" && confirm !== "FULL") {
         return Response.json(
-          { ok: false, error: "confirm=RESET kerak" },
+          {
+            ok: false,
+            error: "confirm=RESET (ma'lumot) yoki confirm=FULL (to'liq) kerak",
+          },
           { status: 400 },
         );
       }
 
-      const result = await resetBotData(env);
+      const result =
+        confirm === "FULL"
+          ? await resetBotFully(env)
+          : await resetBotData(env);
       await configureWebhookFromEnv(env, url.origin);
 
       return Response.json({ ok: true, ...result });

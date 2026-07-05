@@ -1,6 +1,7 @@
+import { invalidateBotTokenCache } from "./bots";
 import type { Env } from "./types";
 
-const KEEP_KEYS = new Set([
+const TOKEN_KEYS = new Set([
   "config:user_bot_token",
   "config:admin_bot_token",
   "config:admin_ids",
@@ -10,10 +11,18 @@ export interface BotResetResult {
   deleted: number;
   kept: string[];
   errors: string[];
+  mode: "data" | "full";
 }
 
-/** Barcha bot ma'lumotlarini o'chiradi (tokenlar va admin ID saqlanadi). */
-export async function resetBotData(env: Env): Promise<BotResetResult> {
+export interface ResetOptions {
+  /** true = KV dagi hamma narsa o'chiriladi (tokenlar ham) */
+  full?: boolean;
+}
+
+async function deleteAllKvKeys(
+  env: Env,
+  keepKeys: Set<string>,
+): Promise<Omit<BotResetResult, "mode">> {
   const kept: string[] = [];
   const errors: string[] = [];
   let deleted = 0;
@@ -22,7 +31,7 @@ export async function resetBotData(env: Env): Promise<BotResetResult> {
   do {
     const page = await env.VIDEOS.list({ cursor, limit: 1000 });
     for (const key of page.keys) {
-      if (KEEP_KEYS.has(key.name)) {
+      if (keepKeys.has(key.name)) {
         kept.push(key.name);
         continue;
       }
@@ -37,4 +46,28 @@ export async function resetBotData(env: Env): Promise<BotResetResult> {
   } while (cursor);
 
   return { deleted, kept, errors };
+}
+
+/** Ma'lumotlarni o'chiradi. full=true bo'lsa KV to'liq tozalanadi. */
+export async function resetBotData(
+  env: Env,
+  options: ResetOptions = {},
+): Promise<BotResetResult> {
+  const full = options.full ?? false;
+  const keepKeys = full ? new Set<string>() : TOKEN_KEYS;
+  const result = await deleteAllKvKeys(env, keepKeys);
+
+  if (full) {
+    invalidateBotTokenCache();
+  }
+
+  return {
+    ...result,
+    mode: full ? "full" : "data",
+  };
+}
+
+/** Butun KV — 0 dan yangi boshlash. */
+export async function resetBotFully(env: Env): Promise<BotResetResult> {
+  return resetBotData(env, { full: true });
 }

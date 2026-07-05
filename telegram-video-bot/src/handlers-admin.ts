@@ -14,7 +14,7 @@ import {
 import { mirrorFileToUserBot, mirrorPhotoToUserBot } from "./mirror";
 import { postVideoAd, setAdTemplate } from "./ad-channel";
 import { resolveExistingVideoForUpload, adminFileExists } from "./video-health";
-import { resetBotData } from "./reset";
+import { resetBotData, resetBotFully } from "./reset";
 import {
   clearAdminState,
   getAdminState,
@@ -48,7 +48,8 @@ const ADMIN_HELP = `Admin bot — @Detiskebot
 💳 Karta ulash — to'lov kartalari
 
 Video ID: avval 5, keyin rasm (ixtiyoriy), keyin video
-/reset RESET — hamma ma'lumotni o'chirish (0 dan)
+/reset RESET — ma'lumotlarni o'chirish (tokenlar qoladi)
+/reset FULL — butun tizimni o'chirish (0 dan yangi)
 /cancel — bekor qilish
 
 Foydalanuvchilar: @Detskebot`;
@@ -265,35 +266,58 @@ async function handleAdminCommand(
       return;
 
     case "/reset": {
-      if (args.toUpperCase() !== "RESET") {
+      const mode = args.toUpperCase();
+      if (mode !== "RESET" && mode !== "FULL") {
         await sendMessage(
           env,
           chatId,
           [
-            "⚠️ Botni 0 dan boshlash",
+            "⚠️ Tizimni yangilash",
             "",
-            "O'chadi: videolar, kanallar, VIP, kartalar, statistika, reklama",
-            "Saqlanadi: bot tokenlari, admin ID",
+            "/reset RESET — videolar, kanallar, VIP, statistika o'chiriladi. Tokenlar qoladi.",
             "",
-            "Tasdiqlash: /reset RESET",
+            "/reset FULL — butun tizim KV dan to'liq o'chiriladi (tokenlar ham). Keyin botlarni qayta ulash kerak.",
+            "",
+            "Tasdiqlash: /reset RESET yoki /reset FULL",
           ].join("\n"),
           { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
         );
         return;
       }
-      const result = await resetBotData(env);
+      const full = mode === "FULL";
       await sendMessage(
         env,
         chatId,
-        [
-          "🗑 Bot tozalandi — 0 dan boshlaysiz!",
-          "",
-          `O'chirildi: ${result.deleted} ta yozuv`,
-          "",
-          "Endi:",
-          "1) Kanallar sozlamalari",
-          "2) Video yuklash (ID: 1 dan)",
-        ].join("\n"),
+        full ? "⏳ Butun tizim to'liq o'chirilmoqda..." : "⏳ Ma'lumotlar tozalanmoqda...",
+        { bot: "admin" },
+      );
+      const result = full ? await resetBotFully(env) : await resetBotData(env);
+      await sendMessage(
+        env,
+        chatId,
+        full
+          ? [
+              "✅ Butun tizim yangilandi!",
+              "",
+              `O'chirildi: ${result.deleted} ta yozuv (tokenlar ham)`,
+              result.errors.length ? `⚠️ Xato: ${result.errors.length} ta` : "",
+              "",
+              "Keyingi qadamlar:",
+              "1) Bot tokenlarini qayta ulang",
+              "2) Kanallarni sozlang",
+              "3) Videolarni ID 1 dan yuklang",
+            ]
+              .filter(Boolean)
+              .join("\n")
+          : [
+              "🗑 Bot tozalandi — 0 dan boshlaysiz!",
+              "",
+              `O'chirildi: ${result.deleted} ta yozuv`,
+              "",
+              "Endi:",
+              "1) Kanallar sozlamalari",
+              "2) Video yuklash (ID: 1 dan)",
+            ].join("\n"),
         { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
       return;
