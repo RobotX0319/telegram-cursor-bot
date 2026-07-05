@@ -21,6 +21,49 @@ function authHeaders(token: string): HeadersInit {
   };
 }
 
+async function getAuthenticatedUser(
+  token: string,
+): Promise<{ login: string }> {
+  const res = await fetch(`${GITHUB_API}/user`, {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `GitHub token noto'g'ri ${res.status}: ${await res.text()}`,
+    );
+  }
+  return res.json() as Promise<{ login: string }>;
+}
+
+async function isGitHubOrganization(
+  token: string,
+  name: string,
+): Promise<boolean> {
+  const res = await fetch(`${GITHUB_API}/orgs/${name}`, {
+    headers: authHeaders(token),
+  });
+  return res.ok;
+}
+
+async function resolveRepoOwner(
+  token: string,
+  configuredOwner: string | undefined,
+): Promise<{ owner: string; useOrgApi: boolean }> {
+  const authUser = await getAuthenticatedUser(token);
+  const configured = configuredOwner?.trim();
+
+  if (!configured || configured === authUser.login) {
+    return { owner: authUser.login, useOrgApi: false };
+  }
+
+  if (await isGitHubOrganization(token, configured)) {
+    return { owner: configured, useOrgApi: true };
+  }
+
+  // GITHUB_OWNER org emas (masalan shaxsiy username) — token egasi ostida yaratamiz
+  return { owner: authUser.login, useOrgApi: false };
+}
+
 export async function createUserGitHubRepo(
   env: Env,
   userId: number | string,
@@ -32,15 +75,18 @@ export async function createUserGitHubRepo(
     );
   }
 
-  const owner = env.GITHUB_OWNER?.trim() || "RobotX0319";
+  const { owner, useOrgApi } = await resolveRepoOwner(
+    token,
+    env.GITHUB_OWNER,
+  );
   const name = userRepoName(userId);
-  const url = `https://github.com/${owner}/${name}`;
 
   const check = await fetch(`${GITHUB_API}/repos/${owner}/${name}`, {
     headers: authHeaders(token),
   });
 
   if (check.ok) {
+    const url = `https://github.com/${owner}/${name}`;
     return { url, name, created: false };
   }
 
@@ -49,37 +95,42 @@ export async function createUserGitHubRepo(
     throw new Error(`GitHub repo tekshiruvi ${check.status}: ${body}`);
   }
 
-  const createRes = await fetch(`${GITHUB_API}/user/repos`, {
-    method: "POST",
-    headers: authHeaders(token),
-    body: JSON.stringify({
-      name,
-      description: `Telegram bot + web interface workspace (user ${userId})`,
-      private: true,
-      auto_init: true,
-      has_issues: false,
-    }),
-  });
+  const body = {
+    name,
+    description: `Telegram bot + web interface workspace (user ${userId})`,
+    private: true,
+    auto_init: true,
+    has_issues: false,
+  };
 
-  if (!createRes.ok) {
-    const orgRes = await fetch(`${GITHUB_API}/orgs/${owner}/repos`, {
+  const createRes = await fetch(
+    useOrgApi
+      ? `${GITHUB_API}/orgs/${owner}/repos`
+      : `${GITHUB_API}/user/repos`,
+    {
       method: "POST",
       headers: authHeaders(token),
-      body: JSON.stringify({
-        name,
-        description: `Telegram bot + web interface workspace (user ${userId})`,
-        private: true,
-        auto_init: true,
-      }),
-    });
+      body: JSON.stringify(body),
+    },
+  );
 
-    if (!orgRes.ok) {
-      const body = await orgRes.text();
-      throw new Error(`GitHub repo yaratilmadi ${orgRes.status}: ${body}`);
-    }
+  if (!createRes.ok) {
+    const errBody = await createRes.text();
+    throw new Error(
+      `GitHub repo yaratilmadi ${createRes.status}: ${errBody}\n` +
+        `(Owner: ${owner}, API: ${useOrgApi ? "org" : "user"}. Token ga 'repo' ruxsati kerak.)`,
+    );
   }
 
-  await seedUserRepoFiles(env, token, owner, name, userId);
+  const created = (await createRes.json()) as {
+    html_url?: string;
+    owner?: { login?: string };
+  };
+  const finalOwner = created.owner?.login ?? owner;
+  const url =
+    created.html_url ?? `https://github.com/${finalOwner}/${name}`;
+
+  await seedUserRepoFiles(env, token, finalOwner, name, userId);
 
   return { url, name, created: true };
 }
@@ -199,7 +250,8 @@ GitHub Actions \`main\` branch push dan keyin Cloudflare ga deploy qiladi.
         main: "src/index.ts",
         compatibility_date: "2026-04-01",
         compatibility_flags: ["nodejs_compat"],
-        account_id: env.CLOUDFLARE_ACCOUNT_ID || "4450cffd4f25491cc797dd112824bc72",
+        account_id:
+          env.CLOUDFLARE_ACCOUNT_ID || "4450cffd4f25491cc797dd112824bc72",
         vars: { ENVIRONMENT: "production", USER_ID: String(userId) },
       },
       null,
