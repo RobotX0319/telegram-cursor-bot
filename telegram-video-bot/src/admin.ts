@@ -1,4 +1,5 @@
 import { getAdminPanelPath, getWebhookSecret } from "./config";
+import { saveBotTokens } from "./bots";
 import { countVideos, deleteVideo, listVideos } from "./storage";
 import {
   addRequiredChannel,
@@ -24,6 +25,26 @@ export async function handleAdminRequest(
   }
 
   const panelPath = getAdminPanelPath(env);
+
+  if (request.method === "POST" && url.pathname === `${panelPath}/api/bootstrap/tokens`) {
+    let body: { userToken?: string; adminToken?: string; adminIds?: string };
+    try {
+      body = (await request.json()) as {
+        userToken?: string;
+        adminToken?: string;
+        adminIds?: string;
+      };
+    } catch {
+      return Response.json({ ok: false, error: "JSON kerak" }, { status: 400 });
+    }
+
+    if (!body.userToken?.trim() && !body.adminToken?.trim() && !body.adminIds?.trim()) {
+      return Response.json({ ok: false, error: "Kamida bitta maydon kerak" }, { status: 400 });
+    }
+
+    await saveBotTokens(env, body);
+    return Response.json({ ok: true });
+  }
 
   if (request.method === "GET" && url.pathname === `${panelPath}/api/subscription`) {
     const config = await getSubscriptionConfig(env);

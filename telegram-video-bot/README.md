@@ -120,6 +120,23 @@ GitHub repo **Settings → Secrets** ga qo'shing:
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 | `TELEGRAM_WEBHOOK_SECRET` | Webhook secret (deploydan keyin webhook yangilanadi) |
 
+## Ikki bot (foydalanuvchi + admin)
+
+| Bot | Vazifa |
+|-----|--------|
+| Foydalanuvchi bot (`TELEGRAM_BOT_TOKEN`) | Video olish: `1`, `2`, `3` |
+| Admin bot (`TELEGRAM_ADMIN_BOT_TOKEN`) | Video yuklash, `/panel`, `/list`, `/delete` |
+
+Webhook yo'llari: `/webhook` (foydalanuvchi), `/webhook-admin` (admin).
+
+Tokenlarni KV ga saqlash (bootstrap):
+
+```bash
+curl -X POST "https://telegram-video-bot.<account>.workers.dev/admin1/api/bootstrap/tokens?key=SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"userToken":"...","adminToken":"...","adminIds":"123456789"}'
+```
+
 ## Admin panel
 
 Brauzerda videolarni ko'rish va o'chirish:

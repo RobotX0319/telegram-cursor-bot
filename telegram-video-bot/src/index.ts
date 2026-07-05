@@ -1,6 +1,8 @@
 import { handleAdminRequest } from "./admin";
+import { ensureBotTokens, hasAdminBot } from "./bots";
 import { getWebhookSecret, isAdminPanelPath } from "./config";
-import { handleCallbackQuery, handleMessage } from "./handlers";
+import { handleAdminBotMessage } from "./handlers-admin";
+import { handleCallbackQuery, handleUserMessage } from "./handlers-user";
 import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
 
@@ -11,12 +13,17 @@ export default {
     ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url);
+    await ensureBotTokens(env);
 
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json({
         ok: true,
         service: "telegram-video-bot",
         environment: env.ENVIRONMENT ?? "unknown",
+        bots: {
+          user: Boolean(env.TELEGRAM_BOT_TOKEN),
+          admin: hasAdminBot(env),
+        },
       });
     }
 
@@ -41,8 +48,12 @@ export default {
         return new Response("Unauthorized", { status: 401 });
       }
 
-      const ok = await setBotCommands(env);
-      return Response.json({ ok });
+      const userOk = await setBotCommands(env, "user");
+      const adminOk = hasAdminBot(env)
+        ? await setBotCommands(env, "admin")
+        : null;
+
+      return Response.json({ user: userOk, admin: adminOk });
     }
 
     if (isAdminPanelPath(env, url.pathname)) {
@@ -63,11 +74,37 @@ export default {
       }
 
       if (update.message) {
-        ctx.waitUntil(handleMessage(env, update.message, url.origin));
+        ctx.waitUntil(handleUserMessage(env, update.message));
       }
 
       if (update.callback_query) {
         ctx.waitUntil(handleCallbackQuery(env, update.callback_query));
+      }
+
+      return new Response("ok");
+    }
+
+    if (request.method === "POST" && url.pathname === "/webhook-admin") {
+      const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
+      if (!secret || secret !== getWebhookSecret(env)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      if (!hasAdminBot(env)) {
+        return new Response("Admin bot not configured", { status: 503 });
+      }
+
+      let update: TelegramUpdate;
+      try {
+        update = (await request.json()) as TelegramUpdate;
+      } catch {
+        return new Response("Bad Request", { status: 400 });
+      }
+
+      if (update.message) {
+        ctx.waitUntil(
+          handleAdminBotMessage(env, update.message, url.origin),
+        );
       }
 
       return new Response("ok");
