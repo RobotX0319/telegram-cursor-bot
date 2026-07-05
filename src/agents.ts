@@ -30,20 +30,20 @@ export async function getNormalizedSession(
   return normalizeSession(await getSession(env, userId));
 }
 
-async function saveAgentMeta(
-  env: Env,
-  entry: StoredAgentEntry,
-): Promise<void> {
-  await env.SESSIONS.put(agentMetaKey(entry.agentId), JSON.stringify(entry));
-}
-
-async function getAgentMeta(
+export async function getAgentMeta(
   env: Env,
   agentId: string,
 ): Promise<StoredAgentEntry | null> {
   const raw = await env.SESSIONS.get(agentMetaKey(agentId));
   if (!raw) return null;
   return JSON.parse(raw) as StoredAgentEntry;
+}
+
+async function saveAgentMeta(
+  env: Env,
+  entry: StoredAgentEntry,
+): Promise<void> {
+  await env.SESSIONS.put(agentMetaKey(entry.agentId), JSON.stringify(entry));
 }
 
 async function deleteAgentMeta(env: Env, agentId: string): Promise<void> {

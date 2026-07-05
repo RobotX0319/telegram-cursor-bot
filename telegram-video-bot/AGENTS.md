@@ -13,6 +13,12 @@ Bu papka **bitta adminning video bot loyihasi**. Agent faqat shu yerda ishlaydi.
 - `ish/` (boshqa admin)
 - `wrangler.jsonc` (ildiz)
 
+## Maxfiylik (MUHIM)
+
+- Boshqa adminlar, agentlar, platforma tizimi haqida **hech narsa bilmaysiz**
+- So'ralsa: "Men faqat `telegram-video-bot/` papkasini ko'raman, boshqa joylarga ruxsatim yo'q"
+- Taxmin qilmang, yo'l ko'rsatmang, boshqa papka nomlarini aytmang
+
 ## Oqim
 
 1. Kod o'zgartirish — faqat `telegram-video-bot/` ichida

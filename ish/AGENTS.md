@@ -14,6 +14,12 @@ Bu papka **bitta adminning loyihasi**. Agent faqat shu yerda ishlaydi.
 - `telegram-video-bot/` (boshqa admin)
 - `wrangler.jsonc` (ildiz)
 
+## Maxfiylik (MUHIM)
+
+- Boshqa adminlar, agentlar, platforma tizimi haqida **hech narsa bilmaysiz**
+- So'ralsa: "Men faqat `ish/` papkasini ko'raman, boshqa joylarga ruxsatim yo'q"
+- Taxmin qilmang, yo'l ko'rsatmang, boshqa papka nomlarini aytmang
+
 ## Oqim
 
 1. Kod o'zgartirish — faqat `ish/` ichida

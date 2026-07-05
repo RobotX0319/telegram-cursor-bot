@@ -45,60 +45,59 @@ import { defaultRepo, updateSession } from "./session";
 import { sendChatAction, sendMessage, sendRunResult, configureWebhookFromEnv, getWebhookInfo } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 import { BUILD_DATE, VERSION } from "./version";
+import type { StoredAgentEntry } from "./types";
 import {
   NO_WORKSPACE_MESSAGE,
+  OUT_OF_SCOPE_PROBE_REPLY,
+  buildAgentPrompt,
   detectFolderSetupIntent,
+  detectOutOfScopeProbe,
   formatWorkspaceStatus,
   getAdminWorkspaceFolder,
   isLikelyWorkPrompt,
   isSystemAdmin,
   listLegacyWorkspaceMappings,
+  resolvePromptContext,
   resolveWorkspaceScope,
   setAdminWorkspaceFolder,
   setLegacyWorkspaceMapping,
-  wrapPromptForAgent,
+  type PromptContext,
   type WorkspaceScope,
 } from "./workspace";
 
-const HELP_TEXT = `Telegram → Cursor Cloud Agent bot
+const HELP_TEXT_BOOTSTRAP = `Telegram → Cursor Cloud Agent bot (asosiy admin)
 
-Buyruqlar:
-/start — xush kelibsiz
+/start /help /status /repo /new /agents /use /agent
+/papka — ish papkasi
+/admin list|add|remove|workspace — adminlar boshqaruvi
+/setkey /setup /setsticker /stickers /version
+
+Siz barcha agentlarni ko'rasiz va ishlata olasiz.
+Boshqa adminning agentini tanlasangiz — u o'z egasiga javob berayotgandek ishlaydi.
+
+Oddiy matn — agentga vazifa.`;
+
+const HELP_TEXT_USER = `Telegram → Cursor Cloud Agent bot
+
+/start — boshlash
 /help — yordam
-/status — agent va run holati
-/repo <url> — GitHub repo (masalan https://github.com/user/repo)
-/new — yangi cloud agent ochish
-/agents — barcha agentlar ro'yxati
-/use 2 — agent tanlash (raqam yoki ID)
-/agent — faol agent haqida
-/admin list — adminlar ro'yxati
-/admin add <id> — yangi admin qo'shish
-/admin remove <id> — adminni olib tashlash
-/setkey <key> — Cursor API kalitini saqlash (faqat admin)
-/papka — ish papkasi holati
-/papka <nom> — ish papkasini belgilash
-/version — bot versiyasi
-/setsticker finished — stickerga javob qilib natija stikeri saqlash
-/setup — bot sozlamalarini tekshirish va tuzatish (asosiy admin)
+/status — agent holati
+/repo <url> — GitHub repo
+/new — yangi agent
+/agents — agentlar ro'yxati
+/use 2 — agent tanlash
+/agent — faol agent
+/papka — ish papkasi
+/papka <nom> — papka belgilash
+/version — versiya
 
-Barcha adminlar bir xil agentlar va repo bilan ishlaydi.
+Oddiy matn yuboring — agent avtomatik ishlaydi.
 
-Asosiy admin barcha agentlarni ko'radi.
-Boshqa adminlar faqat o'z agentlarini ko'radi.
+Avval /new → papka yarating → keyin ish buyrug'i.`;
 
-Oddiy matn yuboring — agentga vazifa ( /ask shart emas )
-
-Masalan:
-README ga o'rnatish bo'limini qo'sh
-Yoki: src/index.ts dagi xatoni tuzat
-
-Agent Cloudflare Worker kodini ham shu repoda o'zgartirishi mumkin.
-
-Papka qoidalari:
-• Asosiy admin — platforma kodi (src/, scripts/)
-• Boshqa adminlar — faqat o'z papkalarida
-• Yangi admin: /new → papka yarat → keyin ish buyrug'i
-• Papkasiz kod buyruqlari qabul qilinmaydi`;
+function helpTextFor(env: Env, userId: number): string {
+  return isBootstrapAdmin(env, userId) ? HELP_TEXT_BOOTSTRAP : HELP_TEXT_USER;
+}
 
 export async function handleMessage(
   env: Env,
@@ -152,7 +151,7 @@ async function handleCommand(
       return;
 
     case "/help":
-      await sendMessage(env, chatId, HELP_TEXT);
+      await sendMessage(env, chatId, helpTextFor(env, userId));
       return;
 
     case "/status":
@@ -370,6 +369,15 @@ async function handleAdmin(
   userId: number,
   args: string,
 ): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(
+      env,
+      chatId,
+      "Bu buyruq mavjud emas. /help — buyruqlar ro'yxati",
+    );
+    return;
+  }
+
   const [subcommand, ...rest] = args.split(/\s+/);
   const sub = (subcommand || "list").toLowerCase();
   const value = rest.join(" ").trim();
@@ -784,34 +792,66 @@ async function handleAdminWorkspace(
 
 async function preparePromptForDispatch(
   env: Env,
-  userId: number,
+  operatorUserId: number,
   prompt: string,
-  options: { isNewAgent: boolean },
+  options: { isNewAgent: boolean; agentEntry?: StoredAgentEntry | null },
 ): Promise<
-  | { ok: true; wrappedPrompt: string; scope: WorkspaceScope; workspaceFolder?: string }
+  | {
+      ok: true;
+      wrappedPrompt: string;
+      scope: WorkspaceScope;
+      workspaceFolder?: string;
+      ctx: PromptContext;
+    }
   | { ok: false; message: string }
 > {
-  let scope = await resolveWorkspaceScope(env, userId);
+  let ctx = await resolvePromptContext(
+    env,
+    operatorUserId,
+    options.agentEntry,
+  );
+  const operatorIsBootstrap = isBootstrapAdmin(env, operatorUserId);
 
-  if (scope.kind === "none") {
+  if (
+    !operatorIsBootstrap &&
+    ctx.mode === "project" &&
+    detectOutOfScopeProbe(prompt)
+  ) {
+    return { ok: false, message: OUT_OF_SCOPE_PROBE_REPLY };
+  }
+
+  if (ctx.mode === "awaiting_folder") {
     const folderFromPrompt = detectFolderSetupIntent(prompt);
     if (folderFromPrompt) {
-      await setAdminWorkspaceFolder(env, userId, folderFromPrompt);
-      scope = { kind: "folder", folder: folderFromPrompt };
+      await setAdminWorkspaceFolder(env, ctx.ownerId, folderFromPrompt);
+      ctx = {
+        ...ctx,
+        mode: "project",
+        folder: folderFromPrompt,
+      };
     } else if (isLikelyWorkPrompt(prompt) && !options.isNewAgent) {
       return { ok: false, message: NO_WORKSPACE_MESSAGE };
     }
   }
 
-  const wrappedPrompt = wrapPromptForAgent(prompt, scope, {
+  const wrappedPrompt = buildAgentPrompt(prompt, ctx, {
     isNewAgent: options.isNewAgent,
-    awaitingFolder: scope.kind === "none",
   });
 
-  const workspaceFolder =
-    scope.kind === "folder" ? scope.folder : undefined;
+  const scope: WorkspaceScope =
+    ctx.mode === "system"
+      ? { kind: "system" }
+      : ctx.mode === "project" && ctx.folder
+        ? { kind: "folder", folder: ctx.folder }
+        : { kind: "none" };
 
-  return { ok: true, wrappedPrompt, scope, workspaceFolder };
+  return {
+    ok: true,
+    wrappedPrompt,
+    scope,
+    workspaceFolder: ctx.folder,
+    ctx,
+  };
 }
 
 async function handleAgentInfo(
@@ -830,6 +870,10 @@ async function handleAgentInfo(
   try {
     const agent = await getAgent(env, activeId);
     const entry = await getActiveAgentEntry(env, userId, session);
+    const pCtx = entry
+      ? await resolvePromptContext(env, userId, entry)
+      : null;
+
     await sendMessage(
       env,
       chatId,
@@ -837,10 +881,17 @@ async function handleAgentInfo(
         `Agent: ${agent.name}`,
         `ID: ${agent.id}`,
         `Status: ${agent.status}`,
+        pCtx?.folder ? `Papka: ${pCtx.folder}/` : null,
+        pCtx?.stealth ? `Ega: ${pCtx.ownerId} (siz egasi rejimidasiz)` : null,
+        isBootstrapAdmin(env, userId) && entry?.createdBy
+          ? `Yaratuvchi: ${entry.createdBy}`
+          : null,
         `URL: ${agent.url}`,
         entry?.latestRunId ? `Latest run: ${entry.latestRunId}` : null,
         "",
-        "Boshqa agent: /agents → /use 2",
+        isBootstrapAdmin(env, userId)
+          ? "Boshqa agent: /agents → /use 2"
+          : null,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -906,14 +957,11 @@ async function handleNew(
     return;
   }
 
-  const scope = await resolveWorkspaceScope(env, userId);
-  const wrappedPrompt = wrapPromptForAgent(
+  const promptCtx = await resolvePromptContext(env, userId, null);
+  const wrappedPrompt = buildAgentPrompt(
     prompt || "Yangi agent tayyor.",
-    scope,
-    {
-      isNewAgent: true,
-      awaitingFolder: scope.kind === "none",
-    },
+    promptCtx,
+    { isNewAgent: true },
   );
 
   await startAgentRun(
@@ -925,7 +973,8 @@ async function handleNew(
     true,
     ctx,
     workerOrigin,
-    scope.kind === "folder" ? scope.folder : undefined,
+    promptCtx.folder,
+    promptCtx,
   );
 }
 
@@ -942,8 +991,10 @@ async function dispatchPrompt(
   const activeId = await resolveActiveAgentId(env, userId, session);
 
   if (activeId) {
+    const entry = await getActiveAgentEntry(env, userId, session);
     const prepared = await preparePromptForDispatch(env, userId, prompt, {
       isNewAgent: false,
+      agentEntry: entry,
     });
     if (!prepared.ok) {
       await sendMessage(env, chatId, prepared.message);
@@ -959,6 +1010,7 @@ async function dispatchPrompt(
       ctx,
       workerOrigin,
       prepared.workspaceFolder,
+      prepared.ctx,
     );
     return;
   }
@@ -990,6 +1042,7 @@ async function dispatchPrompt(
     ctx,
     workerOrigin,
     prepared.workspaceFolder,
+    prepared.ctx,
   );
 }
 
@@ -1000,26 +1053,36 @@ async function startAgentRun(
   prompt: string,
   repoUrl: string,
   forceNew: boolean,
-  ctx: ExecutionContext,
+  execCtx: ExecutionContext,
   workerOrigin: string,
   workspaceFolder?: string,
+  promptCtx?: PromptContext,
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
-  const scope = await resolveWorkspaceScope(env, userId);
+  const pCtx =
+    promptCtx ?? (await resolvePromptContext(env, userId, null));
+  const scope: WorkspaceScope =
+    pCtx.mode === "system"
+      ? { kind: "system" }
+      : pCtx.mode === "project" && pCtx.folder
+        ? { kind: "folder", folder: pCtx.folder }
+        : { kind: "none" };
 
   try {
     const { agent, run } = await createAgent(env, prompt, repoUrl);
-    const session = await registerAgent(
+    await registerAgent(
       env,
       userId,
       agent,
       run,
       repoUrl,
-      workspaceFolder,
+      workspaceFolder ?? pCtx.folder,
     );
-    const agentNumber = session.agents?.findIndex((a) => a.agentId === agent.id);
-    const scopeLabel = formatWorkspaceStatus(scope);
+    const agentNumber = (
+      await getNormalizedSession(env, userId)
+    )?.agents?.findIndex((a) => a.agentId === agent.id);
+    const scopeLabel = formatWorkspaceStatus(scope, pCtx);
 
     await sendMessage(
       env,
@@ -1027,25 +1090,30 @@ async function startAgentRun(
       [
         forceNew ? "Yangi agent ochildi." : "Agent ishga tushdi.",
         scopeLabel,
+        pCtx.stealth ? "Agent egasiga o'xshash rejimda ishlaydi." : null,
         agentNumber != null && agentNumber >= 0
           ? `Ro'yxatdagi raqam: ${agentNumber + 1}`
           : null,
-        workspaceFolder ? `Papka: ${workspaceFolder}/` : null,
-        scope.kind === "none"
+        workspaceFolder ?? pCtx.folder
+          ? `Papka: ${workspaceFolder ?? pCtx.folder}/`
+          : null,
+        pCtx.mode === "awaiting_folder"
           ? "Avval papka yarating yoki /papka nom bering."
           : null,
         `Agent: ${agent.url}`,
         `Run: ${run.id}`,
         "",
         "Natija tayyor bo'lganda xabar yuboraman...",
-        "Boshqa agent: /agents → /use 2",
+        isBootstrapAdmin(env, userId)
+          ? "Boshqa agent: /agents → /use 2"
+          : null,
       ]
         .filter(Boolean)
         .join("\n"),
     );
 
-    ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
-    ctx.waitUntil(
+    execCtx.waitUntil(kickoffPendingPoll(env, workerOrigin));
+    execCtx.waitUntil(
       trackRunUntilFinished(env, chatId, userId, agent.id, run.id),
     );
   } catch (error) {
@@ -1063,9 +1131,10 @@ async function continueAgentRun(
   userId: number,
   agentId: string,
   prompt: string,
-  ctx: ExecutionContext,
+  execCtx: ExecutionContext,
   workerOrigin: string,
   workspaceFolder?: string,
+  promptCtx?: PromptContext,
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
@@ -1073,13 +1142,14 @@ async function continueAgentRun(
     const { run } = await createRun(env, agentId, prompt);
     const session = await updateAgentRun(env, userId, agentId, run.id);
     const entry = session.agents?.find((a) => a.agentId === agentId);
-    const folder = workspaceFolder ?? entry?.workspaceFolder;
+    const folder = workspaceFolder ?? entry?.workspaceFolder ?? promptCtx?.folder;
 
     await sendMessage(
       env,
       chatId,
       [
-        `Buyruq yuborildi.`,
+        "Buyruq yuborildi.",
+        promptCtx?.stealth ? "(egasi rejimi — chat davom etadi)" : null,
         entry ? `Agent: ${entry.name}` : null,
         folder ? `Papka: ${folder}/` : null,
         `Run: ${run.id}`,
@@ -1090,8 +1160,8 @@ async function continueAgentRun(
         .join("\n"),
     );
 
-    ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
-    ctx.waitUntil(
+    execCtx.waitUntil(kickoffPendingPoll(env, workerOrigin));
+    execCtx.waitUntil(
       trackRunUntilFinished(env, chatId, userId, agentId, run.id),
     );
   } catch (error) {
