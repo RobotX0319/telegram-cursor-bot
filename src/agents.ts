@@ -1,5 +1,6 @@
 import { getBootstrapAdminIds, isBootstrapAdmin } from "./admins";
 import { getAgent } from "./cursor";
+import { putJsonIfChanged } from "./kv-store";
 import { getSession, updateSession } from "./session";
 import type {
   CursorAgent,
@@ -65,7 +66,7 @@ async function loadAgentsIndex(env: Env): Promise<StoredAgentEntry[]> {
   }
   const list = [...agents.values()];
   if (list.length > 0) {
-    await env.SESSIONS.put(AGENTS_INDEX_KEY, JSON.stringify(list));
+    await putJsonIfChanged(env.SESSIONS, AGENTS_INDEX_KEY, list);
   }
   return list;
 }
@@ -75,10 +76,14 @@ async function saveAgentsIndex(
   agents: StoredAgentEntry[],
 ): Promise<void> {
   if (agents.length === 0) {
-    await env.SESSIONS.delete(AGENTS_INDEX_KEY);
+    try {
+      await env.SESSIONS.delete(AGENTS_INDEX_KEY);
+    } catch (error) {
+      console.error("KV delete agents:index:", error);
+    }
     return;
   }
-  await env.SESSIONS.put(AGENTS_INDEX_KEY, JSON.stringify(agents));
+  await putJsonIfChanged(env.SESSIONS, AGENTS_INDEX_KEY, agents);
 }
 
 async function upsertAgentInIndex(
@@ -272,13 +277,20 @@ export async function selectAgent(
         setTimeout(() => reject(new Error("Cursor API timeout")), 8000),
       ),
     ]);
-    entry = {
+    const refreshed = {
       ...entry,
       name: agent.name,
       url: agent.url,
       latestRunId: agent.latestRunId ?? entry.latestRunId,
     };
-    await upsertAgentInIndex(env, entry);
+    if (
+      refreshed.name !== entry.name ||
+      refreshed.url !== entry.url ||
+      refreshed.latestRunId !== entry.latestRunId
+    ) {
+      entry = refreshed;
+      await upsertAgentInIndex(env, entry);
+    }
   } catch {
     // Saqlangan ma'lumot bilan davom etamiz
   }

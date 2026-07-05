@@ -1,4 +1,5 @@
 import { formatRunResult, getRun, isTerminal } from "./cursor";
+import { putJsonIfChanged, putTextIfChanged } from "./kv-store";
 import { sendMessage } from "./telegram";
 import type { Env } from "./types";
 
@@ -14,7 +15,7 @@ const PENDING_INDEX_KEY = "pending:index";
 const LAST_POLL_KEY = "pending:last_poll";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** Free KV: 1000 writes/day — poll kamroq */
-const MIN_POLL_MS = 2 * 60 * 1000;
+const MIN_POLL_MS = 30 * 60 * 1000;
 
 async function loadPendingIndex(env: Env): Promise<PendingRun[]> {
   const raw = await env.SESSIONS.get(PENDING_INDEX_KEY);
@@ -31,10 +32,14 @@ async function savePendingIndex(
   pending: PendingRun[],
 ): Promise<void> {
   if (pending.length === 0) {
-    await env.SESSIONS.delete(PENDING_INDEX_KEY);
+    try {
+      await env.SESSIONS.delete(PENDING_INDEX_KEY);
+    } catch (error) {
+      console.error("KV delete pending:index:", error);
+    }
     return;
   }
-  await env.SESSIONS.put(PENDING_INDEX_KEY, JSON.stringify(pending));
+  await putJsonIfChanged(env.SESSIONS, PENDING_INDEX_KEY, pending);
 }
 
 export async function addPendingRun(
@@ -113,23 +118,24 @@ export async function processPendingRuns(
     }
   }
 
-  await savePendingIndex(env, remaining);
-  await env.SESSIONS.put(LAST_POLL_KEY, String(Date.now()), {
+  if (notified > 0 || remaining.length !== pendingRuns.length) {
+    await savePendingIndex(env, remaining);
+  }
+
+  await putTextIfChanged(env.SESSIONS, LAST_POLL_KEY, String(Date.now()), {
     expirationTtl: 60 * 60 * 24,
   });
 
   return notified;
 }
 
-/** Eski zanjir o'chirildi — KV limitini tejash uchun faqat bitta tekshiruv */
 export async function continuePollingPendingRuns(
   env: Env,
   _workerOrigin?: string,
 ): Promise<void> {
-  await processPendingRuns(env, true);
+  await processPendingRuns(env, false);
 }
 
-/** Agent ishga tushganda darhol poll qilmaymiz — GitHub cron yetadi */
 export async function kickoffPendingPoll(
   _env: Env,
   _workerOrigin?: string,

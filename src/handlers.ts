@@ -31,7 +31,7 @@ import {
   kickoffPendingPoll,
   notifyIfFinished,
 } from "./pending";
-import { saveCursorApiKey, resolveCursorApiKey } from "./secrets";
+import { isKvWriteLimitError } from "./kv-store";
 import { defaultRepo, updateSession } from "./session";
 import { sendChatAction, sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";

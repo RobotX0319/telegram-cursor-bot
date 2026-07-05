@@ -1,3 +1,4 @@
+import { putJsonIfChanged } from "./kv-store";
 import type { Env, UserSession } from "./types";
 
 function sessionKey(userId: number): string {
@@ -19,7 +20,7 @@ export async function saveSession(
   session: UserSession,
 ): Promise<void> {
   session.updatedAt = new Date().toISOString();
-  await env.SESSIONS.put(sessionKey(userId), JSON.stringify(session));
+  await putJsonIfChanged(env.SESSIONS, sessionKey(userId), session);
 }
 
 export async function updateSession(
