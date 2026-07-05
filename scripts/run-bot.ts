@@ -116,7 +116,7 @@ async function main(): Promise<void> {
   while (true) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 35_000);
+      const timer = setTimeout(() => controller.abort(), 60_000);
 
       const response = await fetch(
         `https://api.telegram.org/bot${vars.TELEGRAM_BOT_TOKEN}/getUpdates`,
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
           signal: controller.signal,
           body: JSON.stringify({
             offset: offset > 0 ? offset : undefined,
-            timeout: 10,
+            timeout: 8,
             allowed_updates: ["message"],
           }),
         },
@@ -172,8 +172,10 @@ async function main(): Promise<void> {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.error("Polling xatosi:", msg);
-      await sleep(3000);
+      if (!msg.includes("aborted")) {
+        console.error("Polling xatosi:", msg);
+      }
+      await sleep(2000);
     }
   }
 }
