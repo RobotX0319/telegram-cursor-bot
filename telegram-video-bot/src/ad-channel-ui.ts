@@ -18,6 +18,7 @@ export function formatAdChannelLines(config: AdChannelConfig): string[] {
     `Rasm shablon: ${config.templateFileId ? "✅ o'rnatilgan" : "❌ yo'q"}`,
     "",
     "Video yuklanganda shablon rasm + matn reklama kanalga tushadi.",
+    "Rasm: sozlamalardan yoki har safar video oldin yuboring.",
     "@Detskebot reklama kanalda admin bo'lishi kerak.",
   ];
 }

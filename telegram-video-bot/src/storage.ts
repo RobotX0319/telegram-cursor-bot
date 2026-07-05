@@ -53,6 +53,32 @@ export async function clearPendingVideoId(
   await env.VIDEOS.delete(`${PENDING_ID_PREFIX}${userId}`);
 }
 
+const PENDING_AD_TEMPLATE_PREFIX = "pending_ad_tpl:";
+
+export async function setPendingAdTemplate(
+  env: Env,
+  userId: number,
+  fileId: string,
+): Promise<void> {
+  await env.VIDEOS.put(`${PENDING_AD_TEMPLATE_PREFIX}${userId}`, fileId, {
+    expirationTtl: 3600,
+  });
+}
+
+export async function getPendingAdTemplate(
+  env: Env,
+  userId: number,
+): Promise<string | null> {
+  return env.VIDEOS.get(`${PENDING_AD_TEMPLATE_PREFIX}${userId}`);
+}
+
+export async function clearPendingAdTemplate(
+  env: Env,
+  userId: number,
+): Promise<void> {
+  await env.VIDEOS.delete(`${PENDING_AD_TEMPLATE_PREFIX}${userId}`);
+}
+
 export async function saveVideo(
   env: Env,
   video: StoredVideo,

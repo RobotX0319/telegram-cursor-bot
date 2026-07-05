@@ -18,11 +18,14 @@ import {
   getAdminState,
 } from "./admin-state";
 import {
+  clearPendingAdTemplate,
   clearPendingVideoId,
   ensureCounterAtLeast,
+  getPendingAdTemplate,
   getPendingVideoId,
   getVideo,
   saveVideo,
+  setPendingAdTemplate,
   setPendingVideoId,
 } from "./storage";
 import { sendMessage } from "./telegram";
@@ -42,7 +45,7 @@ const ADMIN_HELP = `Admin bot — @Detiskebot
 ⭐ VIP mijozlar — obunasiz foydalanadi
 💳 Karta ulash — to'lov kartalari
 
-Video ID: avval 5, keyin video
+Video ID: avval 5, keyin rasm (ixtiyoriy), keyin video
 /cancel — bekor qilish
 
 Foydalanuvchilar: @Detskebot`;
@@ -97,6 +100,11 @@ export async function handleAdminBotMessage(
     return;
   }
 
+  if (isImageDocument(message)) {
+    await handleAdminImageDocument(env, chatId, userId, message);
+    return;
+  }
+
   const text = message.text?.trim();
   if (!text) return;
 
@@ -129,13 +137,18 @@ export async function handleAdminBotMessage(
 
   const manualId = parseIdFromText(text);
   if (manualId !== null) {
-    await setPendingVideoId(env, userId, manualId);
-    await sendMessage(
-      env,
-      chatId,
-      `✅ Keyingi video ID: ${manualId}\n\nEndi videoni yuboring.`,
-      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
-    );
+      await setPendingVideoId(env, userId, manualId);
+      await sendMessage(
+        env,
+        chatId,
+        [
+          `✅ Keyingi video ID: ${manualId}`,
+          "",
+          "1) Ixtiyoriy: reklama rasm shablon yuboring",
+          "2) Keyin videoni yuboring",
+        ].join("\n"),
+        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      );
     return;
   }
 
@@ -198,7 +211,12 @@ async function handleAdminCommand(
       await sendMessage(
         env,
         chatId,
-        `✅ Keyingi video ID: ${id}\n\nEndi videoni yuboring.`,
+        [
+          `✅ Keyingi video ID: ${id}`,
+          "",
+          "1) Ixtiyoriy: reklama rasm shablon yuboring",
+          "2) Keyin videoni yuboring",
+        ].join("\n"),
         { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
       return;
@@ -257,30 +275,20 @@ function isVideoDocument(message: TelegramMessage): boolean {
   return doc.mime_type.startsWith("video/");
 }
 
-async function handleAdminPhoto(
+function isImageDocument(message: TelegramMessage): boolean {
+  const doc = message.document;
+  if (!doc?.mime_type) return false;
+  return doc.mime_type.startsWith("image/");
+}
+
+async function saveAdminImageTemplate(
   env: Env,
   chatId: number,
   userId: number,
-  message: TelegramMessage,
+  adminFileId: string,
+  mode: "global" | "upload",
 ): Promise<void> {
-  const state = await getAdminState(env, userId);
-  if (state?.mode !== "await_ad_template") {
-    await sendMessage(
-      env,
-      chatId,
-      "Rasm shablon uchun 📡 Kanallar sozlamalari → 🖼 Rasm shablon tugmasini bosing.",
-      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
-    );
-    return;
-  }
-
-  const photos = message.photo!;
-  const largest = photos[photos.length - 1]!;
-  const userFileId = await mirrorPhotoToUserBot(
-    env,
-    largest.file_id,
-    userId,
-  );
+  const userFileId = await mirrorPhotoToUserBot(env, adminFileId, userId);
 
   if (!userFileId) {
     await sendMessage(
@@ -296,19 +304,80 @@ async function handleAdminPhoto(
     return;
   }
 
-  const config = await setAdTemplate(env, userFileId);
-  await clearAdminState(env, userId);
+  if (mode === "global") {
+    const config = await setAdTemplate(env, userFileId);
+    await clearAdminState(env, userId);
+    const lines = [
+      "✅ Rasm shablon saqlandi.",
+      config.channelId
+        ? "Reklama yoqildi — video yuklanganda kanalga tushadi."
+        : "Endi 📢 Reklama kanalini ulang (Kanallar sozlamalari).",
+    ];
+    await sendMessage(env, chatId, lines.join("\n"), {
+      bot: "admin",
+      replyMarkup: ADMIN_REPLY_KEYBOARD,
+    });
+    return;
+  }
 
-  const lines = [
-    "✅ Rasm shablon saqlandi.",
-    config.channelId
-      ? "Reklama yoqildi — video yuklanganda kanalga tushadi."
-      : "Endi 📢 Reklama kanalini ulang (Kanallar sozlamalari).",
-  ];
+  await setPendingAdTemplate(env, userId, userFileId);
+  const pendingId = await getPendingVideoId(env, userId);
+  await sendMessage(
+    env,
+    chatId,
+    [
+      "✅ Reklama rasmi tayyor.",
+      pendingId !== null
+        ? `Endi ID ${pendingId} uchun videoni yuboring.`
+        : "Avval video ID yuboring, keyin videoni yuboring.",
+    ].join("\n"),
+    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+  );
+}
 
-  await sendMessage(env, chatId, lines.join("\n"), {
-    bot: "admin",
-    replyMarkup: ADMIN_REPLY_KEYBOARD,
+async function handleAdminPhoto(
+  env: Env,
+  chatId: number,
+  userId: number,
+  message: TelegramMessage,
+): Promise<void> {
+  const state = await getAdminState(env, userId);
+  const photos = message.photo!;
+  const largest = photos[photos.length - 1]!;
+
+  if (state?.mode === "await_ad_template") {
+    await saveAdminImageTemplate(env, chatId, userId, largest.file_id, "global");
+    return;
+  }
+
+  const pendingId = await getPendingVideoId(env, userId);
+  if (pendingId !== null) {
+    await saveAdminImageTemplate(env, chatId, userId, largest.file_id, "upload");
+    return;
+  }
+
+  await sendMessage(
+    env,
+    chatId,
+    [
+      "Reklama rasmi uchun avval video ID yuboring: 5",
+      "yoki 📡 Kanallar sozlamalari → 🖼 Rasm shablon",
+    ].join("\n"),
+    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+  );
+}
+
+async function handleAdminImageDocument(
+  env: Env,
+  chatId: number,
+  userId: number,
+  message: TelegramMessage,
+): Promise<void> {
+  const doc = message.document;
+  if (!doc) return;
+  await handleAdminPhoto(env, chatId, userId, {
+    ...message,
+    photo: [{ file_id: doc.file_id, file_unique_id: doc.file_unique_id, width: 0, height: 0 }],
   });
 }
 
@@ -423,7 +492,16 @@ async function handleAdminUpload(
   await ensureCounterAtLeast(env, id);
   await clearPendingVideoId(env, userId);
 
-  const adResult = await postVideoAd(env, id, displayCaption);
+  const pendingTemplate = await getPendingAdTemplate(env, userId);
+  const adResult = await postVideoAd(
+    env,
+    id,
+    displayCaption,
+    pendingTemplate ?? undefined,
+  );
+  if (pendingTemplate) {
+    await clearPendingAdTemplate(env, userId);
+  }
 
   const lines = [
     `✅ Saqlandi — ID: ${id}`,
@@ -435,6 +513,11 @@ async function handleAdminUpload(
     lines.push("", "📢 Reklama kanalga yuborildi.");
   } else if ("error" in adResult) {
     lines.push("", `⚠️ ${adResult.error}`);
+  } else if (pendingTemplate) {
+    lines.push(
+      "",
+      "⚠️ Reklama yuborilmadi. Kanallar sozlamalarida reklama kanalini ulang va yoqing.",
+    );
   }
 
   if (displayCaption) {

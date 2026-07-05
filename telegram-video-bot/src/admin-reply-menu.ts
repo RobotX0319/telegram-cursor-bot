@@ -97,10 +97,13 @@ async function showVideoUploadHelp(env: Env, chatId: number): Promise<void> {
       "📤 Video yuklash",
       "",
       "1) Avval ID raqam yuboring: 5",
-      "2) Keyin videoni yuboring",
+      "2) Ixtiyoriy: reklama rasm shablon yuboring",
+      "3) Keyin videoni yuboring",
       "",
       "Yoki videoga caption: 5",
       "yoki: 5 | Film nomi",
+      "",
+      "Reklama kanal: 📡 Kanallar sozlamalari",
     ].join("\n"),
   );
   await sendMessage(env, chatId, msg.text, {

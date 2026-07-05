@@ -107,9 +107,11 @@ export async function postVideoAd(
   env: Env,
   videoId: number,
   title?: string,
+  templateOverride?: string,
 ): Promise<{ ok: true } | { ok: false; error: string } | { ok: false; skipped: true }> {
   const config = await getAdChannelConfig(env);
-  if (!config.enabled || !config.channelId || !config.templateFileId) {
+  const templateFileId = templateOverride ?? config.templateFileId;
+  if (!config.enabled || !config.channelId || !templateFileId) {
     return { ok: false, skipped: true };
   }
 
@@ -117,7 +119,7 @@ export async function postVideoAd(
   const posted = await sendPhotoByFileId(
     env,
     config.channelId,
-    config.templateFileId,
+    templateFileId,
     caption,
   );
 
