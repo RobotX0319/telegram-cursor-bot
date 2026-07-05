@@ -62,30 +62,38 @@ export async function setAdminPanelMenuButton(
   if (!token.trim()) return false;
 
   const url = getWebPanelUrl(env, workerOrigin);
-  const menuButton = url
-    ? {
-        type: "web_app" as const,
-        text: "🎛 Admin panel",
-        web_app: { url },
-      }
-    : { type: "commands" as const };
+  if (url) {
+    const webAppRes = await fetch(
+      `${TELEGRAM_API}/bot${token}/setChatMenuButton`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          menu_button: {
+            type: "web_app",
+            text: "🎛 Admin panel",
+            web_app: { url },
+          },
+        }),
+      },
+    );
+    if (webAppRes.ok) return true;
+    const body = await webAppRes.text();
+    console.error("setAdminPanelMenuButton web_app failed:", webAppRes.status, body);
+  }
 
-  const response = await fetch(
+  const fallback = await fetch(
     `${TELEGRAM_API}/bot${token}/setChatMenuButton`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ menu_button: menuButton }),
+      body: JSON.stringify({ menu_button: { type: "commands" } }),
     },
   );
-
-  if (!response.ok) {
-    const body = await response.text();
-    console.error("setAdminPanelMenuButton failed:", response.status, body);
-    return false;
+  if (!fallback.ok) {
+    console.error("setAdminPanelMenuButton fallback failed:", await fallback.text());
   }
-
-  return true;
+  return fallback.ok;
 }
 
 export async function resetBotMenuButton(
