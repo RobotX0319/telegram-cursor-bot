@@ -1,3 +1,4 @@
+import { startVipAddFlow, sendVipList } from "./admin-reply-menu";
 import { getAdminPanelPath, getWebhookSecret } from "./config";
 import { getAdminPanelUrl } from "./admin";
 import { countVideos, deleteVideo, getVideo, listVideos } from "./storage";
@@ -473,6 +474,16 @@ export async function handleAdminBotCallback(
   }
 
   await answerCallbackQuery(env, query.id, undefined, "admin");
+
+  if (data === "adm:vip:add") {
+    await startVipAddFlow(env, chatId, query.from.id);
+    return;
+  }
+  if (data === "adm:vip:list") {
+    await sendVipList(env, chatId);
+    return;
+  }
+
   await handleAdminPanelCallback(
     env,
     chatId,

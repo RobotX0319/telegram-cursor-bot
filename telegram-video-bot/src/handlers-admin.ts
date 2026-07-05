@@ -1,4 +1,9 @@
+import { ADMIN_REPLY_KEYBOARD, isReplyButton } from "./admin-keyboard";
 import { sendAdminPanel } from "./admin-panel-bot";
+import {
+  handleAdminStateInput,
+  handleReplyButton,
+} from "./admin-reply-menu";
 import { getAdminIds, hasAdminBot, isAdmin } from "./bots";
 import {
   handleDelete,
@@ -16,6 +21,7 @@ import {
   setPendingVideoId,
 } from "./storage";
 import { sendMessage } from "./telegram";
+import { removeVipUser } from "./vip";
 import {
   parseIdCommand,
   parseIdFromText,
@@ -23,28 +29,16 @@ import {
 } from "./video-id";
 import type { Env, StoredVideo, TelegramMessage } from "./types";
 
-const ADMIN_KEYBOARD = {
-  keyboard: [[{ text: "📱 Admin panel" }]],
-  resize_keyboard: true,
-};
-
 const ADMIN_HELP = `Admin bot — @Detiskebot
 
-📤 Video yuklash (o'zingiz ID belgilaysiz):
+📤 Video yuklash — pastki panel
+📢 Majburiy obuna — yoqish/o'chirish
+📡 Kanallar — qo'shish/o'chirish
+⭐ VIP mijozlar — obunasiz foydalanadi
+💳 Karta ulash — to'lov kartalari
 
-1-usul — avval raqam, keyin video:
-  5
-  (keyin videoni yuboring → ID: 5)
-
-2-usul — videoga caption:
-  5
-  yoki: 5 | Film nomi
-
-/id 5 — keyingi video shu ID bilan
-
-📱 /panel — admin panel
-📋 /list — videolar
-🗑 /delete 5 — o'chirish
+Video ID: avval 5, keyin video
+/cancel — bekor qilish
 
 Foydalanuvchilar: @Detskebot`;
 
@@ -96,13 +90,30 @@ export async function handleAdminBotMessage(
   const text = message.text?.trim();
   if (!text) return;
 
-  if (text === "📱 Admin panel") {
-    await sendAdminPanel(env, chatId, workerOrigin);
+  if (isReplyButton(text)) {
+    await handleReplyButton(env, chatId, userId, text, workerOrigin);
     return;
   }
 
   if (text.startsWith("/")) {
     await handleAdminCommand(env, chatId, userId, text, workerOrigin);
+    return;
+  }
+
+  if (await handleAdminStateInput(env, chatId, userId, text)) {
+    return;
+  }
+
+  const vipRemove = text.match(/^o'?chirish\s+(\d{8,})$/i);
+  if (vipRemove) {
+    const id = Number.parseInt(vipRemove[1]!, 10);
+    const ok = await removeVipUser(env, id);
+    await sendMessage(
+      env,
+      chatId,
+      ok ? `✅ VIP o'chirildi: ${id}` : "VIP topilmadi.",
+      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    );
     return;
   }
 
@@ -113,7 +124,7 @@ export async function handleAdminBotMessage(
       env,
       chatId,
       `✅ Keyingi video ID: ${manualId}\n\nEndi videoni yuboring.`,
-      { bot: "admin", replyMarkup: ADMIN_KEYBOARD },
+      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return;
   }
@@ -121,8 +132,8 @@ export async function handleAdminBotMessage(
   await sendMessage(
     env,
     chatId,
-    "Video ID raqamini yuboring (masalan: 5), keyin videoni yuklang.\n\n/help — yordam",
-    { bot: "admin", replyMarkup: ADMIN_KEYBOARD },
+    "Pastki panel tugmalaridan foydalaning yoki video ID yuboring.\n\n/help — yordam",
+    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
 }
 
@@ -142,16 +153,20 @@ async function handleAdminCommand(
       await sendMessage(
         env,
         chatId,
-        "Salom, admin!\n\nAvval ID raqam yuboring (masalan: 5), keyin video yuklang.",
-        { bot: "admin", replyMarkup: ADMIN_KEYBOARD },
+        "Salom, admin!\n\nPastki panel orqali boshqaring.",
+        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
       await sendAdminPanel(env, chatId, workerOrigin);
+      return;
+
+    case "/cancel":
+      await handleAdminStateInput(env, chatId, userId, "/cancel");
       return;
 
     case "/help":
       await sendMessage(env, chatId, ADMIN_HELP, {
         bot: "admin",
-        replyMarkup: ADMIN_KEYBOARD,
+        replyMarkup: ADMIN_REPLY_KEYBOARD,
       });
       return;
 
@@ -165,7 +180,7 @@ async function handleAdminCommand(
       if (id === null) {
         await sendMessage(env, chatId, "Foydalanish: /id 5", {
           bot: "admin",
-          replyMarkup: ADMIN_KEYBOARD,
+          replyMarkup: ADMIN_REPLY_KEYBOARD,
         });
         return;
       }
@@ -174,7 +189,26 @@ async function handleAdminCommand(
         env,
         chatId,
         `✅ Keyingi video ID: ${id}\n\nEndi videoni yuboring.`,
-        { bot: "admin", replyMarkup: ADMIN_KEYBOARD },
+        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      );
+      return;
+    }
+
+    case "/vipremove": {
+      const id = parseIdCommand(args);
+      if (id === null) {
+        await sendMessage(env, chatId, "Foydalanish: /vipremove 123456789", {
+          bot: "admin",
+          replyMarkup: ADMIN_REPLY_KEYBOARD,
+        });
+        return;
+      }
+      const ok = await removeVipUser(env, id);
+      await sendMessage(
+        env,
+        chatId,
+        ok ? `✅ VIP o'chirildi: ${id}` : "VIP topilmadi.",
+        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
       return;
     }
@@ -202,7 +236,7 @@ async function handleAdminCommand(
     default:
       await sendMessage(env, chatId, "Noma'lum buyruq. /help", {
         bot: "admin",
-        replyMarkup: ADMIN_KEYBOARD,
+        replyMarkup: ADMIN_REPLY_KEYBOARD,
       });
   }
 }
@@ -251,15 +285,10 @@ async function handleAdminUpload(
       [
         "Video uchun ID kerak.",
         "",
-        "1) Avval raqam yuboring: 5",
-        "   Keyin videoni yuklang",
-        "",
-        "2) Yoki videoga caption qo'ying: 5",
-        "   yoki: 5 | Film nomi",
-        "",
-        "Buyruq: /id 5",
+        "📤 Video yuklash tugmasini bosing yoki",
+        "avval raqam yuboring: 5",
       ].join("\n"),
-      { bot: "admin", replyMarkup: ADMIN_KEYBOARD },
+      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return;
   }
@@ -271,7 +300,7 @@ async function handleAdminUpload(
       env,
       chatId,
       `ID ${id} band.\n\n/delete ${id} — o'chirish\nBoshqa raqam tanlang.`,
-      { bot: "admin", replyMarkup: ADMIN_KEYBOARD },
+      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return;
   }
@@ -341,6 +370,6 @@ async function handleAdminUpload(
 
   await sendMessage(env, chatId, lines.join("\n"), {
     bot: "admin",
-    replyMarkup: ADMIN_KEYBOARD,
+    replyMarkup: ADMIN_REPLY_KEYBOARD,
   });
 }

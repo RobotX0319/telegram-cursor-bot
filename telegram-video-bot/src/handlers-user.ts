@@ -6,6 +6,8 @@ import {
   listVideos,
 } from "./storage";
 import { getAdminPanelUrl } from "./admin";
+import { sendAdminPanel } from "./admin-panel-bot";
+import { sendPaymentCardsToUser } from "./admin-reply-menu";
 import {
   ensureSubscribed,
   getRequiredChannels,
@@ -26,8 +28,9 @@ const USER_HELP = `Video bot — @Detskebot
 - 1, 2, 3 ... yuboring — videoni olasiz
 - /info 3 — video haqida ma'lumot
 - /check — obunani tekshirish
+- /karta — to'lov kartalari
 
-Adminlar uchun alohida bot: @Detiskebot`;
+Adminlar uchun: @Detiskebot`;
 
 export async function handleUserMessage(
   env: Env,
@@ -110,6 +113,10 @@ async function handleUserCommand(
 
     case "/check":
       await handleSubscriptionCheck(env, chatId, userId);
+      return;
+
+    case "/karta":
+      await sendPaymentCardsToUser(env, chatId);
       return;
 
     default:

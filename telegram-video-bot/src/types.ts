@@ -94,3 +94,11 @@ export interface RequiredChannel {
   title: string;
   url?: string;
 }
+
+export interface StoredPaymentCard {
+  id: number;
+  title: string;
+  value: string;
+  addedBy: number;
+  addedAt: string;
+}

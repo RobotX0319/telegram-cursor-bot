@@ -15,6 +15,7 @@ export const USER_BOT_COMMANDS = [
   { command: "help", description: "Yordam" },
   { command: "info", description: "Video haqida ma'lumot" },
   { command: "check", description: "Obunani tekshirish" },
+  { command: "karta", description: "To'lov kartalari" },
   { command: "ping", description: "Tekshirish" },
 ] as const;
 

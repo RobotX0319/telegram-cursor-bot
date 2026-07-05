@@ -1,5 +1,6 @@
 import { sendMessage } from "./telegram";
 import type { Env, RequiredChannel, SubscriptionConfig, StoredChannel } from "./types";
+import { isVipUser } from "./vip";
 
 const SUBSCRIPTION_KEY = "meta:subscription";
 
@@ -146,6 +147,8 @@ export async function isUserSubscribed(
   env: Env,
   userId: number,
 ): Promise<boolean> {
+  if (await isVipUser(env, userId)) return true;
+
   const channels = await getRequiredChannels(env);
   if (channels.length === 0) return true;
 
