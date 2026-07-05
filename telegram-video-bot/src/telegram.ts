@@ -24,7 +24,7 @@ export const ADMIN_BOT_COMMANDS = [
   { command: "list", description: "Videolar ro'yxati" },
   { command: "delete", description: "Video o'chirish" },
   { command: "stats", description: "Statistika" },
-  { command: "panel", description: "Web admin panel" },
+  { command: "panel", description: "Admin panel (bot ichida)" },
   { command: "info", description: "Video haqida ma'lumot" },
   { command: "ping", description: "Tekshirish" },
 ] as const;
@@ -58,11 +58,16 @@ export async function sendMessage(
   text: string,
   options?: {
     bot?: BotKind;
-    replyMarkup?: {
-      inline_keyboard: Array<
-        Array<{ text: string; url?: string; callback_data?: string }>
-      >;
-    };
+    replyMarkup?:
+      | {
+          inline_keyboard: Array<
+            Array<{ text: string; url?: string; callback_data?: string }>
+          >;
+        }
+      | {
+          keyboard: Array<Array<{ text: string }>>;
+          resize_keyboard?: boolean;
+        };
   },
 ): Promise<void> {
   const token = getBotToken(env, options?.bot ?? "user");
@@ -86,9 +91,10 @@ export async function answerCallbackQuery(
   env: Env,
   callbackQueryId: string,
   text?: string,
+  bot: BotKind = "user",
 ): Promise<void> {
   const response = await fetch(
-    `${TELEGRAM_API}/bot${getUserBotToken(env)}/answerCallbackQuery`,
+    `${TELEGRAM_API}/bot${getBotToken(env, bot)}/answerCallbackQuery`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -102,6 +108,38 @@ export async function answerCallbackQuery(
   if (!response.ok) {
     const body = await response.text();
     console.error("answerCallbackQuery failed:", response.status, body);
+  }
+}
+
+export async function editMessageText(
+  env: Env,
+  chatId: number,
+  messageId: number,
+  text: string,
+  options?: {
+    bot?: BotKind;
+    replyMarkup?: {
+      inline_keyboard: Array<
+        Array<{ text: string; url?: string; callback_data?: string }>
+      >;
+    };
+  },
+): Promise<void> {
+  const token = getBotToken(env, options?.bot ?? "user");
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/editMessageText`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      ...(options?.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("editMessageText failed:", response.status, body);
   }
 }
 

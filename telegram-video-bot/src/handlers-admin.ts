@@ -1,9 +1,9 @@
+import { sendAdminPanel } from "./admin-panel-bot";
 import { getAdminIds, hasAdminBot, isAdmin } from "./bots";
 import {
   handleDelete,
   handleInfo,
   handleList,
-  handlePanel,
   handleStats,
 } from "./handlers-user";
 import { mirrorFileToUserBot } from "./mirror";
@@ -11,16 +11,20 @@ import { getNextVideoId, saveVideo } from "./storage";
 import { sendMessage } from "./telegram";
 import type { Env, StoredVideo, TelegramMessage } from "./types";
 
+const ADMIN_KEYBOARD = {
+  keyboard: [[{ text: "📱 Admin panel" }]],
+  resize_keyboard: true,
+};
+
 const ADMIN_HELP = `Admin bot — @Detiskebot
 
-- Video yuklang — avtomatik ID beriladi (@Detskebot da ko'rinadi)
-- /panel — web admin panel
-- /list — barcha videolar
-- /info 3 — video tafsilotlari
-- /delete 5 — videoni o'chirish
-- /stats — statistika
+📱 Admin panel — tugma yoki /panel
+📤 Video yuklang — avtomatik ID
+📋 /list — videolar ro'yxati
+🗑 /delete 5 — o'chirish
+📊 /stats — statistika
 
-Foydalanuvchilar video oladi: @Detskebot`;
+Foydalanuvchilar: @Detskebot`;
 
 export async function handleAdminBotMessage(
   env: Env,
@@ -46,9 +50,6 @@ export async function handleAdminBotMessage(
         "Admin hali sozlanmagan.",
         "",
         `Sizning Telegram ID: ${userId}`,
-        "",
-        "Cloudflare secret qo'shing:",
-        "TELEGRAM_ADMIN_ID=" + userId,
       ].join("\n"),
       { bot: "admin" },
     );
@@ -73,23 +74,27 @@ export async function handleAdminBotMessage(
   const text = message.text?.trim();
   if (!text) return;
 
+  if (text === "📱 Admin panel") {
+    await sendAdminPanel(env, chatId, workerOrigin);
+    return;
+  }
+
   if (text.startsWith("/")) {
-    await handleAdminCommand(env, chatId, userId, text, workerOrigin);
+    await handleAdminCommand(env, chatId, text, workerOrigin);
     return;
   }
 
   await sendMessage(
     env,
     chatId,
-    "Admin buyruqlari: /help\n\nVideo yuklash uchun fayl yuboring.",
-    { bot: "admin" },
+    "📱 Admin panel tugmasini bosing yoki video yuklang.",
+    { bot: "admin", replyMarkup: ADMIN_KEYBOARD },
   );
 }
 
 async function handleAdminCommand(
   env: Env,
   chatId: number,
-  userId: number,
   text: string,
   workerOrigin: string,
 ): Promise<void> {
@@ -102,13 +107,21 @@ async function handleAdminCommand(
       await sendMessage(
         env,
         chatId,
-        "Admin bot.\n\nVideo yuklang yoki /help",
-        { bot: "admin" },
+        "Salom, admin!\n\n📱 Admin panel — boshqaruv\n📤 Video yuklang — ID olasiz",
+        { bot: "admin", replyMarkup: ADMIN_KEYBOARD },
       );
+      await sendAdminPanel(env, chatId, workerOrigin);
       return;
 
     case "/help":
-      await sendMessage(env, chatId, ADMIN_HELP, { bot: "admin" });
+      await sendMessage(env, chatId, ADMIN_HELP, {
+        bot: "admin",
+        replyMarkup: ADMIN_KEYBOARD,
+      });
+      return;
+
+    case "/panel":
+      await sendAdminPanel(env, chatId, workerOrigin);
       return;
 
     case "/list":
@@ -127,16 +140,15 @@ async function handleAdminCommand(
       await handleInfo(env, chatId, args, true);
       return;
 
-    case "/panel":
-      await handlePanel(env, chatId, workerOrigin);
-      return;
-
     case "/ping":
       await sendMessage(env, chatId, "pong", { bot: "admin" });
       return;
 
     default:
-      await sendMessage(env, chatId, "Noma'lum buyruq. /help", { bot: "admin" });
+      await sendMessage(env, chatId, "Noma'lum buyruq. /panel", {
+        bot: "admin",
+        replyMarkup: ADMIN_KEYBOARD,
+      });
   }
 }
 
@@ -230,5 +242,8 @@ async function handleAdminUpload(
     lines.push("", `Caption: ${caption}`);
   }
 
-  await sendMessage(env, chatId, lines.join("\n"), { bot: "admin" });
+  await sendMessage(env, chatId, lines.join("\n"), {
+    bot: "admin",
+    replyMarkup: ADMIN_KEYBOARD,
+  });
 }

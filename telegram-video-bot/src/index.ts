@@ -1,6 +1,7 @@
 import { handleAdminRequest } from "./admin";
 import { ensureBotTokens, hasAdminBot } from "./bots";
 import { getWebhookSecret, isAdminPanelPath } from "./config";
+import { handleAdminBotCallback } from "./admin-panel-bot";
 import { handleAdminBotMessage } from "./handlers-admin";
 import { handleCallbackQuery, handleUserMessage } from "./handlers-user";
 import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
@@ -104,6 +105,12 @@ export default {
       if (update.message) {
         ctx.waitUntil(
           handleAdminBotMessage(env, update.message, url.origin),
+        );
+      }
+
+      if (update.callback_query) {
+        ctx.waitUntil(
+          handleAdminBotCallback(env, update.callback_query, url.origin),
         );
       }
 
