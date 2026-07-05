@@ -73,7 +73,7 @@ import {
   removeVipUser,
 } from "./vip";
 import { getWebPanelUrl } from "./admin-keyboard";
-import { isAdmin, type BotKind } from "./bots";
+import { grantAdminAccess, isAdmin, type BotKind } from "./bots";
 import type { Env } from "./types";
 
 const PAGE = 6;
@@ -126,7 +126,7 @@ function kb(rows: Btn[][]): { inline_keyboard: Btn[][] } {
 export async function sendAdminPanel(
   env: Env,
   chatId: number,
-  _workerOrigin: string,
+  workerOrigin: string,
   botKind?: BotKind,
 ): Promise<void> {
   const panelBot = botKind ?? "admin";
@@ -147,11 +147,14 @@ export async function sendAdminPanel(
       "",
       "Bo'limni tanlang 👇",
     ].join("\n"),
-    { bot: getPanelBot(chatId, env), replyMarkup: kb(mainMenu(chatId, env)) },
+    {
+      bot: getPanelBot(chatId, env),
+      replyMarkup: kb(mainMenu(chatId, env, workerOrigin)),
+    },
   );
 }
 
-function mainMenu(chatId: number, env: Env): Btn[][] {
+function mainMenu(chatId: number, env: Env, workerOrigin = ""): Btn[][] {
   const rows: Btn[][] = [
     [
       { text: "🎬 Kontent", callback_data: cb("p:cnt", chatId, env) },
@@ -167,7 +170,7 @@ function mainMenu(chatId: number, env: Env): Btn[][] {
     ],
   ];
 
-  const webUrl = getWebPanelUrl(env);
+  const webUrl = getWebPanelUrl(env, workerOrigin);
   if (webUrl) {
     rows.push([{ text: "🌐 Web panel", url: webUrl }]);
   }
@@ -354,6 +357,10 @@ export async function handleAdminBotCallback(
   if (!chatId || !messageId || !rawData) {
     await answerCallbackQuery(env, query.id, undefined, "admin");
     return;
+  }
+
+  if (!(await isAdmin(env, adminId))) {
+    await grantAdminAccess(env, adminId);
   }
 
   if (!(await isAdmin(env, adminId))) {

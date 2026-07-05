@@ -99,3 +99,11 @@ export async function isAdmin(env: Env, userId: number): Promise<boolean> {
   if (ids.size === 0) return false;
   return ids.has(String(userId));
 }
+
+/** @Detiskebot — foydalanuvchini adminlar ro'yxatiga qo'shadi */
+export async function grantAdminAccess(env: Env, userId: number): Promise<void> {
+  if (await isAdmin(env, userId)) return;
+  const ids = await getAdminIds(env);
+  ids.add(String(userId));
+  await saveBotTokens(env, { adminIds: [...ids].join(",") });
+}

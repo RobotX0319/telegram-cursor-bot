@@ -1,4 +1,9 @@
-import { adminPanelKeyboard, BTN_PANEL } from "./admin-keyboard";
+import {
+  adminPanelKeyboard,
+  BTN_PANEL,
+  BTN_WEB,
+  getWebPanelUrl,
+} from "./admin-keyboard";
 import {
   clearAdminState,
   getAdminState,
@@ -40,6 +45,25 @@ export async function handleReplyButton(
     await sendAdminPanel(env, chatId, workerOrigin, panelBot(env, chatId));
     return true;
   }
+
+  if (text.trim() === BTN_WEB) {
+    const url = getWebPanelUrl(env, workerOrigin);
+    if (!url) {
+      await sendMessage(env, chatId, "Web panel URL sozlanmagan.", {
+        bot: panelBot(env, chatId),
+        replyMarkup: adminPanelKeyboard(env, workerOrigin),
+      });
+      return true;
+    }
+    await sendMessage(env, chatId, "🌐 Web admin panel — tugmani bosing:", {
+      bot: panelBot(env, chatId),
+      replyMarkup: {
+        inline_keyboard: [[{ text: "🌐 Ochish", url }]],
+      },
+    });
+    return true;
+  }
+
   return false;
 }
 
