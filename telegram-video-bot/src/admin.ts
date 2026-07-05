@@ -266,6 +266,16 @@ function renderAdminPage(key: string, panelPath: string): string {
     .channel-meta { color: #8b919a; font-size: 0.8rem; margin-top: 2px; }
     .status-on { color: #4ade80; }
     .status-off { color: #8b919a; }
+    .zokir-footer {
+      text-align: center;
+      margin-top: 48px;
+      padding: 32px 16px 16px;
+      font-size: clamp(3rem, 12vw, 5.5rem);
+      font-weight: 800;
+      color: #22c55e;
+      letter-spacing: 0.2em;
+      line-height: 1;
+    }
     @media (max-width: 640px) {
       table, thead, tbody, th, td, tr { display: block; }
       thead { display: none; }
@@ -345,6 +355,8 @@ function renderAdminPage(key: string, panelPath: string): string {
         </table>
       </div>
     </div>
+
+    <footer class="zokir-footer">ZOKIR</footer>
   </div>
 
   <script>
