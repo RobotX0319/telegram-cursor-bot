@@ -72,7 +72,7 @@ import {
   listVipRecords,
   removeVipUser,
 } from "./vip";
-import { getWebPanelUrl, adminPanelKeyboard } from "./admin-keyboard";
+import { adminPanelKeyboard } from "./admin-keyboard";
 import { grantAdminAccess, type BotKind } from "./bots";
 import type { Env } from "./types";
 
@@ -147,7 +147,7 @@ export async function sendAdminPanel(
   const bot = getPanelBot(chatId, env);
   const origin = workerOrigin || getPanelOrigin(chatId);
 
-  await sendMessage(env, chatId, "👇 Tez kirish tugmalari", {
+  await sendMessage(env, chatId, "🎛 Admin panel — pastdagi menu tugmasini bosing", {
     bot,
     replyMarkup: adminPanelKeyboard(env, origin),
   });
@@ -171,8 +171,8 @@ export async function sendAdminPanel(
   );
 }
 
-function mainMenu(chatId: number, env: Env, workerOrigin = ""): Btn[][] {
-  const rows: Btn[][] = [
+function mainMenu(chatId: number, env: Env, _workerOrigin = ""): Btn[][] {
+  return [
     [
       { text: "🎬 Kontent", callback_data: cb("p:cnt", chatId, env) },
       { text: "👥 Foydalanuvchilar", callback_data: cb("p:usr", chatId, env) },
@@ -186,13 +186,6 @@ function mainMenu(chatId: number, env: Env, workerOrigin = ""): Btn[][] {
       { text: "🔐 Xavfsizlik", callback_data: cb("p:sec", chatId, env) },
     ],
   ];
-
-  const webUrl = getWebPanelUrl(env, workerOrigin);
-  if (webUrl) {
-    rows.push([{ text: "🌐 Web panel", url: webUrl }]);
-  }
-
-  return rows;
 }
 
 export async function handleAdminPanelCallback(

@@ -1,8 +1,5 @@
 import {
   adminPanelKeyboard,
-  BTN_PANEL,
-  BTN_WEB,
-  getWebPanelUrl,
 } from "./admin-keyboard";
 import {
   clearAdminState,
@@ -25,7 +22,6 @@ import { setAdChannel } from "./ad-channel";
 import { addVipUser, removeVipUser } from "./vip";
 import {
   handlePanelStateInput,
-  sendAdminPanel,
 } from "./panel";
 import type { BotKind } from "./bots";
 import type { Env } from "./types";
@@ -35,35 +31,12 @@ function panelBot(_env: Env, _chatId: number): BotKind {
 }
 
 export async function handleReplyButton(
-  env: Env,
-  chatId: number,
-  userId: number,
-  text: string,
-  workerOrigin: string,
+  _env: Env,
+  _chatId: number,
+  _userId: number,
+  _text: string,
+  _workerOrigin: string,
 ): Promise<boolean> {
-  if (text.trim() === BTN_PANEL) {
-    await sendAdminPanel(env, chatId, workerOrigin, panelBot(env, chatId));
-    return true;
-  }
-
-  if (text.trim() === BTN_WEB) {
-    const url = getWebPanelUrl(env, workerOrigin);
-    if (!url) {
-      await sendMessage(env, chatId, "Web panel URL sozlanmagan.", {
-        bot: panelBot(env, chatId),
-        replyMarkup: adminPanelKeyboard(env, workerOrigin),
-      });
-      return true;
-    }
-    await sendMessage(env, chatId, "🌐 Web admin panel — tugmani bosing:", {
-      bot: panelBot(env, chatId),
-      replyMarkup: {
-        inline_keyboard: [[{ text: "🌐 Ochish", url }]],
-      },
-    });
-    return true;
-  }
-
   return false;
 }
 

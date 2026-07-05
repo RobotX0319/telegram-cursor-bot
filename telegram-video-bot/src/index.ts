@@ -9,7 +9,7 @@ import { getWebhookSecret, isAdminPanelPath } from "./config";
 import { handleAdminBotCallback } from "./panel";
 import { handleAdminBotMessage } from "./handlers-admin";
 import { handleCallbackQuery, handleUserMessage } from "./handlers-user";
-import { configureWebhookFromEnv, getWebhookInfo, setBotCommands, sendMessage, answerCallbackQuery } from "./telegram";
+import { configureWebhookFromEnv, getWebhookInfo, setBotCommands, sendMessage, answerCallbackQuery, setAdminPanelMenuButton } from "./telegram";
 import { resetBotData, resetBotFully } from "./reset";
 import { processDueBroadcasts } from "./broadcast";
 import type { Env, TelegramUpdate } from "./types";
@@ -123,8 +123,11 @@ export default {
       const adminOk = hasAdminBot(env)
         ? await setBotCommands(env, "admin")
         : null;
+      const menuOk = hasAdminBot(env)
+        ? await setAdminPanelMenuButton(env, url.origin)
+        : null;
 
-      return Response.json({ user: userOk, admin: adminOk });
+      return Response.json({ user: userOk, admin: adminOk, menuButton: menuOk });
     }
 
     if (request.method === "POST" && url.pathname === "/admin/reset") {

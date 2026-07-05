@@ -13,6 +13,6 @@ export function adminRedirectText(): string {
     "",
     "1️⃣ " + ADMIN_BOT + " ni oching",
     "2️⃣ /start yuboring",
-    "3️⃣ Pastdagi 🎛 yoki 🌐 tugmalarni bosing",
+    "3️⃣ Pastdagi 🎛 Admin panel menu tugmasini bosing",
   ].join("\n");
 }

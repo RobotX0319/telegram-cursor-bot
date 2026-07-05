@@ -44,7 +44,7 @@ export async function connectAdminBotToken(
 
   if (response.ok) {
     await setBotCommands(env, "admin");
-    await setAdminPanelMenuButton(env);
+    await setAdminPanelMenuButton(env, workerOrigin);
   }
 
   return {
@@ -68,7 +68,7 @@ let adminWebhookReady = false;
 
 export async function ensureDetiskebotReady(
   env: Env,
-  _workerOrigin: string,
+  workerOrigin: string,
 ): Promise<void> {
   if (adminWebhookReady) return;
 
@@ -88,6 +88,6 @@ export async function ensureDetiskebotReady(
   if (!hasAdminBot(env)) return;
 
   await setBotCommands(env, "admin");
-  await setAdminPanelMenuButton(env);
+  await setAdminPanelMenuButton(env, workerOrigin);
   adminWebhookReady = true;
 }

@@ -6,6 +6,7 @@ import {
   getUserBotToken,
 } from "./bots";
 import { getWebhookSecret } from "./config";
+import { getWebPanelUrl } from "./admin-keyboard";
 import type { Env } from "./types";
 
 const TELEGRAM_API = "https://api.telegram.org";
@@ -53,18 +54,28 @@ export async function deleteBotCommands(
   return true;
 }
 
-export async function setAdminPanelMenuButton(env: Env): Promise<boolean> {
+export async function setAdminPanelMenuButton(
+  env: Env,
+  workerOrigin = "",
+): Promise<boolean> {
   const token = getAdminBotToken(env);
   if (!token.trim()) return false;
+
+  const url = getWebPanelUrl(env, workerOrigin);
+  const menuButton = url
+    ? {
+        type: "web_app" as const,
+        text: "🎛 Admin panel",
+        web_app: { url },
+      }
+    : { type: "commands" as const };
 
   const response = await fetch(
     `${TELEGRAM_API}/bot${token}/setChatMenuButton`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        menu_button: { type: "commands" },
-      }),
+      body: JSON.stringify({ menu_button: menuButton }),
     },
   );
 
