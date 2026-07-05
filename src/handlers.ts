@@ -12,6 +12,7 @@ import {
   addAdmin,
   getBootstrapAdminIds,
   isAllowedUser,
+  isBootstrapAdmin,
   listAllAdminIds,
   listStoredAdmins,
   removeAdmin,
@@ -30,6 +31,11 @@ import {
   kickoffPendingPoll,
   notifyIfFinished,
 } from "./pending";
+import {
+  STICKER_STATUSES,
+  listStatusStickers,
+  setStatusStickerFileId,
+} from "./stickers";
 import { saveCursorApiKey, resolveCursorApiKey } from "./secrets";
 import { defaultRepo, updateSession } from "./session";
 import { sendChatAction, sendMessage, sendRunResult } from "./telegram";
@@ -52,6 +58,7 @@ Buyruqlar:
 /admin remove <id> — adminni olib tashlash
 /setkey <key> — Cursor API kalitini saqlash (faqat admin)
 /version — bot versiyasi
+/setsticker finished — stickerga javob qilib natija stikeri saqlash
 
 Barcha adminlar bir xil agentlar va repo bilan ishlaydi.
 
@@ -88,7 +95,7 @@ export async function handleMessage(
   }
 
   if (text.startsWith("/")) {
-    await handleCommand(env, chatId, userId, text, ctx, workerOrigin);
+    await handleCommand(env, chatId, userId, text, ctx, workerOrigin, message);
     return;
   }
 
@@ -102,6 +109,7 @@ async function handleCommand(
   text: string,
   ctx: ExecutionContext,
   workerOrigin: string,
+  message: TelegramMessage,
 ): Promise<void> {
   const [command, ...rest] = text.split(/\s+/);
   const args = rest.join(" ").trim();
@@ -154,6 +162,14 @@ async function handleCommand(
       await handleSetKey(env, chatId, userId, args);
       return;
 
+    case "/setsticker":
+      await handleSetSticker(env, chatId, userId, message, args);
+      return;
+
+    case "/stickers":
+      await handleListStickers(env, chatId, userId);
+      return;
+
     case "/ask":
       if (!args) {
         await sendMessage(
@@ -185,6 +201,81 @@ async function handleCommand(
     default:
       await sendMessage(env, chatId, "Noma'lum buyruq. /help");
   }
+}
+
+async function handleSetSticker(
+  env: Env,
+  chatId: number,
+  userId: number,
+  message: TelegramMessage,
+  statusArg: string,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Bu buyruq faqat asosiy admin uchun.");
+    return;
+  }
+
+  const sticker = message.reply_to_message?.sticker ?? message.sticker;
+  if (!sticker) {
+    await sendMessage(
+      env,
+      chatId,
+      [
+        "Stickerga javob qilib yuboring:",
+        "/setsticker finished",
+        "",
+        `Statuslar: ${STICKER_STATUSES.join(", ")}`,
+      ].join("\n"),
+    );
+    return;
+  }
+
+  const status = (statusArg || "finished").toLowerCase();
+  if (!STICKER_STATUSES.includes(status as (typeof STICKER_STATUSES)[number])) {
+    await sendMessage(
+      env,
+      chatId,
+      `Noto'g'ri status. Mavjud: ${STICKER_STATUSES.join(", ")}`,
+    );
+    return;
+  }
+
+  await setStatusStickerFileId(env, status, sticker.file_id);
+  await sendMessage(
+    env,
+    chatId,
+    `Sticker saqlandi: ${status}${sticker.emoji ? ` ${sticker.emoji}` : ""}`,
+  );
+}
+
+async function handleListStickers(
+  env: Env,
+  chatId: number,
+  userId: number,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Bu buyruq faqat asosiy admin uchun.");
+    return;
+  }
+
+  const stickers = await listStatusStickers(env);
+  if (stickers.length === 0) {
+    await sendMessage(
+      env,
+      chatId,
+      "Stickerlar yo'q.\n\nStickerga javob: /setsticker finished",
+    );
+    return;
+  }
+
+  const lines = stickers.map((s) => `• ${s.status}`);
+  await sendMessage(
+    env,
+    chatId,
+    ["Saqlandi:", "", ...lines, "", "O'rnatish: stickerga javob /setsticker finished"].join(
+      "\n",
+    ),
+  );
 }
 
 async function handleAdmin(

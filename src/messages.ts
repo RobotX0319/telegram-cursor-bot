@@ -111,6 +111,25 @@ export function markdownToTelegramHtml(text: string): string {
   return restorePlaceholders(lines.join("\n"), placeholders);
 }
 
+export function statusDecoration(status: RunStatus): string {
+  switch (status) {
+    case "FINISHED":
+      return "🎉";
+    case "ERROR":
+      return "🆘";
+    case "CANCELLED":
+      return "🛑";
+    case "EXPIRED":
+      return "⏰";
+    case "RUNNING":
+      return "⚡";
+    case "CREATING":
+      return "🚀";
+    default:
+      return "🤖";
+  }
+}
+
 export function statusEmoji(status: RunStatus): string {
   switch (status) {
     case "FINISHED":
@@ -185,12 +204,13 @@ export function formatRunResultPlain(run: CursorRun): string {
   return lines.join("\n");
 }
 
-export function formatRunResultHtml(run: CursorRun): string {
+export function formatRunResultHeaderHtml(run: CursorRun): string {
+  const deco = statusDecoration(run.status);
   const emoji = statusEmoji(run.status);
   const label = statusLabel(run.status);
   const parts: string[] = [];
 
-  parts.push(`${emoji} <b>${label}</b>`);
+  parts.push(`${deco} ${emoji} <b>${label}</b>`);
   parts.push(`<b>Status:</b> <code>${escapeHtml(run.status)}</code>`);
 
   if (run.durationMs != null) {
@@ -216,19 +236,35 @@ export function formatRunResultHtml(run: CursorRun): string {
   }
 
   if (run.result) {
-    const rendered = markdownToTelegramHtml(run.result);
     parts.push("");
     parts.push("📝 <b>Qisqa xulosa</b>");
     parts.push(escapeHtml(extractSummary(run.result)));
+  }
 
+  return parts.join("\n");
+}
+
+export function formatRunResultBodyPre(run: CursorRun): string | null {
+  if (!run.result?.trim()) return null;
+
+  const body = stripMarkdown(run.result.trim());
+  const maxBody = 3800;
+  const text =
+    body.length > maxBody
+      ? `${body.slice(0, maxBody)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
+      : body;
+
+  return `<pre>${escapeHtml(text)}</pre>`;
+}
+
+export function formatRunResultHtml(run: CursorRun): string {
+  const parts = [formatRunResultHeaderHtml(run)];
+
+  const bodyPre = formatRunResultBodyPre(run);
+  if (bodyPre) {
     parts.push("");
-    parts.push("📄 <b>Javob</b>");
-    const maxBody = 3200;
-    parts.push(
-      rendered.length > maxBody
-        ? `${rendered.slice(0, maxBody)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
-        : rendered,
-    );
+    parts.push("📄 <b>To'liq javob</b> <i>(nusxalash uchun bosing)</i>");
+    parts.push(bodyPre);
   }
 
   return parts.join("\n");

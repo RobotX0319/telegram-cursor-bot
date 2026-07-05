@@ -1,11 +1,14 @@
 import type { Env } from "./types";
 import type { CursorRun } from "./types";
 import {
+  formatRunResultBodyPre,
+  formatRunResultHeaderHtml,
   formatRunResultHtml,
   formatRunResultPlain,
   statusEmoji,
   statusLabel,
 } from "./messages";
+import { getStatusStickerFileId } from "./stickers";
 
 const TELEGRAM_API = "https://api.telegram.org";
 
@@ -74,24 +77,79 @@ export async function sendMessage(
   }
 }
 
+export async function sendSticker(
+  env: Env,
+  chatId: number,
+  fileId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendSticker`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        sticker: fileId,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("Telegram sendSticker failed:", response.status, body);
+  }
+}
+
+async function sendStatusSticker(
+  env: Env,
+  chatId: number,
+  run: CursorRun,
+): Promise<void> {
+  const fileId = await getStatusStickerFileId(env, run.status);
+  if (fileId) {
+    await sendSticker(env, chatId, fileId);
+  }
+}
+
 export async function sendRunResult(
   env: Env,
   chatId: number,
   run: CursorRun,
 ): Promise<void> {
-  const html = formatRunResultHtml(run);
-  const plain = formatRunResultPlain(run);
+  await sendStatusSticker(env, chatId, run);
 
-  if (html.length <= 4096) {
-    const sent = await trySendHtml(env, chatId, html);
+  const header = formatRunResultHeaderHtml(run);
+  const bodyPre = formatRunResultBodyPre(run);
+  const full = formatRunResultHtml(run);
+
+  if (full.length <= 4096) {
+    const sent = await trySendHtml(env, chatId, full);
     if (sent) return;
   }
 
-  // HTML xato yoki juda uzun — qisqa sarlavha + oddiy matn
-  const header = `${statusEmoji(run.status)} ${statusLabel(run.status)}`;
-  await sendMessage(env, chatId, header);
+  const headerSent = await trySendHtml(env, chatId, header);
+  if (!headerSent) {
+    await sendMessage(
+      env,
+      chatId,
+      `${statusEmoji(run.status)} ${statusLabel(run.status)}`,
+    );
+  }
 
-  for (const chunk of splitMessage(plain, 4096)) {
+  if (bodyPre) {
+    const preMessage = `📄 <b>To'liq javob</b> <i>(nusxalash uchun bosing)</i>\n${bodyPre}`;
+    const sent = await trySendHtml(env, chatId, preMessage);
+    if (!sent) {
+      for (const chunk of splitMessage(formatRunResultPlain(run), 4096)) {
+        await sendMessage(env, chatId, chunk);
+      }
+    }
+    return;
+  }
+
+  if (!headerSent) return;
+
+  for (const chunk of splitMessage(formatRunResultPlain(run), 4096)) {
     await sendMessage(env, chatId, chunk);
   }
 }
