@@ -4,7 +4,7 @@ import {
   handleAdminStateInput,
   handleReplyButton,
 } from "./admin-reply-menu";
-import { getAdminIds, hasAdminBot, isAdmin } from "./bots";
+import { getAdminIds, hasAdminBot, isAdmin, saveBotTokens } from "./bots";
 import {
   handleDelete,
   handleInfo,
@@ -79,20 +79,36 @@ export async function handleAdminBotMessage(
 
   const adminIds = await getAdminIds(env);
   if (adminIds.size === 0) {
-    await sendMessage(
-      env,
-      chatId,
-      [
-        "Admin hali sozlanmagan.",
-        "",
-        `Sizning Telegram ID: ${userId}`,
-      ].join("\n"),
-      { bot: adminMsgBot.get(userId) ?? "admin" },
-    );
-    return;
-  }
-
-  if (!(await isAdmin(env, userId))) {
+    if (viaUserBot) {
+      await saveBotTokens(env, { adminIds: String(userId) });
+      await sendMessage(
+        env,
+        chatId,
+        [
+          "✅ Siz birinchi admin sifatida ro'yxatdan o'tdingiz!",
+          "",
+          `ID: ${userId}`,
+          "",
+          "/panel — boshqaruv paneli",
+        ].join("\n"),
+        { bot: adminMsgBot.get(userId) ?? "admin" },
+      );
+    } else {
+      await sendMessage(
+        env,
+        chatId,
+        [
+          "Admin hali sozlanmagan.",
+          "",
+          `Sizning Telegram ID: ${userId}`,
+          "",
+          "@Detskebot da /panel yuboring.",
+        ].join("\n"),
+        { bot: adminMsgBot.get(userId) ?? "admin" },
+      );
+      return;
+    }
+  } else if (!(await isAdmin(env, userId))) {
     await sendMessage(
       env,
       chatId,

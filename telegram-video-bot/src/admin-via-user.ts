@@ -1,5 +1,5 @@
 import type { BotKind } from "./bots";
-import { isAdmin } from "./bots";
+import { getAdminIds, isAdmin, saveBotTokens } from "./bots";
 import { isReplyButton } from "./admin-keyboard";
 import { handleAdminBotMessage } from "./handlers-admin";
 import type { Env, TelegramMessage } from "./types";
@@ -38,9 +38,20 @@ export async function tryAdminOnUserBot(
   workerOrigin: string,
 ): Promise<boolean> {
   const userId = message.from?.id;
-  if (!userId || !(await isAdmin(env, userId))) return false;
+  if (!userId) return false;
 
+  const adminIds = await getAdminIds(env);
   const text = message.text?.trim();
+  const cmd = text?.split(/\s+/)[0]?.toLowerCase().split("@")[0];
+
+  if (adminIds.size === 0 && (cmd === "/panel" || cmd === "/start")) {
+    await saveBotTokens(env, { adminIds: String(userId) });
+    if (cmd === "/start") {
+      return false;
+    }
+  } else if (!(await isAdmin(env, userId))) {
+    return false;
+  }
   const isAdminMedia =
     Boolean(message.video || message.animation || message.photo?.length) ||
     isVideoDocument(message) ||

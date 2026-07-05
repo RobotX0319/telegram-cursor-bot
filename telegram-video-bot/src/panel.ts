@@ -86,9 +86,15 @@ function getPanelBot(chatId: number): BotKind {
   return panelBotSession.get(chatId) ?? "admin";
 }
 
-export function parsePanelCallback(data: string): { data: string; botKind: BotKind } {
+export function parsePanelCallback(
+  data: string,
+  chatId?: number,
+): { data: string; botKind: BotKind } {
   if (data.startsWith("pu:")) {
     return { data: `p:${data.slice(3)}`, botKind: "user" };
+  }
+  if (chatId !== undefined && getPanelBot(chatId) === "user") {
+    return { data, botKind: "user" };
   }
   return { data, botKind: "admin" };
 }
@@ -163,7 +169,7 @@ export async function handleAdminPanelCallback(
   adminId: number,
   workerOrigin: string,
 ): Promise<void> {
-  const { data, botKind } = parsePanelCallback(rawData);
+  const { data, botKind } = parsePanelCallback(rawData, chatId);
   setPanelBot(chatId, botKind);
   const parts = data.split(":");
   const section = parts[1];
@@ -335,7 +341,8 @@ export async function handleAdminBotCallback(
     return;
   }
 
-  const answerBot = rawData.startsWith("pu:") ? "user" : "admin";
+  const answerBot =
+    parsePanelCallback(rawData, chatId).botKind === "user" ? "user" : "admin";
   await answerCallbackQuery(env, query.id, undefined, answerBot);
 
   if (rawData.startsWith("p:") || rawData.startsWith("pu:")) {
@@ -1049,14 +1056,15 @@ async function showSubSettings(
 ): Promise<void> {
   const { config, vipCount } = await getSubscriptionSummary(env);
   const keyboard: Btn[][] = subscriptionInlineKeyboard(config).map((row) =>
-    row.map((b) => ({
-      text: b.text,
-      callback_data: b.callback_data
-        ?.replace("adm:subon", "p:subon")
-        .replace("adm:suboff", "p:suboff")
-        .replace("adm:ch:add", "p:chadd")
-        .replace(/^adm:ch:del:(\d+)$/, "p:chdel:$1") ?? "p:set",
-    })),
+    row.map((b) => {
+      const raw =
+        b.callback_data
+          ?.replace("adm:subon", "p:subon")
+          .replace("adm:suboff", "p:suboff")
+          .replace("adm:ch:add", "p:chadd")
+          .replace(/^adm:ch:del:(\d+)$/, "p:chdel:$1") ?? "p:set";
+      return { text: b.text, callback_data: cb(raw, chatId) };
+    }),
   );
   keyboard.push(back(chatId, "p:set"));
 
@@ -1081,16 +1089,17 @@ async function showAdSettings(
   const { subConfig, adConfig, vipCount } = await getChannelsMenuData(env);
   const keyboard: Btn[][] = channelsMenuInlineKeyboard(subConfig, adConfig).map(
     (row) =>
-      row.map((b) => ({
-        text: b.text,
-        callback_data: b.callback_data
-          ?.replace("adm:ad:ch", "p:adch")
-          .replace("adm:ad:tpl", "p:adtpl")
-          .replace("adm:ad:on", "p:adon")
-          .replace("adm:ad:off", "p:adoff")
-          .replace("adm:ad:chdel", "p:adchdel")
-          .replace("adm:ad:tpldel", "p:adtpldel") ?? "p:set",
-      })),
+      row.map((b) => {
+        const raw =
+          b.callback_data
+            ?.replace("adm:ad:ch", "p:adch")
+            .replace("adm:ad:tpl", "p:adtpl")
+            .replace("adm:ad:on", "p:adon")
+            .replace("adm:ad:off", "p:adoff")
+            .replace("adm:ad:chdel", "p:adchdel")
+            .replace("adm:ad:tpldel", "p:adtpldel") ?? "p:set";
+        return { text: b.text, callback_data: cb(raw, chatId) };
+      }),
   );
   keyboard.push(back(chatId, "p:set"));
 
