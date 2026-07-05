@@ -1,5 +1,6 @@
-import { hasAdminBot, isAdmin } from "./bots";
+import { isAdmin } from "./bots";
 import { tryAdminOnUserBot, openUserAdminPanel } from "./admin-via-user";
+import { handleAdminBotMessage } from "./handlers-admin";
 import { handleAdminPanelCallback, parsePanelCallback } from "./panel";
 import {
   trackNotFound,
@@ -77,20 +78,16 @@ export async function handleUserMessage(
   if (text) {
     const cmd = text.split(/\s+/)[0]?.toLowerCase().split("@")[0];
     if (cmd === "/panel" || cmd === "/admin") {
-      if (hasAdminBot(env)) {
-        await sendMessage(
-          env,
-          chatId,
-          "👑 Admin panel: @Detiskebot\n\n/panel yuboring.",
-        );
-        return;
-      }
       await openUserAdminPanel(env, chatId, userId);
       return;
     }
   }
 
   if (await tryAdminOnUserBot(env, message, workerOrigin)) {
+    return;
+  }
+
+  if (message.video || message.animation || message.photo?.length || isVideoDocument(message)) {
     return;
   }
 
@@ -102,15 +99,8 @@ export async function handleUserMessage(
 
   if (!text) return;
 
-  if (message.video || isVideoDocument(message)) {
-    if (!(await isAdmin(env, userId))) {
-      await sendMessage(env, chatId, "📤 Video yuklash: @Detiskebot");
-    }
-    return;
-  }
-
   if (text.startsWith("/")) {
-    await handleUserCommand(env, chatId, userId, text, message.from);
+    await handleUserCommand(env, chatId, userId, text, message.from, message, workerOrigin);
     return;
   }
 
@@ -140,7 +130,9 @@ async function handleUserCommand(
   chatId: number,
   userId: number,
   text: string,
-  from?: TelegramMessage["from"],
+  from: TelegramMessage["from"] | undefined,
+  message: TelegramMessage,
+  workerOrigin: string,
 ): Promise<void> {
   const [command, ...rest] = text.split(/\s+/);
   const args = rest.join(" ").trim();
@@ -184,15 +176,19 @@ async function handleUserCommand(
 
     default:
       if (ADMIN_ONLY_COMMANDS.has(cmd)) {
-        if (hasAdminBot(env)) {
+        if (cmd === "/panel" || cmd === "/admin") {
+          await openUserAdminPanel(env, chatId, userId);
+          return;
+        }
+        if (!(await isAdmin(env, userId))) {
           await sendMessage(
             env,
             chatId,
-            "👑 Admin buyruqlar: @Detiskebot",
+            "⛔ Admin buyruq.\n\n/meningid — IDingizni ko'ring.",
           );
-        } else {
-          await openUserAdminPanel(env, chatId, userId);
+          return;
         }
+        await handleAdminBotMessage(env, message, workerOrigin, "user");
         return;
       }
       await sendMessage(env, chatId, "❓ Noma'lum buyruq. /help");
@@ -226,9 +222,7 @@ async function sendWelcome(
     await sendMessage(
       env,
       chatId,
-      hasAdminBot(env)
-        ? "👑 Admin: @Detiskebot → /panel"
-        : "👑 Admin: /panel — boshqaruv paneli",
+      "👑 Admin: /panel — boshqaruv paneli\n📤 Video: ID (masalan 5), keyin video yuboring",
     );
   }
 
@@ -378,18 +372,13 @@ export async function handleList(env: Env, chatId: number): Promise<void> {
   const videos = await listVideos(env);
 
   if (videos.length === 0) {
-    await sendMessage(env, chatId, "Hozircha kino yo'q.", { bot: "admin" });
+    await sendMessage(env, chatId, "Hozircha kino yo'q.");
     return;
   }
 
   const lines = videos.map((video) => `${video.id}. ${movieName(video)}`);
 
-  await sendMessage(
-    env,
-    chatId,
-    ["Kinolar:", "", ...lines].join("\n"),
-    { bot: "admin" },
-  );
+  await sendMessage(env, chatId, ["Kinolar:", "", ...lines].join("\n"));
 }
 
 export async function handleDelete(
@@ -398,7 +387,7 @@ export async function handleDelete(
   args: string,
 ): Promise<void> {
   if (!/^\d+$/.test(args)) {
-    await sendMessage(env, chatId, "Foydalanish: /delete 5", { bot: "admin" });
+    await sendMessage(env, chatId, "Foydalanish: /delete 5");
     return;
   }
 
@@ -406,17 +395,17 @@ export async function handleDelete(
   const deleted = await deleteVideo(env, id);
 
   if (!deleted) {
-    await sendMessage(env, chatId, `Kino topilmadi: ${id}`, { bot: "admin" });
+    await sendMessage(env, chatId, `Kino topilmadi: ${id}`);
     return;
   }
 
-  await sendMessage(env, chatId, `Kino o'chirildi: ${id}`, { bot: "admin" });
+  await sendMessage(env, chatId, `Kino o'chirildi: ${id}`);
 }
 
 export async function handleStats(env: Env, chatId: number): Promise<void> {
   const { buildAdminStatsText } = await import("./stats");
   const text = await buildAdminStatsText(env);
-  await sendMessage(env, chatId, text, { bot: "admin" });
+  await sendMessage(env, chatId, text);
 }
 
 export function formatDate(iso: string): string {

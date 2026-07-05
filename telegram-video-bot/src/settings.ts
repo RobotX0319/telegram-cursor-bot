@@ -13,7 +13,7 @@ export const DEFAULT_TEXTS: BotTexts = {
 • /check — obunani tekshirish
 • /karta — to'lov kartalari
 
-👑 Admin: @Detiskebot`,
+👑 Admin: /panel — boshqaruv paneli`,
   notFound: "❌ Kino topilmadi: {code}",
   blocked: "🚫 Siz bloklangansiz. Admin bilan bog'laning.",
   deliveryMessages: [

@@ -61,23 +61,21 @@ import type { Env, StoredVideo, TelegramMessage } from "./types";
 
 const adminMsgBot = new Map<number, BotKind>();
 
-function replyBot(env: Env, userId: number): BotKind {
-  return adminMsgBot.get(userId) ?? (hasAdminBot(env) ? "admin" : "user");
+function replyBot(_env: Env, userId: number): BotKind {
+  return adminMsgBot.get(userId) ?? "user";
 }
 
 function adminBot(env: Env, userId: number): { bot: BotKind } {
   return { bot: replyBot(env, userId) };
 }
 
-const ADMIN_HELP = `@Detiskebot — Admin bot
+const ADMIN_HELP = `@Detskebot — Admin
 
 🎛 /panel — boshqaruv paneli
 📤 Kino yuklash — avval ID (masalan: 5), keyin video
 📋 /list — kinolar ro'yxati
 📊 /stats — statistika
-/cancel — bekor qilish
-
-👥 Foydalanuvchilar: @Detskebot`;
+/cancel — bekor qilish`;
 
 export async function handleAdminBotMessage(
   env: Env,
@@ -98,11 +96,11 @@ export async function handleAdminBotMessage(
       env,
       chatId,
       [
-        "⚠️ @Detiskebot hali ulanmagan.",
+        "👋 Admin panel @Detskebot da.",
         "",
-        "Bot tokenini ulang — keyin qayta /start yuboring.",
+        "@Detskebot ga o'ting va /panel yuboring.",
       ].join("\n"),
-      { bot: "admin" },
+      { bot: "user" },
     );
     return;
   }
@@ -223,10 +221,10 @@ async function handleAdminCommand(
         [
           "👋 Salom, admin!",
           "",
-          "@Detiskebot — kino boshqaruv boti",
+          "🎛 /panel — boshqaruv paneli",
+          "📤 Video yuklash: ID yuboring (5), keyin video",
           "",
-          "/panel — boshqaruv paneli",
-          "Video yuklash: ID yuboring (5), keyin video",
+          "/help — barcha buyruqlar",
         ].join("\n"),
         { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
       );

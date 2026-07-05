@@ -72,7 +72,7 @@ import {
   listVipRecords,
   removeVipUser,
 } from "./vip";
-import { hasAdminBot, type BotKind } from "./bots";
+import { type BotKind } from "./bots";
 import type { Env } from "./types";
 
 const PAGE = 6;
@@ -82,9 +82,8 @@ function setPanelBot(chatId: number, bot: BotKind): void {
   panelBotSession.set(chatId, bot);
 }
 
-function getPanelBot(chatId: number, env: Env): BotKind {
-  if (!hasAdminBot(env)) return "user";
-  return panelBotSession.get(chatId) ?? "admin";
+function getPanelBot(_chatId: number, _env: Env): BotKind {
+  return "user";
 }
 
 export function resolvePanelBot(env: Env, chatId: number): BotKind {
@@ -93,19 +92,13 @@ export function resolvePanelBot(env: Env, chatId: number): BotKind {
 
 export function parsePanelCallback(
   data: string,
-  chatId: number | undefined,
-  env: Env,
+  _chatId: number | undefined,
+  _env: Env,
 ): { data: string; botKind: BotKind } {
   if (data.startsWith("pu:")) {
     return { data: `p:${data.slice(3)}`, botKind: "user" };
   }
-  if (!hasAdminBot(env)) {
-    return { data, botKind: "user" };
-  }
-  if (chatId !== undefined && getPanelBot(chatId, env) === "user") {
-    return { data, botKind: "user" };
-  }
-  return { data, botKind: "admin" };
+  return { data, botKind: "user" };
 }
 
 function cb(data: string, chatId: number, env: Env): string {
@@ -131,7 +124,7 @@ export async function sendAdminPanel(
   _workerOrigin: string,
   botKind?: BotKind,
 ): Promise<void> {
-  const panelBot = botKind ?? (hasAdminBot(env) ? "admin" : "user");
+  const panelBot = botKind ?? "user";
   setPanelBot(chatId, panelBot);
   const total = await countVideos(env);
   const users = await listUsers(env);
@@ -179,7 +172,7 @@ export async function handleAdminPanelCallback(
   workerOrigin: string,
 ): Promise<void> {
   const { data, botKind } = parsePanelCallback(rawData, chatId, env);
-  const panelBot = botKind ?? (hasAdminBot(env) ? "admin" : "user");
+  const panelBot = botKind ?? "user";
   setPanelBot(chatId, panelBot);
   const parts = data.split(":");
   const section = parts[1];

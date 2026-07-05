@@ -59,8 +59,12 @@ export async function openUserAdminPanel(
         "",
         `Sizning Telegram ID: ${userId}`,
         "",
-        `Hozir adminlar: ${[...ids].join(", ")}`,
-      ].join("\n"),
+        `/meningid — IDingizni ko'rish`,
+        "",
+        ids.size > 0 ? `Hozir adminlar: ${[...ids].join(", ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
     );
     return;
   }
