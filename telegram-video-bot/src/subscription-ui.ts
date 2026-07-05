@@ -8,7 +8,7 @@ import {
 } from "./subscription";
 import { listVipUserIds } from "./vip";
 import type { Env, SubscriptionConfig } from "./types";
-import { ADMIN_REPLY_KEYBOARD } from "./admin-keyboard";
+import { adminPanelKeyboard } from "./admin-keyboard";
 
 type InlineBtn = { text: string; callback_data?: string };
 
@@ -88,7 +88,7 @@ export async function startChannelAddFlow(
       "Bot kanalda admin bo'lishi kerak.",
       "Bekor: /cancel",
     ].join("\n"),
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: "admin", replyMarkup: adminPanelKeyboard(env) },
   );
 }
 

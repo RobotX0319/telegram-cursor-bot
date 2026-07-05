@@ -1,4 +1,4 @@
-import { ADMIN_REPLY_KEYBOARD, BTN_PANEL } from "./admin-keyboard";
+import { adminPanelKeyboard, BTN_PANEL } from "./admin-keyboard";
 import {
   clearAdminState,
   getAdminState,
@@ -53,7 +53,7 @@ export async function handleAdminStateInput(
     await clearAdminState(env, userId);
     await sendMessage(env, chatId, "Bekor qilindi.", {
       bot: panelBot(env, chatId),
-      replyMarkup: ADMIN_REPLY_KEYBOARD,
+      replyMarkup: adminPanelKeyboard(env),
     });
     return true;
   }
@@ -103,7 +103,7 @@ async function handleChannelInput(
       env,
       chatId,
       `✅ Kanal o'chirildi.\nQolgan: ${config.channels.length}`,
-      { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: panelBot(env, chatId), replyMarkup: adminPanelKeyboard(env) },
     );
     return true;
   }
@@ -112,7 +112,7 @@ async function handleChannelInput(
   if (!result.ok) {
     await sendMessage(env, chatId, result.error, {
       bot: panelBot(env, chatId),
-      replyMarkup: ADMIN_REPLY_KEYBOARD,
+      replyMarkup: adminPanelKeyboard(env),
     });
     return true;
   }
@@ -129,7 +129,7 @@ async function handleChannelInput(
     ]
       .filter(Boolean)
       .join("\n"),
-    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: adminPanelKeyboard(env) },
   );
   return true;
 }
@@ -144,7 +144,7 @@ async function handleAdChannelInput(
   if (!result.ok) {
     await sendMessage(env, chatId, result.error, {
       bot: panelBot(env, chatId),
-      replyMarkup: ADMIN_REPLY_KEYBOARD,
+      replyMarkup: adminPanelKeyboard(env),
     });
     return true;
   }
@@ -158,7 +158,7 @@ async function handleAdChannelInput(
       "",
       "Endi 🖼 Rasm shablon yuboring (Sozlamalar → Reklama).",
     ].join("\n"),
-    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: adminPanelKeyboard(env) },
   );
   return true;
 }
@@ -172,7 +172,7 @@ async function handleVipAddInput(
   if (!/^\d+$/.test(text.trim())) {
     await sendMessage(env, chatId, "Telegram ID raqam bo'lishi kerak.", {
       bot: panelBot(env, chatId),
-      replyMarkup: ADMIN_REPLY_KEYBOARD,
+      replyMarkup: adminPanelKeyboard(env),
     });
     return true;
   }
@@ -184,7 +184,7 @@ async function handleVipAddInput(
     env,
     chatId,
     result.ok ? `✅ VIP qo'shildi: ${id}` : result.error,
-    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: adminPanelKeyboard(env) },
   );
   return true;
 }
@@ -202,7 +202,7 @@ async function handleVipRemoveInput(
     env,
     chatId,
     ok ? `✅ VIP o'chirildi: ${id}` : "VIP topilmadi.",
-    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: adminPanelKeyboard(env) },
   );
   return true;
 }
@@ -219,7 +219,7 @@ async function handleCardInput(
     if (!/^\d+$/.test(idStr)) {
       await sendMessage(env, chatId, "Foydalanish: o'chirish 1", {
         bot: panelBot(env, chatId),
-        replyMarkup: ADMIN_REPLY_KEYBOARD,
+        replyMarkup: adminPanelKeyboard(env),
       });
       return true;
     }
@@ -229,7 +229,7 @@ async function handleCardInput(
       env,
       chatId,
       ok ? "✅ Karta o'chirildi." : "Karta topilmadi.",
-      { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: panelBot(env, chatId), replyMarkup: adminPanelKeyboard(env) },
     );
     return true;
   }
@@ -240,7 +240,7 @@ async function handleCardInput(
       env,
       chatId,
       "Format: Nomi | 8600123456789012\nYoki: Nomi | https://...",
-      { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: panelBot(env, chatId), replyMarkup: adminPanelKeyboard(env) },
     );
     return true;
   }
@@ -258,7 +258,7 @@ async function handleCardInput(
     result.ok
       ? `✅ Karta qo'shildi (#${result.card.id}): ${result.card.title}`
       : result.error,
-    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: adminPanelKeyboard(env) },
   );
   return true;
 }
@@ -282,7 +282,7 @@ export async function startVipAddFlow(
     env,
     chatId,
     "VIP qo'shish — Telegram user ID yuboring.\n\nBekor: /cancel",
-    { bot: panelBot(env, chatId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: panelBot(env, chatId), replyMarkup: adminPanelKeyboard(env) },
   );
 }
 
@@ -295,7 +295,7 @@ export async function sendVipList(env: Env, chatId: number): Promise<void> {
       : ["VIP mijozlar:", "", ...records.map(formatVipRecord)].join("\n");
   await sendMessage(env, chatId, text, {
     bot: panelBot(env, chatId),
-    replyMarkup: ADMIN_REPLY_KEYBOARD,
+    replyMarkup: adminPanelKeyboard(env),
   });
 }
 

@@ -4,7 +4,7 @@ import { sendMessage } from "./telegram";
 import { getSubscriptionConfig } from "./subscription";
 import { listVipUserIds } from "./vip";
 import type { AdChannelConfig, Env, SubscriptionConfig } from "./types";
-import { ADMIN_REPLY_KEYBOARD } from "./admin-keyboard";
+import { adminPanelKeyboard } from "./admin-keyboard";
 
 type InlineBtn = { text: string; callback_data?: string };
 
@@ -124,7 +124,7 @@ export async function startAdChannelFlow(
       "",
       "Bekor: /cancel",
     ].join("\n"),
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: "admin", replyMarkup: adminPanelKeyboard(env) },
   );
 }
 
@@ -145,7 +145,7 @@ export async function startAdTemplateFlow(
       "",
       "Bekor: /cancel",
     ].join("\n"),
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: "admin", replyMarkup: adminPanelKeyboard(env) },
   );
 }
 

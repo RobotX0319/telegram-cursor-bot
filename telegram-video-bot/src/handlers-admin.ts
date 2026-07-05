@@ -1,4 +1,4 @@
-import { ADMIN_REPLY_KEYBOARD, isReplyButton } from "./admin-keyboard";
+import { adminPanelKeyboard, isReplyButton } from "./admin-keyboard";
 import { sendAdminPanel, handleBroadcastMedia } from "./panel";
 import {
   handleAdminStateInput,
@@ -72,7 +72,8 @@ function adminBot(env: Env, userId: number): { bot: BotKind } {
 
 const ADMIN_HELP = `${ADMIN_BOT} — Admin bot
 
-🎛 Admin panel — yuqori menyu (⋮) → «Admin panel»
+🎛 Admin panel — chap pastdagi «🎛 Admin panel» tugmasi
+📋 Buyruqlar — chap menyu (☰)
 📤 Kino yuklash — avval ID (masalan: 5), keyin video
 📋 /list — kinolar ro'yxati
 📊 /stats — statistika
@@ -180,7 +181,7 @@ export async function handleAdminBotMessage(
       env,
       chatId,
       ok ? `✅ VIP o'chirildi: ${id}` : "VIP topilmadi.",
-      { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
     );
     return;
   }
@@ -197,7 +198,7 @@ export async function handleAdminBotMessage(
           "1) Ixtiyoriy: reklama rasm shablon yuboring",
           "2) Keyin videoni yuboring",
         ].join("\n"),
-        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
       );
     return;
   }
@@ -206,7 +207,7 @@ export async function handleAdminBotMessage(
     env,
     chatId,
     "🎛 Admin panel: /panel\n\nVideo yuklash: ID yuboring (masalan: 5), keyin video.\n\n/help — yordam",
-    { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
   );
 }
 
@@ -247,7 +248,7 @@ async function handleAdminCommand(
           ].join("\n"),
           {
             bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-            replyMarkup: ADMIN_REPLY_KEYBOARD,
+            replyMarkup: adminPanelKeyboard(env),
           },
         );
         await sendAdminPanel(env, chatId, workerOrigin, botKind);
@@ -266,7 +267,7 @@ async function handleAdminCommand(
         "✅ Admin ro'yxatiga qo'shildingiz! /panel yuboring.",
         {
           bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-          replyMarkup: ADMIN_REPLY_KEYBOARD,
+          replyMarkup: adminPanelKeyboard(env),
         },
       );
       await sendAdminPanel(env, chatId, workerOrigin, botKind);
@@ -282,12 +283,13 @@ async function handleAdminCommand(
           "",
           `${ADMIN_BOT} — kino boshqaruv boti`,
           "",
-          "🎛 Admin panel: yuqori o'ng ⋮ menyu → «Admin panel»",
+          "🎛 Admin panel: chap pastdagi tugma",
+          "📋 Buyruqlar: chap menyu ☰",
           "📤 Video: ID yuboring (5), keyin video",
           "",
           "/panel — chat ichidagi panel",
         ].join("\n"),
-        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
       );
       await sendAdminPanel(env, chatId, workerOrigin, botKind);
       return;
@@ -299,7 +301,7 @@ async function handleAdminCommand(
     case "/help":
       await sendMessage(env, chatId, ADMIN_HELP, {
         bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-        replyMarkup: ADMIN_REPLY_KEYBOARD,
+        replyMarkup: adminPanelKeyboard(env),
       });
       return;
 
@@ -313,7 +315,7 @@ async function handleAdminCommand(
       if (id === null) {
         await sendMessage(env, chatId, "Foydalanish: /id 5", {
           bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-          replyMarkup: ADMIN_REPLY_KEYBOARD,
+          replyMarkup: adminPanelKeyboard(env),
         });
         return;
       }
@@ -327,7 +329,7 @@ async function handleAdminCommand(
           "1) Ixtiyoriy: reklama rasm shablon yuboring",
           "2) Keyin videoni yuboring",
         ].join("\n"),
-        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
       );
       return;
     }
@@ -337,7 +339,7 @@ async function handleAdminCommand(
       if (id === null) {
         await sendMessage(env, chatId, "Foydalanish: /vipremove 123456789", {
           bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-          replyMarkup: ADMIN_REPLY_KEYBOARD,
+          replyMarkup: adminPanelKeyboard(env),
         });
         return;
       }
@@ -346,7 +348,7 @@ async function handleAdminCommand(
         env,
         chatId,
         ok ? `✅ VIP o'chirildi: ${id}` : "VIP topilmadi.",
-        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
       );
       return;
     }
@@ -386,7 +388,7 @@ async function handleAdminCommand(
             "",
             "Tasdiqlash: /reset RESET yoki /reset FULL",
           ].join("\n"),
-          { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+          { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
         );
         return;
       }
@@ -424,7 +426,7 @@ async function handleAdminCommand(
               "1) Kanallar sozlamalari",
               "2) Video yuklash (ID: 1 dan)",
             ].join("\n"),
-        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
       );
       return;
     }
@@ -432,7 +434,7 @@ async function handleAdminCommand(
     default:
       await sendMessage(env, chatId, "Noma'lum buyruq. /help", {
         bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-        replyMarkup: ADMIN_REPLY_KEYBOARD,
+        replyMarkup: adminPanelKeyboard(env),
       });
   }
 }
@@ -483,7 +485,7 @@ async function saveAdminImageTemplate(
     ];
     await sendMessage(env, chatId, lines.join("\n"), {
       bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-      replyMarkup: ADMIN_REPLY_KEYBOARD,
+      replyMarkup: adminPanelKeyboard(env),
     });
     return;
   }
@@ -499,7 +501,7 @@ async function saveAdminImageTemplate(
         ? `Endi ID ${pendingId} uchun videoni yuboring.`
         : "Avval video ID yuboring, keyin videoni yuboring.",
     ].join("\n"),
-    { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
   );
 }
 
@@ -537,7 +539,7 @@ async function handleAdminPhoto(
       "Reklama rasmi uchun avval video ID yuboring: 5",
       "yoki Sozlamalar → Reklama → Rasm shablon",
     ].join("\n"),
-    { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
   );
 }
 
@@ -600,7 +602,7 @@ async function handleAdminUpload(
         "ID yuboring: 5",
         "yoki /panel → Toplu yuklash",
       ].join("\n"),
-      { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
     );
     return;
   }
@@ -622,7 +624,7 @@ async function handleAdminUpload(
         `/delete ${id} — o'chirish`,
         "Yoki boshqa ID tanlang (masalan: " + (id + 1) + ")",
       ].join("\n"),
-      { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
     );
     return;
   }
@@ -655,7 +657,7 @@ async function handleAdminUpload(
         "",
         "Qayta yuboring yoki boshqa ID tanlang.",
       ].join("\n"),
-      { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
     );
     return;
   }
@@ -744,6 +746,6 @@ async function handleAdminUpload(
 
   await sendMessage(env, chatId, lines.join("\n"), {
     bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-    replyMarkup: ADMIN_REPLY_KEYBOARD,
+    replyMarkup: adminPanelKeyboard(env),
   });
 }

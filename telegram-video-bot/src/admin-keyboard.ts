@@ -1,13 +1,32 @@
-/** Admin panel — bitta tugma */
-export const BTN_PANEL = "🎛 Admin panel";
+import { getAdminPanelUrl } from "./admin";
+import { getAdminPanelPath, getWebhookSecret } from "./config";
+import type { Env } from "./types";
 
-/** Eski reply klaviatura o'rniga menyu tugmasi ishlatiladi */
-export const ADMIN_REPLY_KEYBOARD = {
-  remove_keyboard: true as const,
-};
+/** Admin panel — chap pastdagi tugma */
+export const BTN_PANEL = "🎛 Admin panel";
 
 export const REPLY_BUTTON_TEXTS = new Set([BTN_PANEL]);
 
 export function isReplyButton(text: string): boolean {
   return REPLY_BUTTON_TEXTS.has(text.trim());
+}
+
+/** Chap tomonda Web App tugmasi (reply keyboard) */
+export function adminPanelKeyboard(env: Env) {
+  const origin = env.WORKER_PUBLIC_URL?.trim();
+  if (!origin) {
+    return { remove_keyboard: true as const };
+  }
+
+  const url = getAdminPanelUrl(
+    origin,
+    getWebhookSecret(env),
+    getAdminPanelPath(env),
+  );
+
+  return {
+    keyboard: [[{ text: BTN_PANEL, web_app: { url } }]],
+    resize_keyboard: true,
+    persistent: true,
+  };
 }
