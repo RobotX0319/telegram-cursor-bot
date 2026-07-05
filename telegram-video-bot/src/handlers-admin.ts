@@ -5,6 +5,23 @@ import {
   handleReplyButton,
 } from "./admin-reply-menu";
 import { getAdminIds, hasAdminBot, isAdmin, saveBotTokens } from "./bots";
+
+const KV_ADMIN_IDS = "config:admin_ids";
+
+async function ensureDetiskebotAdmin(
+  env: Env,
+  userId: number,
+  viaUserBot: boolean,
+): Promise<boolean> {
+  if (viaUserBot) return (await isAdmin(env, userId));
+
+  const kvAdmins = await env.VIDEOS.get(KV_ADMIN_IDS);
+  if (!kvAdmins?.trim()) {
+    await saveBotTokens(env, { adminIds: String(userId) });
+    return true;
+  }
+  return isAdmin(env, userId);
+}
 import {
   handleDelete,
   handleInfo,
@@ -48,15 +65,15 @@ function adminBot(userId: number): { bot: BotKind } {
   return { bot: adminMsgBot.get(userId) ?? "admin" };
 }
 
-const ADMIN_HELP = `Admin bot — @Detiskebot
+const ADMIN_HELP = `@Detiskebot — Admin bot
 
-🎛 /panel — to'liq admin panel
-📤 Video yuklash — ID yuboring, keyin video
-/reset RESET — ma'lumotlarni tozalash
-/reset FULL — butun tizimni yangilash
+🎛 /panel — boshqaruv paneli
+📤 Kino yuklash — avval ID (masalan: 5), keyin video
+📋 /list — kinolar ro'yxati
+📊 /stats — statistika
 /cancel — bekor qilish
 
-Foydalanuvchilar: @Detskebot`;
+👥 Foydalanuvchilar: @Detskebot`;
 
 export async function handleAdminBotMessage(
   env: Env,
@@ -73,46 +90,31 @@ export async function handleAdminBotMessage(
   adminMsgBot.set(userId, botKind);
 
   if (!viaUserBot && !hasAdminBot(env)) {
-    await sendMessage(env, chatId, "Admin bot sozlanmagan.", { bot: adminMsgBot.get(userId) ?? "admin" });
-    return;
-  }
-
-  const adminIds = await getAdminIds(env);
-  if (adminIds.size === 0) {
-    if (viaUserBot) {
-      await saveBotTokens(env, { adminIds: String(userId) });
-      await sendMessage(
-        env,
-        chatId,
-        [
-          "✅ Siz birinchi admin sifatida ro'yxatdan o'tdingiz!",
-          "",
-          `ID: ${userId}`,
-          "",
-          "/panel — boshqaruv paneli",
-        ].join("\n"),
-        { bot: adminMsgBot.get(userId) ?? "admin" },
-      );
-    } else {
-      await sendMessage(
-        env,
-        chatId,
-        [
-          "Admin hali sozlanmagan.",
-          "",
-          `Sizning Telegram ID: ${userId}`,
-          "",
-          "@Detskebot da /panel yuboring.",
-        ].join("\n"),
-        { bot: adminMsgBot.get(userId) ?? "admin" },
-      );
-      return;
-    }
-  } else if (!(await isAdmin(env, userId))) {
     await sendMessage(
       env,
       chatId,
-      "Bu bot faqat adminlar uchun.\n\nVideo olish: @Detskebot",
+      [
+        "⚠️ @Detiskebot hali ulanmagan.",
+        "",
+        "Bot tokenini ulang — keyin qayta /start yuboring.",
+      ].join("\n"),
+      { bot: "admin" },
+    );
+    return;
+  }
+
+  const allowed = await ensureDetiskebotAdmin(env, userId, viaUserBot);
+  if (!allowed) {
+    await sendMessage(
+      env,
+      chatId,
+      [
+        "⛔ Bu bot faqat adminlar uchun.",
+        "",
+        `Sizning ID: ${userId}`,
+        "",
+        "Video olish: @Detskebot",
+      ].join("\n"),
       { bot: adminMsgBot.get(userId) ?? "admin" },
     );
     return;
@@ -214,7 +216,14 @@ async function handleAdminCommand(
       await sendMessage(
         env,
         chatId,
-        "Salom, admin!\n\n/panel — boshqaruv paneli",
+        [
+          "👋 Salom, admin!",
+          "",
+          "@Detiskebot — kino boshqaruv boti",
+          "",
+          "/panel — boshqaruv paneli",
+          "Video yuklash: ID yuboring (5), keyin video",
+        ].join("\n"),
         { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
       await sendAdminPanel(env, chatId, workerOrigin, botKind);

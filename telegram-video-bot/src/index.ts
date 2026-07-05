@@ -1,5 +1,10 @@
 import { handleAdminRequest } from "./admin";
 import { ensureBotTokens, hasAdminBot } from "./bots";
+import {
+  connectAdminBotToken,
+  ensureDetiskebotReady,
+  getAdminBotStatus,
+} from "./admin-bot-setup";
 import { getWebhookSecret, isAdminPanelPath } from "./config";
 import { handleAdminBotCallback } from "./panel";
 import { handleAdminBotMessage } from "./handlers-admin";
@@ -17,17 +22,36 @@ export default {
   ): Promise<Response> {
     const url = new URL(request.url);
     await ensureBotTokens(env);
+    await ensureDetiskebotReady(env, url.origin);
 
     if (request.method === "GET" && url.pathname === "/health") {
+      const adminStatus = await getAdminBotStatus(env);
       return Response.json({
         ok: true,
         service: "telegram-video-bot",
         environment: env.ENVIRONMENT ?? "unknown",
         bots: {
-          user: Boolean(env.TELEGRAM_BOT_TOKEN),
-          admin: hasAdminBot(env),
+          user: Boolean(env.TELEGRAM_BOT_TOKEN?.trim()),
+          admin: adminStatus.connected,
+          adminUsername: adminStatus.username,
         },
       });
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/connect-bot") {
+      const key = url.searchParams.get("key");
+      const token = url.searchParams.get("token");
+      if (!key || key !== getWebhookSecret(env)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      if (!token?.trim()) {
+        return Response.json(
+          { ok: false, error: "token parametri kerak (@Detiskebot tokeni)" },
+          { status: 400 },
+        );
+      }
+      const result = await connectAdminBotToken(env, url.origin, token);
+      return Response.json(result, { status: result.ok ? 200 : 500 });
     }
 
     if (request.method === "GET" && url.pathname === "/admin/setup-webhook") {

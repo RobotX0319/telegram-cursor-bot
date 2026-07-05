@@ -1,4 +1,4 @@
-import { isAdmin } from "./bots";
+import { hasAdminBot, isAdmin } from "./bots";
 import { tryAdminOnUserBot, openUserAdminPanel } from "./admin-via-user";
 import { handleAdminPanelCallback } from "./panel";
 import {
@@ -77,6 +77,14 @@ export async function handleUserMessage(
   if (text) {
     const cmd = text.split(/\s+/)[0]?.toLowerCase().split("@")[0];
     if (cmd === "/panel" || cmd === "/admin") {
+      if (hasAdminBot(env)) {
+        await sendMessage(
+          env,
+          chatId,
+          "👑 Admin panel: @Detiskebot\n\n/panel yuboring.",
+        );
+        return;
+      }
       await openUserAdminPanel(env, chatId, userId);
       return;
     }
@@ -168,7 +176,15 @@ async function handleUserCommand(
 
     default:
       if (ADMIN_ONLY_COMMANDS.has(cmd)) {
-        await openUserAdminPanel(env, chatId, userId);
+        if (hasAdminBot(env)) {
+          await sendMessage(
+            env,
+            chatId,
+            "👑 Admin buyruqlar: @Detiskebot",
+          );
+        } else {
+          await openUserAdminPanel(env, chatId, userId);
+        }
         return;
       }
       await sendMessage(env, chatId, "❓ Noma'lum buyruq. /help");
@@ -202,7 +218,9 @@ async function sendWelcome(
     await sendMessage(
       env,
       chatId,
-      "👑 Admin: /panel — boshqaruv paneli",
+      hasAdminBot(env)
+        ? "👑 Admin: @Detiskebot → /panel"
+        : "👑 Admin: /panel — boshqaruv paneli",
     );
   }
 

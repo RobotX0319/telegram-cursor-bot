@@ -13,7 +13,6 @@ const TELEGRAM_API = "https://api.telegram.org";
 export const USER_BOT_COMMANDS = [
   { command: "start", description: "Botni boshlash" },
   { command: "help", description: "Yordam" },
-  { command: "panel", description: "Admin panel (adminlar uchun)" },
   { command: "info", description: "Video haqida ma'lumot" },
   { command: "check", description: "Obunani tekshirish" },
   { command: "karta", description: "To'lov kartalari" },
