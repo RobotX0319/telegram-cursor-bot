@@ -1,4 +1,5 @@
 import { getAdminPanelPath, getWebhookSecret } from "./config";
+import { connectAdminBotToken } from "./admin-bot-setup";
 import { saveBotTokens } from "./bots";
 import { countVideos, deleteVideo, listVideos } from "./storage";
 import {
@@ -44,7 +45,21 @@ export async function handleAdminRequest(
     }
 
     await saveBotTokens(env, body);
-    return Response.json({ ok: true });
+
+    let adminConnect: Awaited<ReturnType<typeof connectAdminBotToken>> | null =
+      null;
+    if (body.adminToken?.trim()) {
+      adminConnect = await connectAdminBotToken(
+        env,
+        url.origin,
+        body.adminToken.trim(),
+      );
+    }
+
+    return Response.json({
+      ok: true,
+      admin: adminConnect,
+    });
   }
 
   if (request.method === "GET" && url.pathname === `${panelPath}/api/subscription`) {

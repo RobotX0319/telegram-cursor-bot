@@ -54,6 +54,27 @@ export default {
       return Response.json(result, { status: result.ok ? 200 : 500 });
     }
 
+    if (request.method === "POST" && url.pathname === "/admin/connect-bot") {
+      const key = url.searchParams.get("key");
+      if (!key || key !== getWebhookSecret(env)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      let body: { token?: string };
+      try {
+        body = (await request.json()) as { token?: string };
+      } catch {
+        return Response.json({ ok: false, error: "JSON kerak" }, { status: 400 });
+      }
+      if (!body.token?.trim()) {
+        return Response.json(
+          { ok: false, error: "token kerak (@Detiskebot tokeni)" },
+          { status: 400 },
+        );
+      }
+      const result = await connectAdminBotToken(env, url.origin, body.token);
+      return Response.json(result, { status: result.ok ? 200 : 500 });
+    }
+
     if (request.method === "GET" && url.pathname === "/admin/setup-webhook") {
       const key = url.searchParams.get("key");
       if (!key || key !== getWebhookSecret(env)) {
