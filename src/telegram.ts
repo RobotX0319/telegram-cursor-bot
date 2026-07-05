@@ -1,4 +1,11 @@
 import type { Env } from "./types";
+import type { CursorRun } from "./types";
+import {
+  formatRunResultHtml,
+  formatRunResultPlain,
+  statusEmoji,
+  statusLabel,
+} from "./messages";
 
 const TELEGRAM_API = "https://api.telegram.org";
 
@@ -40,7 +47,7 @@ export async function sendMessage(
   env: Env,
   chatId: number,
   text: string,
-  options?: { parseMode?: "Markdown" | "HTML" },
+  options?: { parseMode?: "Markdown" | "HTML"; disablePreview?: boolean },
 ): Promise<void> {
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
@@ -53,6 +60,9 @@ export async function sendMessage(
           chat_id: chatId,
           text: chunk,
           ...(options?.parseMode ? { parse_mode: options.parseMode } : {}),
+          ...(options?.disablePreview
+            ? { disable_web_page_preview: true }
+            : {}),
         }),
       },
     );
@@ -62,6 +72,54 @@ export async function sendMessage(
       console.error("Telegram sendMessage failed:", response.status, body);
     }
   }
+}
+
+export async function sendRunResult(
+  env: Env,
+  chatId: number,
+  run: CursorRun,
+): Promise<void> {
+  const html = formatRunResultHtml(run);
+  const plain = formatRunResultPlain(run);
+
+  if (html.length <= 4096) {
+    const sent = await trySendHtml(env, chatId, html);
+    if (sent) return;
+  }
+
+  // HTML xato yoki juda uzun — qisqa sarlavha + oddiy matn
+  const header = `${statusEmoji(run.status)} ${statusLabel(run.status)}`;
+  await sendMessage(env, chatId, header);
+
+  for (const chunk of splitMessage(plain, 4096)) {
+    await sendMessage(env, chatId, chunk);
+  }
+}
+
+async function trySendHtml(
+  env: Env,
+  chatId: number,
+  html: string,
+): Promise<boolean> {
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: html,
+        parse_mode: "HTML",
+        disable_web_page_preview: false,
+      }),
+    },
+  );
+
+  if (response.ok) return true;
+
+  const body = await response.text();
+  console.error("Telegram HTML send failed:", response.status, body);
+  return false;
 }
 
 export async function sendChatAction(

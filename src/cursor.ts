@@ -1,3 +1,4 @@
+import { formatRunResultPlain } from "./messages";
 import { resolveCursorApiKey } from "./secrets";
 import type {
   CreateAgentResponse,
@@ -113,27 +114,7 @@ export function isTerminal(status: RunStatus): boolean {
 }
 
 export function formatRunResult(run: CursorRun): string {
-  const lines: string[] = [];
-
-  lines.push(`Status: ${run.status}`);
-
-  if (run.result) {
-    lines.push("", run.result);
-  }
-
-  if (run.git?.branches?.length) {
-    lines.push("", "Git:");
-    for (const branch of run.git.branches) {
-      if (branch.prUrl) lines.push(`PR: ${branch.prUrl}`);
-      else if (branch.branch) lines.push(`Branch: ${branch.branch}`);
-    }
-  }
-
-  if (run.durationMs != null) {
-    lines.push("", `Duration: ${Math.round(run.durationMs / 1000)}s`);
-  }
-
-  return lines.join("\n");
+  return formatRunResultPlain(run);
 }
 
 export async function sleep(ms: number): Promise<void> {

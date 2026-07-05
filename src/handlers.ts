@@ -19,7 +19,6 @@ import {
 import {
   createAgent,
   createRun,
-  formatRunResult,
   getAgent,
   getRun,
   isTerminal,
@@ -33,7 +32,7 @@ import {
 } from "./pending";
 import { saveCursorApiKey, resolveCursorApiKey } from "./secrets";
 import { defaultRepo, updateSession } from "./session";
-import { sendChatAction, sendMessage } from "./telegram";
+import { sendChatAction, sendMessage, sendRunResult } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 import { BUILD_DATE, VERSION } from "./version";
 
@@ -502,7 +501,7 @@ async function handleStatus(
       await clearPendingForManualStatus(env, runId);
     }
 
-    await sendMessage(env, chatId, formatRunResult(run));
+    await sendRunResult(env, chatId, run);
   } catch (error) {
     await sendMessage(
       env,

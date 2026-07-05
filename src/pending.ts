@@ -1,5 +1,5 @@
-import { formatRunResult, getRun, isTerminal, sleep } from "./cursor";
-import { getWebhookSecrets, sendMessage } from "./telegram";
+import { getRun, isTerminal, sleep } from "./cursor";
+import { getWebhookSecrets, sendRunResult } from "./telegram";
 import type { Env } from "./types";
 
 export interface PendingRun {
@@ -87,7 +87,7 @@ export async function notifyIfFinished(
   if (!(await claimNotification(env, pending.runId))) return false;
 
   await env.SESSIONS.delete(pendingKey(pending.runId));
-  await sendMessage(env, pending.chatId, formatRunResult(run));
+  await sendRunResult(env, pending.chatId, run);
   return true;
 }
 
