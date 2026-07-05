@@ -42,6 +42,14 @@ export interface TelegramDocument {
   file_size?: number;
 }
 
+export interface TelegramPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
 export interface TelegramMessage {
   message_id: number;
   from?: TelegramUser;
@@ -50,6 +58,7 @@ export interface TelegramMessage {
   caption?: string;
   video?: TelegramVideo;
   document?: TelegramDocument;
+  photo?: TelegramPhotoSize[];
 }
 
 export interface TelegramUpdate {
@@ -101,4 +110,11 @@ export interface StoredPaymentCard {
   value: string;
   addedBy: number;
   addedAt: string;
+}
+
+export interface AdChannelConfig {
+  enabled: boolean;
+  channelId?: string;
+  channelTitle?: string;
+  templateFileId?: string;
 }

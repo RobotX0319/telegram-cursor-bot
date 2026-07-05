@@ -11,7 +11,12 @@ import {
   handleList,
   handleStats,
 } from "./handlers-user";
-import { mirrorFileToUserBot } from "./mirror";
+import { mirrorFileToUserBot, mirrorPhotoToUserBot } from "./mirror";
+import { postVideoAd, setAdTemplate } from "./ad-channel";
+import {
+  clearAdminState,
+  getAdminState,
+} from "./admin-state";
 import {
   clearPendingVideoId,
   ensureCounterAtLeast,
@@ -33,7 +38,7 @@ const ADMIN_HELP = `Admin bot — @Detiskebot
 
 📤 Video yuklash — pastki panel
 📢 Majburiy obuna — yoqish/o'chirish
-📡 Kanallar — qo'shish/o'chirish
+📡 Kanallar — obuna + reklama
 ⭐ VIP mijozlar — obunasiz foydalanadi
 💳 Karta ulash — to'lov kartalari
 
@@ -84,6 +89,11 @@ export async function handleAdminBotMessage(
 
   if (message.video || isVideoDocument(message)) {
     await handleAdminUpload(env, chatId, userId, message);
+    return;
+  }
+
+  if (message.photo && message.photo.length > 0) {
+    await handleAdminPhoto(env, chatId, userId, message);
     return;
   }
 
@@ -247,6 +257,61 @@ function isVideoDocument(message: TelegramMessage): boolean {
   return doc.mime_type.startsWith("video/");
 }
 
+async function handleAdminPhoto(
+  env: Env,
+  chatId: number,
+  userId: number,
+  message: TelegramMessage,
+): Promise<void> {
+  const state = await getAdminState(env, userId);
+  if (state?.mode !== "await_ad_template") {
+    await sendMessage(
+      env,
+      chatId,
+      "Rasm shablon uchun 📡 Kanallar sozlamalari → 🖼 Rasm shablon tugmasini bosing.",
+      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    );
+    return;
+  }
+
+  const photos = message.photo!;
+  const largest = photos[photos.length - 1]!;
+  const userFileId = await mirrorPhotoToUserBot(
+    env,
+    largest.file_id,
+    userId,
+  );
+
+  if (!userFileId) {
+    await sendMessage(
+      env,
+      chatId,
+      [
+        "Rasm saqlanmadi.",
+        "",
+        "Avval @Detskebot da /start bosing, keyin qayta yuboring.",
+      ].join("\n"),
+      { bot: "admin" },
+    );
+    return;
+  }
+
+  const config = await setAdTemplate(env, userFileId);
+  await clearAdminState(env, userId);
+
+  const lines = [
+    "✅ Rasm shablon saqlandi.",
+    config.channelId
+      ? "Reklama yoqildi — video yuklanganda kanalga tushadi."
+      : "Endi 📢 Reklama kanalini ulang (Kanallar sozlamalari).",
+  ];
+
+  await sendMessage(env, chatId, lines.join("\n"), {
+    bot: "admin",
+    replyMarkup: ADMIN_REPLY_KEYBOARD,
+  });
+}
+
 async function resolveUploadId(
   env: Env,
   userId: number,
@@ -358,11 +423,19 @@ async function handleAdminUpload(
   await ensureCounterAtLeast(env, id);
   await clearPendingVideoId(env, userId);
 
+  const adResult = await postVideoAd(env, id, displayCaption);
+
   const lines = [
     `✅ Saqlandi — ID: ${id}`,
     "",
     "Foydalanuvchilar @Detskebot ga shu raqamni yuboradi.",
   ];
+
+  if (adResult.ok) {
+    lines.push("", "📢 Reklama kanalga yuborildi.");
+  } else if ("error" in adResult) {
+    lines.push("", `⚠️ ${adResult.error}`);
+  }
 
   if (displayCaption) {
     lines.push("", displayCaption);

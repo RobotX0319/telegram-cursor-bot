@@ -1,4 +1,10 @@
-import { startVipAddFlow, sendVipList } from "./admin-reply-menu";
+import { startVipAddFlow, sendVipList, sendChannelsMenu } from "./admin-reply-menu";
+import { clearAdChannel, clearAdTemplate } from "./ad-channel";
+import {
+  startAdChannelFlow,
+  startAdTemplateFlow,
+  toggleAdChannel,
+} from "./ad-channel-ui";
 import { getAdminPanelPath, getWebhookSecret } from "./config";
 import { getAdminPanelUrl } from "./admin";
 import { countVideos, deleteVideo, getVideo, listVideos } from "./storage";
@@ -488,12 +494,36 @@ export async function handleAdminBotCallback(
       await sendMessage(env, chatId, result.error, { bot: "admin" });
       return;
     }
-    await sendMessage(
-      env,
-      chatId,
-      `✅ Kanal o'chirildi.\nQolgan: ${result.config.channels.length}`,
-      { bot: "admin" },
-    );
+    await sendChannelsMenu(env, chatId);
+    return;
+  }
+
+  if (data === "adm:ad:ch") {
+    await startAdChannelFlow(env, chatId, query.from.id);
+    return;
+  }
+  if (data === "adm:ad:tpl") {
+    await startAdTemplateFlow(env, chatId, query.from.id);
+    return;
+  }
+  if (data === "adm:ad:chdel") {
+    await clearAdChannel(env);
+    await sendChannelsMenu(env, chatId);
+    return;
+  }
+  if (data === "adm:ad:tpldel") {
+    await clearAdTemplate(env);
+    await sendChannelsMenu(env, chatId);
+    return;
+  }
+  if (data === "adm:ad:on") {
+    await toggleAdChannel(env, true);
+    await sendChannelsMenu(env, chatId);
+    return;
+  }
+  if (data === "adm:ad:off") {
+    await toggleAdChannel(env, false);
+    await sendChannelsMenu(env, chatId);
     return;
   }
 

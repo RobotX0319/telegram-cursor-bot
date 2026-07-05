@@ -171,6 +171,32 @@ export async function sendVideoByFileId(
   return false;
 }
 
+export async function sendPhotoByFileId(
+  env: Env,
+  chatId: number | string,
+  fileId: string,
+  caption?: string,
+): Promise<boolean> {
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${getUserBotToken(env)}/sendPhoto`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        photo: fileId,
+        ...(caption ? { caption } : {}),
+      }),
+    },
+  );
+
+  if (response.ok) return true;
+
+  const body = await response.text();
+  console.error("Telegram sendPhoto failed:", response.status, body);
+  return false;
+}
+
 export async function sendDocumentByFileId(
   env: Env,
   chatId: number,

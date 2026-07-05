@@ -4,6 +4,8 @@ const STATE_PREFIX = "admin_state:";
 
 export type AdminStateMode =
   | "await_channel"
+  | "await_ad_channel"
+  | "await_ad_template"
   | "await_vip_add"
   | "await_vip_remove"
   | "await_card"

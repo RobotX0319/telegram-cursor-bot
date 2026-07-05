@@ -30,6 +30,13 @@ import {
   subscriptionInlineKeyboard,
   subscriptionOn,
 } from "./subscription-ui";
+import {
+  channelsMenuInlineKeyboard,
+  formatChannelsMenuLines,
+  getChannelsMenuData,
+  startAdChannelFlow,
+} from "./ad-channel-ui";
+import { setAdChannel } from "./ad-channel";
 import { addVipUser, listVipUserIds, removeVipUser } from "./vip";
 import type { Env } from "./types";
 
@@ -118,10 +125,18 @@ async function showSubscriptionMenu(env: Env, chatId: number): Promise<void> {
 async function showChannelsMenu(
   env: Env,
   chatId: number,
-  userId: number,
+  _userId: number,
 ): Promise<void> {
-  await showSubscriptionMenu(env, chatId);
-  await startChannelAddFlow(env, chatId, userId);
+  const { subConfig, adConfig, vipCount } = await getChannelsMenuData(env);
+  const msg = withKeyboard(
+    formatChannelsMenuLines(subConfig, adConfig, vipCount).join("\n"),
+    channelsMenuInlineKeyboard(subConfig, adConfig),
+  );
+
+  await sendMessage(env, chatId, msg.text, {
+    bot: "admin",
+    replyMarkup: msg.replyMarkup,
+  });
 }
 
 async function showVipMenu(env: Env, chatId: number): Promise<void> {
@@ -218,6 +233,8 @@ export async function handleAdminStateInput(
   switch (state.mode) {
     case "await_channel":
       return handleChannelInput(env, chatId, userId, text);
+    case "await_ad_channel":
+      return handleAdChannelInput(env, chatId, userId, text);
     case "await_vip_add":
       return handleVipAddInput(env, chatId, userId, text);
     case "await_vip_remove":
@@ -272,6 +289,35 @@ async function handleChannelInput(
     ]
       .filter(Boolean)
       .join("\n"),
+    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+  );
+  return true;
+}
+
+async function handleAdChannelInput(
+  env: Env,
+  chatId: number,
+  userId: number,
+  text: string,
+): Promise<boolean> {
+  const result = await setAdChannel(env, text);
+  if (!result.ok) {
+    await sendMessage(env, chatId, result.error, {
+      bot: "admin",
+      replyMarkup: ADMIN_REPLY_KEYBOARD,
+    });
+    return true;
+  }
+
+  await clearAdminState(env, userId);
+  await sendMessage(
+    env,
+    chatId,
+    [
+      `✅ Reklama kanali ulandi: ${result.config.channelTitle ?? result.config.channelId}`,
+      "",
+      "Endi 🖼 Rasm shablon yuboring (Kanallar sozlamalari).",
+    ].join("\n"),
     { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
   return true;
@@ -411,6 +457,26 @@ export async function sendVipList(env: Env, chatId: number): Promise<void> {
     replyMarkup: ADMIN_REPLY_KEYBOARD,
   });
 }
+
+export async function sendChannelsMenu(
+  env: Env,
+  chatId: number,
+): Promise<void> {
+  const { subConfig, adConfig, vipCount } = await getChannelsMenuData(env);
+  await sendMessage(
+    env,
+    chatId,
+    formatChannelsMenuLines(subConfig, adConfig, vipCount).join("\n"),
+    {
+      bot: "admin",
+      replyMarkup: {
+        inline_keyboard: channelsMenuInlineKeyboard(subConfig, adConfig),
+      },
+    },
+  );
+}
+
+export { startAdChannelFlow, startAdTemplateFlow } from "./ad-channel-ui";
 
 export async function sendPaymentCardsToUser(
   env: Env,

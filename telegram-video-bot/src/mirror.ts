@@ -9,6 +9,24 @@ type MirrorResult = {
   mirrorMessageId: number;
 } | null;
 
+/** Admin bot photo file_id → foydalanuvchi bot file_id. */
+export async function mirrorPhotoToUserBot(
+  env: Env,
+  adminFileId: string,
+  mirrorChatId: number,
+): Promise<string | null> {
+  const result = await mirrorFileToUserBotDetailed(
+    env,
+    adminFileId,
+    "photo",
+    mirrorChatId,
+  );
+  if (result) {
+    deleteMirrorMessage(env, result.mirrorChatId, result.mirrorMessageId);
+  }
+  return result?.fileId ?? null;
+}
+
 /** Admin bot file_id → foydalanuvchi bot file_id (Telegram URL orqali, Worker yuklamasdan). */
 export async function mirrorFileToUserBot(
   env: Env,
@@ -31,7 +49,7 @@ export async function mirrorFileToUserBot(
 async function mirrorFileToUserBotDetailed(
   env: Env,
   adminFileId: string,
-  kind: "video" | "document",
+  kind: "video" | "document" | "photo",
   mirrorChatId: number,
 ): Promise<MirrorResult> {
   const adminToken = getAdminBotToken(env);
@@ -77,12 +95,18 @@ async function sendMirrorViaUrl(
   userToken: string,
   adminToken: string,
   filePath: string,
-  kind: "video" | "document",
+  kind: "video" | "document" | "photo",
   mirrorChatId: number,
 ): Promise<MirrorResult> {
   const fileUrl = `${TELEGRAM_API}/file/bot${adminToken}/${filePath}`;
-  const method = kind === "video" ? "sendVideo" : "sendDocument";
-  const field = kind === "video" ? "video" : "document";
+  const method =
+    kind === "video"
+      ? "sendVideo"
+      : kind === "photo"
+        ? "sendPhoto"
+        : "sendDocument";
+  const field =
+    kind === "video" ? "video" : kind === "photo" ? "photo" : "document";
 
   const sendRes = await fetch(`${TELEGRAM_API}/bot${userToken}/${method}`, {
     method: "POST",
@@ -91,7 +115,7 @@ async function sendMirrorViaUrl(
       chat_id: mirrorChatId,
       [field]: fileUrl,
       disable_notification: true,
-      supports_streaming: kind === "video",
+      ...(kind === "video" ? { supports_streaming: true } : {}),
     }),
   });
 
@@ -102,7 +126,7 @@ async function sendMirrorViaDownload(
   userToken: string,
   adminToken: string,
   filePath: string,
-  kind: "video" | "document",
+  kind: "video" | "document" | "photo",
   mirrorChatId: number,
 ): Promise<MirrorResult> {
   const fileRes = await fetch(`${TELEGRAM_API}/file/bot${adminToken}/${filePath}`);
@@ -111,13 +135,21 @@ async function sendMirrorViaDownload(
   const formData = new FormData();
   formData.append("chat_id", String(mirrorChatId));
   formData.append("disable_notification", "true");
+  const blob = await fileRes.blob();
   if (kind === "video") {
-    formData.append("video", await fileRes.blob(), "video.mp4");
+    formData.append("video", blob, "video.mp4");
+  } else if (kind === "photo") {
+    formData.append("photo", blob, "photo.jpg");
   } else {
-    formData.append("document", await fileRes.blob(), "video.mp4");
+    formData.append("document", blob, "video.mp4");
   }
 
-  const method = kind === "video" ? "sendVideo" : "sendDocument";
+  const method =
+    kind === "video"
+      ? "sendVideo"
+      : kind === "photo"
+        ? "sendPhoto"
+        : "sendDocument";
   const sendRes = await fetch(`${TELEGRAM_API}/bot${userToken}/${method}`, {
     method: "POST",
     body: formData,
@@ -136,13 +168,17 @@ async function parseMirrorResponse(
       chat?: { id: number };
       video?: { file_id: string };
       document?: { file_id: string };
+      photo?: Array<{ file_id: string }>;
     };
   };
 
   if (!sendJson.ok || !sendJson.result) return null;
 
   const fileId =
-    sendJson.result.video?.file_id ?? sendJson.result.document?.file_id ?? null;
+    sendJson.result.video?.file_id ??
+    sendJson.result.document?.file_id ??
+    sendJson.result.photo?.[sendJson.result.photo.length - 1]?.file_id ??
+    null;
   const messageId = sendJson.result.message_id;
   const chatId = sendJson.result.chat?.id;
 
