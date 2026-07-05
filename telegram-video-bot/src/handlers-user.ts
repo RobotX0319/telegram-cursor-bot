@@ -100,8 +100,9 @@ export async function handleUserMessage(
   }
 
   if (!isPublicCommand(text)) {
+    const config = await getSubscriptionConfig(env);
     const channels = await getRequiredChannels(env);
-    if (channels.length > 0) {
+    if (channels.length > 0 && config.enabled) {
       const subscribed = await ensureSubscribed(env, chatId, userId);
       if (!subscribed) return;
     }
@@ -187,7 +188,7 @@ async function sendWelcome(
     "",
   ];
 
-  if (channels.length > 0) {
+  if (channels.length > 0 && sub.enabled) {
     lines.push(
       result.subscribed
         ? "✅ Obuna tasdiqlangan — video olishingiz mumkin!"
@@ -202,8 +203,8 @@ async function sendWelcome(
     replyMarkup: USER_START_KEYBOARD,
   });
 
-  if (channels.length > 0 && !result.subscribed) {
-    await sendSubscriptionRequired(env, chatId, result);
+  if (channels.length > 0 && sub.enabled && !result.subscribed) {
+    await sendSubscriptionRequired(env, chatId, userId, result);
   }
 }
 
@@ -420,5 +421,5 @@ export async function handleCallbackQuery(
   }
 
   await answerCallbackQuery(env, query.id, "Hali obuna bo'lmadingiz ❌");
-  await sendSubscriptionRequired(env, chatId, result);
+  await sendSubscriptionRequired(env, chatId, userId, result);
 }

@@ -10,6 +10,7 @@ import type {
 import { isVipUser } from "./vip";
 
 const SUBSCRIPTION_KEY = "meta:subscription";
+const SUB_OK_PREFIX = "sub_ok:";
 const TELEGRAM_API = "https://api.telegram.org";
 
 const SUBSCRIBED_STATUSES = new Set([
@@ -77,6 +78,10 @@ export function normalizeChannelId(input: string): string {
   return value.startsWith("@") ? value : `@${value}`;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function telegramApi<T>(
   env: Env,
   method: string,
@@ -99,7 +104,7 @@ async function telegramApi<T>(
   };
 
   if (!data.ok) {
-    console.error(`Telegram ${method} failed:`, data.description);
+    console.error(`Telegram ${method} failed:`, body.chat_id, data.description);
   }
 
   return data;
@@ -141,6 +146,40 @@ export async function resolveChannelChat(
     username: username ?? undefined,
     url: username ? `https://t.me/${username}` : channelUrl(normalized),
   };
+}
+
+async function resolveChatIdForCheck(
+  env: Env,
+  channelId: string,
+): Promise<string> {
+  if (/^-100\d+$/.test(channelId)) return channelId;
+
+  const chat = await telegramApi<{ id: number }>(env, "getChat", {
+    chat_id: channelId,
+  });
+  if (chat.ok && chat.result) return String(chat.result.id);
+  return channelId;
+}
+
+async function migrateSubscriptionChannels(env: Env): Promise<void> {
+  const config = await getSubscriptionConfig(env);
+  let changed = false;
+
+  for (const channel of config.channels) {
+    if (/^-100\d+$/.test(channel.id)) continue;
+
+    const resolved = await resolveChannelChat(env, channel.id);
+    if (resolved.ok && resolved.id !== channel.id) {
+      channel.id = resolved.id;
+      channel.title = channel.title ?? resolved.title;
+      channel.url = channel.url ?? resolved.url;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await saveSubscriptionConfig(env, config);
+  }
 }
 
 export async function getSubscriptionConfig(
@@ -242,6 +281,26 @@ function isActiveMember(status: string, isMember?: boolean): boolean {
   return SUBSCRIBED_STATUSES.has(status);
 }
 
+function parseMemberError(description: string): "bot_not_admin" | "not_member" | "error" {
+  const d = description.toLowerCase();
+  if (
+    d.includes("chat_admin_required") ||
+    d.includes("bot is not a member") ||
+    d.includes("need administrator") ||
+    d.includes("not enough rights")
+  ) {
+    return "bot_not_admin";
+  }
+  if (
+    d.includes("user not found") ||
+    d.includes("participant_id_invalid") ||
+    d.includes("user is not a member")
+  ) {
+    return "not_member";
+  }
+  return "error";
+}
+
 async function verifyBotInChannel(env: Env, chatId: string): Promise<boolean> {
   const me = await telegramApi<{ id: number }>(env, "getMe", {});
   if (!me.ok || !me.result) return false;
@@ -251,34 +310,78 @@ async function verifyBotInChannel(env: Env, chatId: string): Promise<boolean> {
   return status === "member";
 }
 
-type MemberStatus =
-  | { ok: true; status: string; is_member?: boolean }
-  | { ok: false; reason: "bot_not_admin" | "error" };
+type MemberCheckResult =
+  | "member"
+  | "left"
+  | "kicked"
+  | { ok: false; reason: "bot_not_admin" | "not_member" | "error" };
 
 async function getChatMemberStatus(
   env: Env,
   chatId: string,
   userId: number,
-): Promise<MemberStatus | "left" | "kicked" | "member"> {
+): Promise<MemberCheckResult> {
   const data = await telegramApi<{
     status: string;
     is_member?: boolean;
   }>(env, "getChatMember", { chat_id: chatId, user_id: userId });
 
   if (!data.ok || !data.result) {
-    const desc = data.description ?? "";
-    if (
-      desc.includes("CHAT_ADMIN_REQUIRED") ||
-      desc.includes("bot is not a member")
-    ) {
-      return { ok: false, reason: "bot_not_admin" };
-    }
-    return { ok: false, reason: "error" };
+    const reason = parseMemberError(data.description ?? "");
+    return { ok: false, reason };
   }
 
   const { status, is_member } = data.result;
   if (isActiveMember(status, is_member)) return "member";
-  return status as "left" | "kicked";
+  if (status === "left") return "left";
+  if (status === "kicked") return "kicked";
+  return "left";
+}
+
+async function checkMemberWithRetry(
+  env: Env,
+  chatIds: string[],
+  userId: number,
+): Promise<MemberCheckResult> {
+  const uniqueIds = [...new Set(chatIds.filter(Boolean))];
+
+  for (const chatId of uniqueIds) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const result = await getChatMemberStatus(env, chatId, userId);
+      if (result === "member") return "member";
+
+      if (typeof result === "object" && !result.ok) {
+        if (result.reason === "bot_not_admin") return result;
+        if (result.reason === "not_member") return "left";
+        return result;
+      }
+
+      if (attempt < 2 && (result === "left" || result === "kicked")) {
+        await delay(800);
+        continue;
+      }
+
+      return result;
+    }
+  }
+
+  return "left";
+}
+
+async function setSubscriptionCached(
+  env: Env,
+  userId: number,
+): Promise<void> {
+  await env.VIDEOS.put(`${SUB_OK_PREFIX}${userId}`, "1", {
+    expirationTtl: 3600,
+  });
+}
+
+async function clearSubscriptionCached(
+  env: Env,
+  userId: number,
+): Promise<void> {
+  await env.VIDEOS.delete(`${SUB_OK_PREFIX}${userId}`);
 }
 
 export async function checkUserSubscription(
@@ -289,8 +392,15 @@ export async function checkUserSubscription(
     return { subscribed: true, missing: [], apiErrors: [] };
   }
 
+  await migrateSubscriptionChannels(env);
+
   const channels = await getRequiredChannels(env);
   if (channels.length === 0) {
+    return { subscribed: true, missing: [], apiErrors: [] };
+  }
+
+  const config = await getSubscriptionConfig(env);
+  if (!config.enabled) {
     return { subscribed: true, missing: [], apiErrors: [] };
   }
 
@@ -298,12 +408,20 @@ export async function checkUserSubscription(
   const apiErrors: string[] = [];
 
   for (const channel of channels) {
-    const result = await getChatMemberStatus(env, channel.id, userId);
+    const resolvedId = await resolveChatIdForCheck(env, channel.id);
+    const chatIds = [resolvedId, channel.id];
+    if (channel.url?.includes("t.me/")) {
+      const slug = channel.url.match(/t\.me\/([A-Za-z0-9_]+)/)?.[1];
+      if (slug) chatIds.push(`@${slug}`);
+    }
+
+    const result = await checkMemberWithRetry(env, chatIds, userId);
+
     if (result === "member") continue;
 
     if (typeof result === "object" && !result.ok) {
       if (result.reason === "bot_not_admin") {
-        apiErrors.push(`${channel.title}: bot admin emas`);
+        apiErrors.push(`${channel.title}: @Detskebot admin emas`);
       } else {
         apiErrors.push(`${channel.title}: tekshirilmadi`);
       }
@@ -314,7 +432,14 @@ export async function checkUserSubscription(
     missing.push(channel);
   }
 
-  const subscribed = missing.length === 0 && apiErrors.length === 0;
+  const subscribed = missing.length === 0;
+
+  if (subscribed) {
+    await setSubscriptionCached(env, userId);
+  } else {
+    await clearSubscriptionCached(env, userId);
+  }
+
   await trackSubscriptionCheck(env, subscribed);
 
   return { subscribed, missing, apiErrors };
@@ -335,11 +460,12 @@ export async function getChannelMemberStats(
   const stats: ChannelMemberStats[] = [];
 
   for (const channel of channels) {
+    const chatId = await resolveChatIdForCheck(env, channel.id);
     const countData = await telegramApi<number>(env, "getChatMemberCount", {
-      chat_id: channel.id,
+      chat_id: chatId,
     });
 
-    const botCheck = await verifyBotInChannel(env, channel.id);
+    const botCheck = await verifyBotInChannel(env, chatId);
 
     stats.push({
       id: channel.id,
@@ -355,23 +481,37 @@ export async function getChannelMemberStats(
 export async function sendSubscriptionRequired(
   env: Env,
   chatId: number,
+  userId: number,
   result?: SubscriptionCheckResult,
 ): Promise<void> {
   const channels = await getRequiredChannels(env);
-  const check = result ?? (await checkUserSubscription(env, chatId));
+  const check = result ?? (await checkUserSubscription(env, userId));
 
   const lines = [
     "🔒 Video olish uchun kanalga obuna bo'ling!",
     "",
     "📢 Obuna kanallari:",
     ...channels.map((c) => {
-      const miss = check.missing.some((m) => m.id === c.id);
+      const miss = check.missing.some(
+        (m) => m.id === c.id || m.title === c.title,
+      );
       return miss ? `  ❌ ${c.title}` : `  ✅ ${c.title}`;
     }),
   ];
 
   if (check.apiErrors.length > 0) {
-    lines.push("", "⚠️ Admin: bot kanalda admin bo'lishi kerak!");
+    lines.push(
+      "",
+      "⚠️ Admin uchun:",
+      ...check.apiErrors.map((e) => `  • ${e}`),
+      "",
+      "@Detskebot ni kanalga ADMIN qiling!",
+    );
+  } else if (check.missing.length > 0) {
+    lines.push(
+      "",
+      "💡 Obuna bo'lgach 5-10 soniya kutib, «Tekshirish» bosing.",
+    );
   }
 
   lines.push("", "Obuna bo'lgach «✅ Tekshirish» tugmasini bosing 👇");
@@ -394,12 +534,13 @@ export async function ensureSubscribed(
   chatId: number,
   userId: number,
 ): Promise<boolean> {
+  const config = await getSubscriptionConfig(env);
   const channels = await getRequiredChannels(env);
-  if (channels.length === 0) return true;
+  if (channels.length === 0 || !config.enabled) return true;
 
   const result = await checkUserSubscription(env, userId);
   if (!result.subscribed) {
-    await sendSubscriptionRequired(env, chatId, result);
+    await sendSubscriptionRequired(env, chatId, userId, result);
     return false;
   }
 
@@ -426,7 +567,7 @@ export async function handleSubscriptionCheck(
     return;
   }
 
-  await sendSubscriptionRequired(env, chatId, result);
+  await sendSubscriptionRequired(env, chatId, userId, result);
 }
 
 export function subscriptionActive(config: SubscriptionConfig): boolean {
