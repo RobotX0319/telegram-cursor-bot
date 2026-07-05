@@ -1,5 +1,5 @@
 import { adminPanelKeyboard, isReplyButton } from "./admin-keyboard";
-import { handleBroadcastMedia } from "./panel";
+import { sendAdminPanel, handleBroadcastMedia } from "./panel";
 import {
   handleAdminStateInput,
   handleReplyButton,
@@ -62,7 +62,7 @@ function adminBot(env: Env, userId: number): { bot: BotKind } {
 
 const ADMIN_HELP = `${ADMIN_BOT} — Admin bot
 
-🎛 Admin panel — pastdagi «🎛 Admin panel» menu tugmasi
+🎛 Admin panel — pastdagi menu tugmasi yoki /panel
 📋 Buyruqlar — chap menyu ☰
 📤 Kino yuklash — avval ID (masalan: 5), keyin video
 📋 /list — kinolar ro'yxati
@@ -258,15 +258,16 @@ async function handleAdminCommand(
           "",
           `${ADMIN_BOT} — kino boshqaruv boti`,
           "",
-          "🎛 Admin panel — pastdagi menu tugmasi (🎛 Admin panel)",
-          "📤 Video yuklash: avval ID (5), keyin video fayl",
-          "📋 /help — barcha buyruqlar",
+          "🎛 Web panel — pastdagi menu tugmasi",
+          "📋 Chat panel — /panel",
+          "📤 Video: ID (5), keyin video fayl",
         ].join("\n"),
         {
           bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
           replyMarkup: adminPanelKeyboard(env, workerOrigin),
         },
       );
+      await sendAdminPanel(env, chatId, workerOrigin, botKind);
       return;
 
     case "/cancel":
@@ -281,15 +282,7 @@ async function handleAdminCommand(
       return;
 
     case "/panel":
-      await sendMessage(
-        env,
-        chatId,
-        "🎛 Admin panel — pastdagi menu tugmasini bosing (🎛 Admin panel)",
-        {
-          bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
-          replyMarkup: adminPanelKeyboard(env, workerOrigin),
-        },
-      );
+      await sendAdminPanel(env, chatId, workerOrigin, botKind);
       return;
 
     case "/id":

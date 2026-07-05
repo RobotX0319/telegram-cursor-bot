@@ -11,6 +11,20 @@ import {
   removeRequiredChannel,
   setSubscriptionEnabled,
 } from "./subscription";
+import {
+  clearAdChannel,
+  getAdChannelConfig,
+  setAdChannel,
+  setAdEnabled,
+} from "./ad-channel";
+import { getBotTexts, saveBotTexts } from "./settings";
+import { blockUser, listUsers, unblockUser } from "./users";
+import { addVipUser, listVipRecords, removeVipUser } from "./vip";
+import {
+  addPaymentCard,
+  listPaymentCards,
+  removePaymentCard,
+} from "./payment-cards";
 import type { Env } from "./types";
 
 export async function handleWebAdminApi(
@@ -156,6 +170,127 @@ export async function handleWebAdminApi(
     });
   }
 
+  if (request.method === "GET" && url.pathname === `${base}/users`) {
+    const users = await listUsers(env);
+    return Response.json({
+      total: users.length,
+      users: users.slice(0, 100).map((u) => ({
+        id: u.id,
+        name: u.name ?? u.username ?? "—",
+        username: u.username,
+        videosWatched: u.videosWatched,
+        blocked: u.blocked,
+        lastSeen: u.lastSeen,
+      })),
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/users/block`) {
+    const idParam = url.searchParams.get("id");
+    if (!idParam || !/^\d+$/.test(idParam)) {
+      return Response.json({ ok: false, error: "id kerak" }, { status: 400 });
+    }
+    const ok = await blockUser(env, Number.parseInt(idParam, 10), 0);
+    return Response.json({ ok });
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/users/unblock`) {
+    const idParam = url.searchParams.get("id");
+    if (!idParam || !/^\d+$/.test(idParam)) {
+      return Response.json({ ok: false, error: "id kerak" }, { status: 400 });
+    }
+    const ok = await unblockUser(env, Number.parseInt(idParam, 10));
+    return Response.json({ ok });
+  }
+
+  if (request.method === "GET" && url.pathname === `${base}/vip`) {
+    const records = await listVipRecords(env);
+    return Response.json({ records });
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/vip/add`) {
+    const body = (await request.json()) as { userId?: number };
+    if (!body.userId || !/^\d+$/.test(String(body.userId))) {
+      return Response.json({ ok: false, error: "userId kerak" }, { status: 400 });
+    }
+    const result = await addVipUser(env, body.userId, 0);
+    return Response.json(result, { status: result.ok ? 200 : 400 });
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/vip/remove`) {
+    const idParam = url.searchParams.get("id");
+    if (!idParam || !/^\d+$/.test(idParam)) {
+      return Response.json({ ok: false, error: "id kerak" }, { status: 400 });
+    }
+    const ok = await removeVipUser(env, Number.parseInt(idParam, 10));
+    return Response.json({ ok });
+  }
+
+  if (request.method === "GET" && url.pathname === `${base}/ad`) {
+    return Response.json(await getAdChannelConfig(env));
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/ad/toggle`) {
+    const body = (await request.json()) as { enabled?: boolean };
+    if (typeof body.enabled !== "boolean") {
+      return Response.json({ ok: false, error: "enabled kerak" }, { status: 400 });
+    }
+    const config = await setAdEnabled(env, body.enabled);
+    return Response.json({ ok: true, config });
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/ad/channel`) {
+    const body = (await request.json()) as { channel?: string; title?: string };
+    if (!body.channel?.trim()) {
+      return Response.json({ ok: false, error: "channel kerak" }, { status: 400 });
+    }
+    const result = await setAdChannel(env, body.channel, body.title);
+    return Response.json(result, { status: result.ok ? 200 : 400 });
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/ad/clear`) {
+    const config = await clearAdChannel(env);
+    return Response.json({ ok: true, config });
+  }
+
+  if (request.method === "GET" && url.pathname === `${base}/texts`) {
+    return Response.json(await getBotTexts(env));
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/texts/update`) {
+    const body = (await request.json()) as { key?: string; value?: string };
+    const allowed = new Set(["welcome", "help", "notFound", "blocked"]);
+    if (!body.key || !allowed.has(body.key) || body.value === undefined) {
+      return Response.json({ ok: false, error: "key va value kerak" }, { status: 400 });
+    }
+    const texts = await saveBotTexts(env, {
+      [body.key]: body.value,
+    } as Partial<Awaited<ReturnType<typeof getBotTexts>>>);
+    return Response.json({ ok: true, texts });
+  }
+
+  if (request.method === "GET" && url.pathname === `${base}/cards`) {
+    return Response.json({ cards: await listPaymentCards(env) });
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/cards/add`) {
+    const body = (await request.json()) as { title?: string; value?: string };
+    if (!body.title?.trim() || !body.value?.trim()) {
+      return Response.json({ ok: false, error: "title va value kerak" }, { status: 400 });
+    }
+    const result = await addPaymentCard(env, body.title, body.value, 0);
+    return Response.json(result, { status: result.ok ? 200 : 400 });
+  }
+
+  if (request.method === "POST" && url.pathname === `${base}/cards/remove`) {
+    const idParam = url.searchParams.get("id");
+    if (!idParam || !/^\d+$/.test(idParam)) {
+      return Response.json({ ok: false, error: "id kerak" }, { status: 400 });
+    }
+    const ok = await removePaymentCard(env, Number.parseInt(idParam, 10));
+    return Response.json({ ok });
+  }
+
   return null;
 }
 
@@ -231,7 +366,12 @@ export function renderWebAdminPage(key: string, panelPath: string): string {
   <div class="tabs">
     <button type="button" class="tab active" data-tab="movies">🎬 Kinolar</button>
     <button type="button" class="tab" data-tab="upload">📤 Yuklash</button>
-    <button type="button" class="tab" data-tab="settings">⚙️ Sozlamalar</button>
+    <button type="button" class="tab" data-tab="users">👥 Foydalanuvchi</button>
+    <button type="button" class="tab" data-tab="vip">⭐ VIP</button>
+    <button type="button" class="tab" data-tab="settings">⚙️ Obuna</button>
+    <button type="button" class="tab" data-tab="ad">📢 Reklama</button>
+    <button type="button" class="tab" data-tab="texts">💬 Matnlar</button>
+    <button type="button" class="tab" data-tab="cards">💳 Kartalar</button>
     <button type="button" class="tab" data-tab="stats">📊 Statistika</button>
     <button type="button" class="tab" data-tab="broadcast">📣 Xabar</button>
     <button type="button" class="tab" data-tab="security">🔐 Xavfsizlik</button>
@@ -263,7 +403,7 @@ export function renderWebAdminPage(key: string, panelPath: string): string {
 
   <div id="panel-settings" class="panel">
     <h2>Majburiy obuna</h2>
-    <p>@Detskebot kanaliga obuna bo'lmaganlar kino ololmaydi. Bot kanalda <strong>admin</strong> bo'lishi kerak.</p>
+    <p>@Detskebot kanaliga obuna bo'lmaganlar kino ololmaydi.</p>
     <div class="row">
       <label class="switch"><input type="checkbox" id="sub-enabled"><span class="slider"></span></label>
       <span id="sub-label">O'chirilgan</span>
@@ -273,6 +413,58 @@ export function renderWebAdminPage(key: string, panelPath: string): string {
       <button type="button" id="add-channel">Kanal qo'shish</button>
     </div>
     <ul class="channel-list" id="channels"></ul>
+  </div>
+
+  <div id="panel-users" class="panel">
+    <h2>Foydalanuvchilar</h2>
+    <div class="row"><button type="button" id="refresh-users">Yangilash</button></div>
+    <table><thead><tr><th>ID</th><th>Ism</th><th>👁</th><th>Holat</th><th></th></tr></thead><tbody id="users-list"></tbody></table>
+  </div>
+
+  <div id="panel-vip" class="panel">
+    <h2>VIP mijozlar</h2>
+    <div class="row">
+      <input type="text" id="vip-id" placeholder="Telegram ID">
+      <button type="button" id="vip-add">Qo'shish</button>
+    </div>
+    <ul class="logs" id="vip-list"></ul>
+  </div>
+
+  <div id="panel-ad" class="panel">
+    <h2>Reklama kanali</h2>
+    <p>Video yuklanganda reklama kanalga tushadi. Rasm shablon @Detiskebot orqali yuboriladi.</p>
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="ad-enabled"><span class="slider"></span></label>
+      <span id="ad-label">O'chirilgan</span>
+    </div>
+    <div class="row">
+      <input type="text" id="ad-channel" placeholder="@reklama_kanali">
+      <button type="button" id="ad-save">Kanal saqlash</button>
+      <button type="button" id="ad-clear" class="danger">Tozalash</button>
+    </div>
+    <p id="ad-info" class="sub"></p>
+  </div>
+
+  <div id="panel-texts" class="panel">
+    <h2>Bot matnlari</h2>
+    <p>@Detskebot xabarlari</p>
+    <label>Salom xabari</label>
+    <textarea id="txt-welcome"></textarea>
+    <label style="margin-top:10px;display:block">Yordam</label>
+    <textarea id="txt-help"></textarea>
+    <label style="margin-top:10px;display:block">Topilmadi</label>
+    <textarea id="txt-notfound"></textarea>
+    <div class="row" style="margin-top:10px"><button type="button" id="txt-save">Saqlash</button></div>
+  </div>
+
+  <div id="panel-cards" class="panel">
+    <h2>To'lov kartalari</h2>
+    <div class="row">
+      <input type="text" id="card-title" placeholder="Nomi">
+      <input type="text" id="card-value" placeholder="8600... yoki havola">
+      <button type="button" id="card-add">Qo'shish</button>
+    </div>
+    <ul class="logs" id="cards-list"></ul>
   </div>
 
   <div id="panel-stats" class="panel">
@@ -330,6 +522,11 @@ document.querySelectorAll(".tab").forEach(function(btn){
     if(btn.dataset.tab==="stats")loadStats();
     if(btn.dataset.tab==="security")loadSecurity();
     if(btn.dataset.tab==="broadcast")loadBroadcasts();
+    if(btn.dataset.tab==="users")loadUsers();
+    if(btn.dataset.tab==="vip")loadVip();
+    if(btn.dataset.tab==="ad")loadAd();
+    if(btn.dataset.tab==="texts")loadTexts();
+    if(btn.dataset.tab==="cards")loadCards();
   });
 });
 
@@ -440,16 +637,120 @@ async function loadSecurity(){
     return '<li>👑 Admin ID: <strong>'+id+'</strong></li>';
   }).join("")+(a.records||[]).map(function(r){
     return '<li>'+r.role+': '+r.userId+'</li>';
-  }).join("")||'<li>/adminol — @Detiskebot</li>';
+  }).join("")||'<li>Adminlar ro\\'yxati bo\\'sh</li>';
   $("admin-logs").innerHTML=(l.logs||[]).map(function(x){
     return '<li>'+esc(x.at.slice(0,16))+' · '+x.adminId+' · '+esc(x.action)+'</li>';
   }).join("")||'<li>Log yo\\'q</li>';
 }
 
+async function loadUsers(){
+  const d=await api("/users");
+  const tb=$("users-list");
+  if(!d.users.length){tb.innerHTML='<tr><td colspan="5">Bo\\'sh</td></tr>';return}
+  tb.innerHTML=d.users.map(function(u){
+    const st=u.blocked?'🚫':'✅';
+    const act=u.blocked
+      ?'<button data-unblock="'+u.id+'">Ochish</button>'
+      :'<button class="danger" data-block="'+u.id+'">Blok</button>';
+    return '<tr><td>'+u.id+'</td><td>'+esc(u.name)+'</td><td>'+u.videosWatched+'</td><td>'+st+'</td><td>'+act+'</td></tr>';
+  }).join("");
+  tb.querySelectorAll("[data-block]").forEach(function(b){
+    b.onclick=async function(){await api("/users/block?id="+b.dataset.block,{method:"POST"});loadUsers();showOk("Bloklandi")};
+  });
+  tb.querySelectorAll("[data-unblock]").forEach(function(b){
+    b.onclick=async function(){await api("/users/unblock?id="+b.dataset.unblock,{method:"POST"});loadUsers();showOk("Blok ochildi")};
+  });
+}
+
+async function loadVip(){
+  const d=await api("/vip");
+  const ul=$("vip-list");
+  ul.innerHTML=(d.records||[]).map(function(r){
+    return '<li>'+r.userId+' <button class="danger" data-viprm="'+r.userId+'">O\\'chirish</button></li>';
+  }).join("")||'<li>VIP yo\\'q</li>';
+  ul.querySelectorAll("[data-viprm]").forEach(function(b){
+    b.onclick=async function(){await api("/vip/remove?id="+b.dataset.viprm,{method:"POST"});loadVip();showOk("VIP o\\'chirildi")};
+  });
+}
+
+async function addVip(){
+  const id=$("vip-id").value.trim();
+  if(!/^\\d+$/.test(id)){showError("ID raqam bo\\'lishi kerak");return}
+  await api("/vip/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:Number(id)})});
+  $("vip-id").value="";
+  loadVip();showOk("VIP qo\\'shildi");
+}
+
+async function loadAd(){
+  const c=await api("/ad");
+  $("ad-enabled").checked=!!c.enabled;
+  $("ad-label").textContent=c.enabled?"✅ Yoqilgan":"O'chirilgan";
+  $("ad-channel").value=c.channelId||"";
+  $("ad-info").textContent=c.channelTitle?("Kanal: "+c.channelTitle+(c.templateFileId?" · Shablon bor":" · Shablon yo\\'q")):"Kanal ulanmagan";
+}
+
+async function toggleAd(on){
+  await api("/ad/toggle",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:on})});
+  loadAd();showOk(on?"Reklama yoqildi":"Reklama o\\'chirildi");
+}
+
+async function saveAdChannel(){
+  const ch=$("ad-channel").value.trim();
+  if(!ch){showError("Kanal kiriting");return}
+  await api("/ad/channel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel:ch})});
+  loadAd();showOk("Reklama kanali saqlandi");
+}
+
+async function clearAd(){
+  if(!confirm("Reklama kanali o\\'chirilsinmi?"))return;
+  await api("/ad/clear",{method:"POST"});
+  loadAd();showOk("Tozalandi");
+}
+
+async function loadTexts(){
+  const t=await api("/texts");
+  $("txt-welcome").value=t.welcome||"";
+  $("txt-help").value=t.help||"";
+  $("txt-notfound").value=t.notFound||"";
+}
+
+async function saveTexts(){
+  await api("/texts/update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:"welcome",value:$("txt-welcome").value})});
+  await api("/texts/update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:"help",value:$("txt-help").value})});
+  await api("/texts/update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:"notFound",value:$("txt-notfound").value})});
+  showOk("Matnlar saqlandi");
+}
+
+async function loadCards(){
+  const d=await api("/cards");
+  $("cards-list").innerHTML=(d.cards||[]).map(function(c){
+    return '<li><strong>'+esc(c.title)+'</strong>: '+esc(c.value)+' <button class="danger" data-crm="'+c.id+'">🗑</button></li>';
+  }).join("")||'<li>Karta yo\\'q</li>';
+  $("cards-list").querySelectorAll("[data-crm]").forEach(function(b){
+    b.onclick=async function(){await api("/cards/remove?id="+b.dataset.crm,{method:"POST"});loadCards();showOk("O\\'chirildi")};
+  });
+}
+
+async function addCard(){
+  const title=$("card-title").value.trim();
+  const value=$("card-value").value.trim();
+  if(!title||!value){showError("Nomi va qiymat kerak");return}
+  await api("/cards/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:title,value:value})});
+  $("card-title").value="";$("card-value").value="";
+  loadCards();showOk("Karta qo\\'shildi");
+}
+
 $("refresh-movies").onclick=loadMovies;
+$("refresh-users").onclick=loadUsers;
 $("sub-enabled").onchange=function(e){toggleSub(e.target.checked)};
 $("add-channel").onclick=addChannel;
 $("bc-send").onclick=sendBroadcast;
+$("vip-add").onclick=addVip;
+$("ad-enabled").onchange=function(e){toggleAd(e.target.checked)};
+$("ad-save").onclick=saveAdChannel;
+$("ad-clear").onclick=clearAd;
+$("txt-save").onclick=saveTexts;
+$("card-add").onclick=addCard;
 
 loadMovies();
 loadSubscription();

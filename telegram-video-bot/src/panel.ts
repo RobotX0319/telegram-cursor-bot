@@ -72,7 +72,7 @@ import {
   listVipRecords,
   removeVipUser,
 } from "./vip";
-import { adminPanelKeyboard } from "./admin-keyboard";
+import { getWebPanelUrl, adminPanelKeyboard } from "./admin-keyboard";
 import { grantAdminAccess, type BotKind } from "./bots";
 import type { Env } from "./types";
 
@@ -146,11 +146,6 @@ export async function sendAdminPanel(
   const stats = await getBotStats(env);
   const bot = getPanelBot(chatId, env);
   const origin = workerOrigin || getPanelOrigin(chatId);
-
-  await sendMessage(env, chatId, "🎛 Admin panel — pastdagi menu tugmasini bosing", {
-    bot,
-    replyMarkup: adminPanelKeyboard(env, origin),
-  });
 
   await sendMessage(
     env,
