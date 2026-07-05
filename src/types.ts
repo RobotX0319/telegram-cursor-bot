@@ -6,6 +6,9 @@ export interface Env {
   ALLOWED_USER_IDS?: string;
   DEFAULT_GITHUB_REPO?: string;
   DEFAULT_GITHUB_BRANCH?: string;
+  GITHUB_TOKEN?: string;
+  GITHUB_OWNER?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
   ENVIRONMENT?: string;
   WORKER_PUBLIC_URL?: string;
   SESSIONS: KVNamespace;

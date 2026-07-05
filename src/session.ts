@@ -1,4 +1,5 @@
 import { putJsonIfChanged } from "./kv-store";
+import { getRepoForUser } from "./user-repos";
 import type { Env, UserSession } from "./types";
 
 function sessionKey(userId: number): string {
@@ -36,6 +37,14 @@ export async function updateSession(
   return next;
 }
 
-export function defaultRepo(env: Env, session: UserSession | null): string | null {
+export async function defaultRepo(
+  env: Env,
+  session: UserSession | null,
+  userId?: number,
+): Promise<string | null> {
+  if (userId != null) {
+    const assigned = await getRepoForUser(env, userId);
+    if (assigned) return assigned;
+  }
   return session?.repoUrl ?? env.DEFAULT_GITHUB_REPO ?? null;
 }

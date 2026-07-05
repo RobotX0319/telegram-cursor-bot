@@ -1,4 +1,4 @@
-import { resolveCursorApiKey } from "./secrets";
+import { wrapPromptForAgent } from "./scope";
 import type {
   CreateAgentResponse,
   CreateRunResponse,
@@ -63,10 +63,11 @@ export async function createAgent(
   startingRef?: string,
 ): Promise<CreateAgentResponse> {
   const branch = startingRef ?? env.DEFAULT_GITHUB_BRANCH ?? "main";
+  const scopedPrompt = wrapPromptForAgent(prompt);
   return cursorFetch<CreateAgentResponse>(env, "/agents", {
     method: "POST",
     body: JSON.stringify({
-      prompt: { text: prompt },
+      prompt: { text: scopedPrompt },
       model: { id: "composer-2.5" },
       repos: [{ url: repoUrl, startingRef: branch }],
       workOnCurrentBranch: true,
@@ -81,10 +82,11 @@ export async function createRun(
   agentId: string,
   prompt: string,
 ): Promise<CreateRunResponse> {
+  const scopedPrompt = wrapPromptForAgent(prompt);
   return cursorFetch<CreateRunResponse>(env, `/agents/${agentId}/runs`, {
     method: "POST",
     body: JSON.stringify({
-      prompt: { text: prompt },
+      prompt: { text: scopedPrompt },
     }),
   });
 }

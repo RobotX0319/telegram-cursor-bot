@@ -11,7 +11,9 @@ import {
 import {
   addAdmin,
   getBootstrapAdminIds,
+  getBootstrapRepo,
   isAllowedUser,
+  isBootstrapAdmin,
   listAllAdminIds,
   listStoredAdmins,
   removeAdmin,
@@ -32,9 +34,17 @@ import {
   notifyIfFinished,
 } from "./pending";
 import { isKvWriteLimitError } from "./kv-store";
+import {
+  approveRequest,
+  consumeGrantedPrompt,
+  createPermissionRequest,
+  denyRequest,
+} from "./permissions";
+import { checkTaskScope } from "./scope";
 import { defaultRepo, updateSession } from "./session";
 import { sendChatAction, sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
+import { provisionAllUsersWithoutRepo, provisionUserRepo } from "./user-repos";
 import { BUILD_DATE, VERSION } from "./version";
 
 const HELP_TEXT = `Telegram → Cursor Cloud Agent bot
@@ -43,29 +53,27 @@ Buyruqlar:
 /start — xush kelibsiz
 /help — yordam
 /status — agent va run holati
-/repo <url> — GitHub repo (masalan https://github.com/user/repo)
+/repo <url> — faqat asosiy admin (boshqalar o'z repoda)
 /new — yangi cloud agent ochish
 /agents — barcha agentlar ro'yxati
 /use 2 — agent tanlash (raqam yoki ID)
 /agent — faol agent haqida
+/request <vazifa> — cheklangan vazifa uchun ruxsat so'rash
 /admin list — adminlar ro'yxati
-/admin add <id> — yangi admin qo'shish
+/admin add <id> — yangi admin (+ avtomatik repo)
+/admin provision-repos — barcha userlar uchun repo yaratish
 /admin remove <id> — adminni olib tashlash
+/approve <id> — ruxsat berish (asosiy admin)
+/deny <id> — ruxsat rad etish (asosiy admin)
 /setkey <key> — Cursor API kalitini saqlash (faqat admin)
 /version — bot versiyasi
 
-Barcha adminlar bir xil agentlar va repo bilan ishlaydi.
+Har bir admin o'z GitHub repoda ishlaydi (izolyatsiya).
+Agent faqat Telegram bot va web interface vazifalarida ishlaydi.
+Boshqa vazifa: /request yoki asosiy admindan ruxsat.
 
 Asosiy admin barcha agentlarni ko'radi.
-Boshqa adminlar faqat o'z agentlarini ko'radi.
-
-Oddiy matn yuboring — agentga vazifa ( /ask shart emas )
-
-Masalan:
-README ga o'rnatish bo'limini qo'sh
-Yoki: src/index.ts dagi xatoni tuzat
-
-Agent Cloudflare Worker kodini ham shu repoda o'zgartirishi mumkin.`;
+Boshqa adminlar faqat o'z agentlarini ko'radi.`;
 
 export async function handleMessage(
   env: Env,
@@ -177,6 +185,18 @@ async function handleCommand(
       await handleSetKey(env, chatId, userId, args);
       return;
 
+    case "/request":
+      await handleRequest(env, chatId, userId, args);
+      return;
+
+    case "/approve":
+      await handleApprove(env, chatId, userId, args);
+      return;
+
+    case "/deny":
+      await handleDeny(env, chatId, userId, args);
+      return;
+
     case "/ask":
       if (!args) {
         await sendMessage(
@@ -234,6 +254,11 @@ async function handleAdmin(
       await handleAdminAdd(env, chatId, userId, value);
       return;
 
+    case "provision-repos":
+    case "provision":
+      await handleAdminProvisionRepos(env, chatId, userId);
+      return;
+
     case "remove":
     case "delete":
       await handleAdminRemove(env, chatId, value);
@@ -243,7 +268,7 @@ async function handleAdmin(
       await sendMessage(
         env,
         chatId,
-        "Foydalanish:\n/admin list\n/admin add 123456789\n/admin remove 123456789",
+        "Foydalanish:\n/admin list\n/admin add 123456789\n/admin provision-repos\n/admin remove 123456789",
       );
   }
 }
@@ -292,13 +317,18 @@ async function handleAdminList(env: Env, chatId: number): Promise<void> {
   const allIds = await listAllAdminIds(env);
   const stored = await listStoredAdmins(env);
   const storedById = new Map(stored.map((admin) => [admin.userId, admin]));
+  const bootstrapRepo = await getBootstrapRepo(env);
 
   const lines = allIds.map((id) => {
-    if (bootstrapIds.has(id)) return `${id} — asosiy admin (env)`;
+    if (bootstrapIds.has(id)) {
+      const repo = bootstrapRepo ? `\n   repo: ${bootstrapRepo}` : "";
+      return `${id} — asosiy admin (env)${repo}`;
+    }
     const info = storedById.get(id);
+    const repo = info?.repoUrl ? `\n   repo: ${info.repoUrl}` : "\n   repo: (yaratilmagan)";
     return info
-      ? `${id} — qo'shilgan (${info.addedBy})`
-      : `${id} — admin`;
+      ? `${id} — qo'shilgan (${info.addedBy})${repo}`
+      : `${id} — admin${repo}`;
   });
 
   await sendMessage(
@@ -330,11 +360,37 @@ async function handleAdminAdd(
     return;
   }
 
-  await sendMessage(
-    env,
-    chatId,
-    `Yangi admin qo'shildi: ${targetId}\nEndi u botdan foydalanishi mumkin.`,
-  );
+  await sendChatAction(env, chatId, "typing");
+
+  try {
+    const { url, created } = await provisionUserRepo(
+      env,
+      Number.parseInt(targetId, 10),
+      userId,
+    );
+    await sendMessage(
+      env,
+      chatId,
+      [
+        `Yangi admin qo'shildi: ${targetId}`,
+        created ? "Yangi GitHub repo yaratildi:" : "Mavjud repo biriktirildi:",
+        url,
+        "",
+        "Endi u faqat o'z repoda ishlaydi.",
+      ].join("\n"),
+    );
+  } catch (error) {
+    await sendMessage(
+      env,
+      chatId,
+      [
+        `Admin qo'shildi: ${targetId}`,
+        `Repo yaratilmadi: ${error instanceof Error ? error.message : String(error)}`,
+        "",
+        "GITHUB_TOKEN sozlang, keyin: /admin provision-repos",
+      ].join("\n"),
+    );
+  }
 }
 
 async function handleAdminRemove(
@@ -450,12 +506,162 @@ async function handleUse(
   );
 }
 
+async function handleAdminProvisionRepos(
+  env: Env,
+  chatId: number,
+  userId: number,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Faqat asosiy admin.");
+    return;
+  }
+
+  await sendChatAction(env, chatId, "typing");
+
+  try {
+    const results = await provisionAllUsersWithoutRepo(env, userId);
+    const lines = results.map((r) => {
+      const status = r.error
+        ? `XATO: ${r.error}`
+        : r.created
+          ? "yangi yaratildi"
+          : "mavjud";
+      return `${r.userId}: ${r.url} (${status})`;
+    });
+
+    await sendMessage(
+      env,
+      chatId,
+      ["Repo natijalari:", "", ...lines].join("\n"),
+    );
+  } catch (error) {
+    await sendMessage(
+      env,
+      chatId,
+      `Provision xato: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function handleRequest(
+  env: Env,
+  chatId: number,
+  userId: number,
+  prompt: string,
+): Promise<void> {
+  if (!prompt) {
+    await sendMessage(env, chatId, "Foydalanish: /request <vazifa tavsifi>");
+    return;
+  }
+
+  const req = await createPermissionRequest(env, userId, chatId, prompt);
+  await sendMessage(
+    env,
+    chatId,
+    [
+      "Ruxsat so'rovi yuborildi.",
+      `ID: ${req.id}`,
+      "",
+      "Asosiy admin javobini kuting.",
+    ].join("\n"),
+  );
+}
+
+async function handleApprove(
+  env: Env,
+  chatId: number,
+  userId: number,
+  requestId: string,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Faqat asosiy admin /approve ishlata oladi.");
+    return;
+  }
+
+  if (!requestId) {
+    await sendMessage(env, chatId, "Foydalanish: /approve <so'rov_id>");
+    return;
+  }
+
+  const req = await approveRequest(env, requestId, userId);
+  if (!req) {
+    await sendMessage(env, chatId, "So'rov topilmadi yoki allaqachon hal qilingan.");
+    return;
+  }
+
+  await sendMessage(env, chatId, `Tasdiqlandi: ${requestId} → user ${req.userId}`);
+}
+
+async function handleDeny(
+  env: Env,
+  chatId: number,
+  userId: number,
+  requestId: string,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Faqat asosiy admin /deny ishlata oladi.");
+    return;
+  }
+
+  if (!requestId) {
+    await sendMessage(env, chatId, "Foydalanish: /deny <so'rov_id>");
+    return;
+  }
+
+  const req = await denyRequest(env, requestId, userId);
+  if (!req) {
+    await sendMessage(env, chatId, "So'rov topilmadi yoki allaqachon hal qilingan.");
+    return;
+  }
+
+  await sendMessage(env, chatId, `Rad etildi: ${requestId}`);
+}
+
+async function ensureScopeAllowed(
+  env: Env,
+  chatId: number,
+  userId: number,
+  prompt: string,
+): Promise<boolean> {
+  if (isBootstrapAdmin(env, userId)) return true;
+
+  if (await consumeGrantedPrompt(env, userId, prompt)) return true;
+
+  const scope = checkTaskScope(prompt);
+  if (scope.ok) return true;
+
+  if (scope.reason === "blocked") {
+    await sendMessage(env, chatId, scope.message);
+    return false;
+  }
+
+  await sendMessage(
+    env,
+    chatId,
+    [
+      scope.message,
+      "",
+      "Ruxsat so'rash: /request " + prompt.slice(0, 200),
+    ].join("\n"),
+  );
+  return false;
+}
+
 async function handleRepo(
   env: Env,
   chatId: number,
   userId: number,
   repoUrl: string,
 ): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(
+      env,
+      chatId,
+      "Repo faqat avtomatik biriktiriladi.\n/admin list — sizning repoingiz",
+    );
+    return;
+  }
+
   if (!repoUrl.startsWith("https://github.com/")) {
     await sendMessage(
       env,
@@ -550,16 +756,18 @@ async function handleNew(
   workerOrigin: string,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
-  const repoUrl = defaultRepo(env, session);
+  const repoUrl = await defaultRepo(env, session, userId);
 
   if (!repoUrl) {
     await sendMessage(
       env,
       chatId,
-      "Avval repo belgilang:\n/repo https://github.com/user/telegram-cursor-bot",
+      "Repo topilmadi.\nAsosiy admin: /admin provision-repos",
     );
     return;
   }
+
+  if (!(await ensureScopeAllowed(env, chatId, userId, prompt))) return;
 
   await startAgentRun(env, chatId, userId, prompt, repoUrl, true, ctx, workerOrigin);
 }
@@ -573,8 +781,10 @@ async function dispatchPrompt(
   workerOrigin: string,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
-  const repoUrl = defaultRepo(env, session);
+  const repoUrl = await defaultRepo(env, session, userId);
   const activeId = await resolveActiveAgentId(env, userId, session);
+
+  if (!(await ensureScopeAllowed(env, chatId, userId, prompt))) return;
 
   if (activeId) {
     await continueAgentRun(env, chatId, userId, activeId, prompt, ctx, workerOrigin);
@@ -585,7 +795,7 @@ async function dispatchPrompt(
     await sendMessage(
       env,
       chatId,
-      "Birinchi marta repo kerak:\n/repo https://github.com/user/repo\n\nKeyin shu matnni qayta yuboring.",
+      "Repo topilmadi.\nAsosiy admin: /admin provision-repos",
     );
     return;
   }

@@ -1,12 +1,16 @@
+import { putJsonIfChanged, putTextIfChanged } from "./kv-store";
 import type { Env } from "./types";
 
 export interface StoredAdmin {
   userId: string;
   addedBy: string;
   addedAt: string;
+  repoUrl?: string;
+  repoName?: string;
 }
 
 const ADMIN_PREFIX = "admin:";
+const BOOTSTRAP_REPO_KEY = "config:bootstrap_repo";
 
 function adminKey(userId: string): string {
   return `${ADMIN_PREFIX}${userId}`;
@@ -31,6 +35,38 @@ export function getBootstrapAdminIds(env: Env): string[] {
 
 export function isBootstrapAdmin(env: Env, userId: number): boolean {
   return getBootstrapAdminIds(env).includes(String(userId));
+}
+
+export async function getBootstrapRepo(env: Env): Promise<string | null> {
+  const fromKv = await env.SESSIONS.get(BOOTSTRAP_REPO_KEY);
+  if (fromKv?.trim()) return fromKv.trim();
+  return env.DEFAULT_GITHUB_REPO?.trim() ?? null;
+}
+
+export async function updateBootstrapRepo(
+  env: Env,
+  repoUrl: string,
+): Promise<void> {
+  await putTextIfChanged(env.SESSIONS, BOOTSTRAP_REPO_KEY, repoUrl);
+}
+
+export async function getAdminProfile(
+  env: Env,
+  userId: number,
+): Promise<StoredAdmin | null> {
+  if (isBootstrapAdmin(env, userId)) {
+    const repoUrl = await getBootstrapRepo(env);
+    return {
+      userId: String(userId),
+      addedBy: "env",
+      addedAt: "",
+      repoUrl: repoUrl ?? undefined,
+    };
+  }
+
+  const raw = await env.SESSIONS.get(adminKey(String(userId)));
+  if (!raw) return null;
+  return JSON.parse(raw) as StoredAdmin;
 }
 
 export async function listStoredAdmins(env: Env): Promise<StoredAdmin[]> {
@@ -82,8 +118,30 @@ export async function addAdmin(
     addedAt: new Date().toISOString(),
   };
 
-  await env.SESSIONS.put(key, JSON.stringify(admin));
+  await putJsonIfChanged(env.SESSIONS, key, admin);
   return "added";
+}
+
+export async function setAdminRepo(
+  env: Env,
+  userId: string,
+  repoUrl: string,
+  updatedBy: number,
+): Promise<void> {
+  const key = adminKey(userId);
+  const raw = await env.SESSIONS.get(key);
+  const admin: StoredAdmin = raw
+    ? (JSON.parse(raw) as StoredAdmin)
+    : {
+        userId,
+        addedBy: String(updatedBy),
+        addedAt: new Date().toISOString(),
+      };
+
+  admin.repoUrl = repoUrl;
+  admin.repoName = repoUrl.split("/").pop();
+
+  await putJsonIfChanged(env.SESSIONS, key, admin);
 }
 
 export async function removeAdmin(
