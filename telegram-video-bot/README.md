@@ -79,6 +79,7 @@ npx wrangler secret put REQUIRED_CHANNELS
 | `TELEGRAM_WEBHOOK_SECRET` | Tasodifiy maxfiy satr (A-Z, a-z, 0-9, _, -) |
 | `TELEGRAM_ADMIN_ID` | Admin Telegram user ID ([@userinfobot](https://t.me/userinfobot)) |
 | `REQUIRED_CHANNELS` | Majburiy kanal(lar): `@channel1,@channel2` (ixtiyoriy) |
+| `ADMIN_PANEL_PATH` | Web admin panel yo'li (masalan: `/admin1`, `/admin2`) |
 
 ### 5. Deploy
 
@@ -124,7 +125,7 @@ GitHub repo **Settings → Secrets** ga qo'shing:
 Brauzerda videolarni ko'rish va o'chirish:
 
 ```
-https://telegram-video-bot.<account>.workers.dev/admin?key=SIZNING_SECRET
+https://telegram-video-bot.<account>.workers.dev/admin1?key=SIZNING_SECRET
 ```
 
 Yoki Telegramda admin sifatida: `/panel` — havola yuboriladi.

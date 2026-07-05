@@ -1,4 +1,4 @@
-import { getWebhookSecret } from "./config";
+import { getAdminPanelPath, getWebhookSecret } from "./config";
 import { countVideos, deleteVideo, listVideos } from "./storage";
 import {
   addRequiredChannel,
@@ -23,12 +23,14 @@ export async function handleAdminRequest(
     return new Response("Unauthorized", { status: 401 });
   }
 
-  if (request.method === "GET" && url.pathname === "/admin/api/subscription") {
+  const panelPath = getAdminPanelPath(env);
+
+  if (request.method === "GET" && url.pathname === `${panelPath}/api/subscription`) {
     const config = await getSubscriptionConfig(env);
     return Response.json(config);
   }
 
-  if (request.method === "POST" && url.pathname === "/admin/api/subscription/toggle") {
+  if (request.method === "POST" && url.pathname === `${panelPath}/api/subscription/toggle`) {
     let body: { enabled?: boolean };
     try {
       body = (await request.json()) as { enabled?: boolean };
@@ -44,7 +46,7 @@ export async function handleAdminRequest(
     return Response.json({ ok: true, config });
   }
 
-  if (request.method === "POST" && url.pathname === "/admin/api/subscription/add") {
+  if (request.method === "POST" && url.pathname === `${panelPath}/api/subscription/add`) {
     let body: { channel?: string; url?: string; title?: string };
     try {
       body = (await request.json()) as { channel?: string; url?: string; title?: string };
@@ -69,7 +71,7 @@ export async function handleAdminRequest(
     return Response.json(result);
   }
 
-  if (request.method === "POST" && url.pathname === "/admin/api/subscription/remove") {
+  if (request.method === "POST" && url.pathname === `${panelPath}/api/subscription/remove`) {
     const channelId = url.searchParams.get("id");
     if (!channelId) {
       return Response.json({ ok: false, error: "id kerak" }, { status: 400 });
@@ -79,13 +81,13 @@ export async function handleAdminRequest(
     return Response.json({ ok: true, config });
   }
 
-  if (request.method === "GET" && url.pathname === "/admin/api/videos") {
+  if (request.method === "GET" && url.pathname === `${panelPath}/api/videos`) {
     const videos = await listVideos(env);
     const total = await countVideos(env);
     return Response.json({ total, videos });
   }
 
-  if (request.method === "POST" && url.pathname === "/admin/api/delete") {
+  if (request.method === "POST" && url.pathname === `${panelPath}/api/delete`) {
     const idParam = url.searchParams.get("id");
     if (!idParam || !/^\d+$/.test(idParam)) {
       return Response.json({ ok: false, error: "id kerak" }, { status: 400 });
@@ -100,9 +102,9 @@ export async function handleAdminRequest(
     return Response.json({ ok: true, id });
   }
 
-  if (request.method === "GET" && url.pathname === "/admin") {
+  if (request.method === "GET" && url.pathname === panelPath) {
     const key = url.searchParams.get("key") ?? "";
-    return new Response(renderAdminPage(key), {
+    return new Response(renderAdminPage(key, panelPath), {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
@@ -110,7 +112,8 @@ export async function handleAdminRequest(
   return new Response("Not Found", { status: 404 });
 }
 
-function renderAdminPage(key: string): string {
+function renderAdminPage(key: string, panelPath: string): string {
+  const apiBase = panelPath + "/api";
   return `<!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -359,7 +362,7 @@ function renderAdminPage(key: string): string {
     }
 
     async function loadSubscription() {
-      const res = await fetch("/admin/api/subscription?key=" + encodeURIComponent(KEY));
+      const res = await fetch("${apiBase}/subscription?key=" + encodeURIComponent(KEY));
       if (!res.ok) throw new Error("Obuna sozlamalari yuklanmadi");
       return res.json();
     }
@@ -391,7 +394,7 @@ function renderAdminPage(key: string): string {
 
     async function toggleSubscription(enabled) {
       clearError();
-      const res = await fetch("/admin/api/subscription/toggle?key=" + encodeURIComponent(KEY), {
+      const res = await fetch("${apiBase}/subscription/toggle?key=" + encodeURIComponent(KEY), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: enabled }),
@@ -412,7 +415,7 @@ function renderAdminPage(key: string): string {
         return;
       }
       clearError();
-      const res = await fetch("/admin/api/subscription/add?key=" + encodeURIComponent(KEY), {
+      const res = await fetch("${apiBase}/subscription/add?key=" + encodeURIComponent(KEY), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel: channel, url: url || undefined }),
@@ -430,7 +433,7 @@ function renderAdminPage(key: string): string {
     async function removeChannel(id) {
       if (!confirm("Kanal o'chirilsinmi: " + id + "?")) return;
       clearError();
-      const res = await fetch("/admin/api/subscription/remove?id=" + encodeURIComponent(id) + "&key=" + encodeURIComponent(KEY), {
+      const res = await fetch("${apiBase}/subscription/remove?id=" + encodeURIComponent(id) + "&key=" + encodeURIComponent(KEY), {
         method: "POST",
       });
       const data = await res.json();
@@ -443,7 +446,7 @@ function renderAdminPage(key: string): string {
 
     async function loadVideos() {
       clearError();
-      const res = await fetch("/admin/api/videos?key=" + encodeURIComponent(KEY));
+      const res = await fetch("${apiBase}/videos?key=" + encodeURIComponent(KEY));
       if (!res.ok) throw new Error("Ma'lumot yuklanmadi: " + res.status);
       return res.json();
     }
@@ -490,7 +493,7 @@ function renderAdminPage(key: string): string {
     async function deleteVideo(id) {
       if (!confirm("Video #" + id + " o'chirilsinmi?")) return;
       clearError();
-      const res = await fetch("/admin/api/delete?id=" + id + "&key=" + encodeURIComponent(KEY), {
+      const res = await fetch("${apiBase}/delete?id=" + id + "&key=" + encodeURIComponent(KEY), {
         method: "POST",
       });
       const data = await res.json();
@@ -512,6 +515,7 @@ function renderAdminPage(key: string): string {
 </html>`;
 }
 
-export function getAdminPanelUrl(origin: string, secret: string): string {
-  return `${origin.replace(/\/$/, "")}/admin?key=${encodeURIComponent(secret)}`;
+export function getAdminPanelUrl(origin: string, secret: string, panelPath = "/admin1"): string {
+  const base = panelPath.startsWith("/") ? panelPath : `/${panelPath}`;
+  return `${origin.replace(/\/$/, "")}${base}?key=${encodeURIComponent(secret)}`;
 }

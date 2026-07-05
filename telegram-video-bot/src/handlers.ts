@@ -1,4 +1,4 @@
-import { getWebhookSecret } from "./config";
+import { getAdminPanelPath, getWebhookSecret } from "./config";
 import {
   countVideos,
   deleteVideo,
@@ -352,7 +352,7 @@ async function handlePanel(
   chatId: number,
   workerOrigin: string,
 ): Promise<void> {
-  const url = getAdminPanelUrl(workerOrigin, getWebhookSecret(env));
+  const url = getAdminPanelUrl(workerOrigin, getWebhookSecret(env), getAdminPanelPath(env));
   await sendMessage(
     env,
     chatId,

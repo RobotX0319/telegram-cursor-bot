@@ -2,6 +2,7 @@ export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
   WEBHOOK_KEY?: string;
+  ADMIN_PANEL_PATH?: string;
   TELEGRAM_ADMIN_ID: string;
   REQUIRED_CHANNELS?: string;
   ENVIRONMENT?: string;

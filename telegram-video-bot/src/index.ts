@@ -1,5 +1,5 @@
 import { handleAdminRequest } from "./admin";
-import { getWebhookSecret } from "./config";
+import { getWebhookSecret, isAdminPanelPath } from "./config";
 import { handleCallbackQuery, handleMessage } from "./handlers";
 import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
@@ -45,7 +45,7 @@ export default {
       return Response.json({ ok });
     }
 
-    if (url.pathname.startsWith("/admin")) {
+    if (isAdminPanelPath(env, url.pathname)) {
       return handleAdminRequest(request, env);
     }
 
