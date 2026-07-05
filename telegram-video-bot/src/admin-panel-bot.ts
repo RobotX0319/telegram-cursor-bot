@@ -53,7 +53,7 @@ export async function sendAdminPanel(
       `📢 Majburiy obuna: ${subOn ? "Yoniq" : "O'chiq"}`,
       `📡 Kanallar: ${sub.channels.length}`,
       "",
-      "Video yuklash — shu yerga video fayl yuboring.",
+      "Video yuklash — avval ID (masalan: 5), keyin video yuboring.",
       "Foydalanuvchilar @Detskebot orqali video oladi.",
     ].join("\n"),
     {
@@ -135,7 +135,7 @@ async function showMainMenu(
       `📢 Majburiy obuna: ${subOn ? "Yoniq" : "O'chiq"}`,
       `📡 Kanallar: ${sub.channels.length}`,
       "",
-      "Video yuklash — video fayl yuboring.",
+      "Video yuklash — avval ID, keyin video.",
     ].join("\n"),
     {
       bot: "admin",
@@ -445,7 +445,7 @@ async function showHelp(
     [
       "❓ Yordam",
       "",
-      "• Video yuklang — ID beriladi",
+      "• Avval ID (5), keyin video yoki caption: 5",
       "• /panel — admin panel",
       "• Tugmalar orqali boshqaring",
       "",
