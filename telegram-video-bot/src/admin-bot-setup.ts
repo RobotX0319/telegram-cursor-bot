@@ -5,7 +5,6 @@ import {
   saveBotTokens,
 } from "./bots";
 import {
-  configureWebhookFromEnv,
   getBotUsername,
   setBotCommands,
   setWebhook,
@@ -63,17 +62,32 @@ export async function getAdminBotStatus(env: Env): Promise<{
   return { connected, username };
 }
 
+let adminWebhookReady = false;
+
 export async function ensureDetiskebotReady(
   env: Env,
   workerOrigin: string,
 ): Promise<void> {
-  if (hasAdminBot(env)) return;
+  if (adminWebhookReady) return;
+
+  await ensureBotTokens(env);
+  const fromEnv = env.TELEGRAM_ADMIN_BOT_TOKEN?.trim();
   const fromKv = await env.VIDEOS.get("config:admin_bot_token");
-  if (fromKv?.trim()) {
+  const adminToken = fromEnv || fromKv?.trim() || "";
+
+  if (!adminToken) return;
+
+  if (!fromKv?.trim() && fromEnv) {
+    await saveBotTokens(env, { adminToken: fromEnv });
     invalidateBotTokenCache();
     await ensureBotTokens(env);
-    if (hasAdminBot(env)) {
-      await configureWebhookFromEnv(env, workerOrigin);
-    }
   }
+
+  if (!hasAdminBot(env)) return;
+
+  const origin = workerOrigin.replace(/\/$/, "");
+  const secret = getWebhookSecret(env);
+  await setWebhook(adminToken, `${origin}/webhook-admin`, secret);
+  await setBotCommands(env, "admin");
+  adminWebhookReady = true;
 }

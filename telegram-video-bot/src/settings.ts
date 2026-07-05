@@ -1,11 +1,12 @@
+import { ADMIN_BOT, USER_BOT } from "./bot-labels";
 import type { BotTexts, Env } from "./types";
 
 const TEXTS_KEY = "meta:bot_texts";
 
 export const DEFAULT_TEXTS: BotTexts = {
   welcome:
-    "👋 Salom! @Detskebot ga xush kelibsiz!\n\n🎬 Kutubxonada {total} ta kino bor\n\nVideo olish: raqam yuboring (masalan: 1)",
-  help: `🎬 Video bot — @Detskebot
+    `👋 Salom! ${USER_BOT} ga xush kelibsiz!\n\n🎬 Kutubxonada {total} ta kino bor\n\nVideo olish: raqam yuboring (masalan: 1)`,
+  help: `🎬 Video bot — ${USER_BOT}
 
 📌 Qanday ishlaydi:
 • 1, 2, 3 ... yuboring — kino olasiz
@@ -13,7 +14,7 @@ export const DEFAULT_TEXTS: BotTexts = {
 • /check — obunani tekshirish
 • /karta — to'lov kartalari
 
-👑 Admin: /panel — boshqaruv paneli`,
+👑 Admin: ${ADMIN_BOT}`,
   notFound: "❌ Kino topilmadi: {code}",
   blocked: "🚫 Siz bloklangansiz. Admin bilan bog'laning.",
   deliveryMessages: [

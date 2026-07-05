@@ -72,7 +72,7 @@ import {
   listVipRecords,
   removeVipUser,
 } from "./vip";
-import { type BotKind } from "./bots";
+import { hasAdminBot, type BotKind } from "./bots";
 import type { Env } from "./types";
 
 const PAGE = 6;
@@ -82,23 +82,27 @@ function setPanelBot(chatId: number, bot: BotKind): void {
   panelBotSession.set(chatId, bot);
 }
 
-function getPanelBot(_chatId: number, _env: Env): BotKind {
-  return "user";
+function getPanelBot(chatId: number, env: Env): BotKind {
+  if (panelBotSession.get(chatId) === "user") return "user";
+  return "admin";
 }
 
-export function resolvePanelBot(env: Env, chatId: number): BotKind {
-  return getPanelBot(chatId, env);
+export function resolvePanelBot(_env: Env, _chatId: number): BotKind {
+  return "admin";
 }
 
 export function parsePanelCallback(
   data: string,
-  _chatId: number | undefined,
-  _env: Env,
+  chatId: number | undefined,
+  env: Env,
 ): { data: string; botKind: BotKind } {
   if (data.startsWith("pu:")) {
     return { data: `p:${data.slice(3)}`, botKind: "user" };
   }
-  return { data, botKind: "user" };
+  if (chatId !== undefined && getPanelBot(chatId, env) === "user") {
+    return { data, botKind: "user" };
+  }
+  return { data, botKind: "admin" };
 }
 
 function cb(data: string, chatId: number, env: Env): string {
@@ -124,7 +128,7 @@ export async function sendAdminPanel(
   _workerOrigin: string,
   botKind?: BotKind,
 ): Promise<void> {
-  const panelBot = botKind ?? "user";
+  const panelBot = botKind ?? "admin";
   setPanelBot(chatId, panelBot);
   const total = await countVideos(env);
   const users = await listUsers(env);
@@ -172,7 +176,7 @@ export async function handleAdminPanelCallback(
   workerOrigin: string,
 ): Promise<void> {
   const { data, botKind } = parsePanelCallback(rawData, chatId, env);
-  const panelBot = botKind ?? "user";
+  const panelBot = botKind ?? "admin";
   setPanelBot(chatId, panelBot);
   const parts = data.split(":");
   const section = parts[1];

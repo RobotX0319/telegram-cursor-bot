@@ -20,13 +20,13 @@ import { setAdChannel } from "./ad-channel";
 import { addVipUser, removeVipUser } from "./vip";
 import {
   handlePanelStateInput,
-  resolvePanelBot,
   sendAdminPanel,
 } from "./panel";
+import type { BotKind } from "./bots";
 import type { Env } from "./types";
 
-function panelBot(env: Env, chatId: number) {
-  return resolvePanelBot(env, chatId);
+function panelBot(_env: Env, _chatId: number): BotKind {
+  return "admin";
 }
 
 export async function handleReplyButton(

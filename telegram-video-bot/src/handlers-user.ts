@@ -1,7 +1,4 @@
-import { isAdmin } from "./bots";
-import { tryAdminOnUserBot, openUserAdminPanel } from "./admin-via-user";
-import { handleAdminBotMessage } from "./handlers-admin";
-import { handleAdminPanelCallback, parsePanelCallback } from "./panel";
+import { adminRedirectText } from "./bot-labels";
 import {
   trackNotFound,
   trackUserStart,
@@ -77,14 +74,10 @@ export async function handleUserMessage(
   const text = message.text?.trim();
   if (text) {
     const cmd = text.split(/\s+/)[0]?.toLowerCase().split("@")[0];
-    if (cmd === "/panel" || cmd === "/admin") {
-      await openUserAdminPanel(env, chatId, userId);
+    if (cmd === "/panel" || cmd === "/admin" || ADMIN_ONLY_COMMANDS.has(cmd)) {
+      await sendMessage(env, chatId, adminRedirectText());
       return;
     }
-  }
-
-  if (await tryAdminOnUserBot(env, message, workerOrigin)) {
-    return;
   }
 
   if (message.video || message.animation || message.photo?.length || isVideoDocument(message)) {
@@ -100,7 +93,7 @@ export async function handleUserMessage(
   if (!text) return;
 
   if (text.startsWith("/")) {
-    await handleUserCommand(env, chatId, userId, text, message.from, message, workerOrigin);
+    await handleUserCommand(env, chatId, userId, text, message.from);
     return;
   }
 
@@ -130,9 +123,7 @@ async function handleUserCommand(
   chatId: number,
   userId: number,
   text: string,
-  from: TelegramMessage["from"] | undefined,
-  message: TelegramMessage,
-  workerOrigin: string,
+  from?: TelegramMessage["from"],
 ): Promise<void> {
   const [command, ...rest] = text.split(/\s+/);
   const args = rest.join(" ").trim();
@@ -176,19 +167,7 @@ async function handleUserCommand(
 
     default:
       if (ADMIN_ONLY_COMMANDS.has(cmd)) {
-        if (cmd === "/panel" || cmd === "/admin") {
-          await openUserAdminPanel(env, chatId, userId);
-          return;
-        }
-        if (!(await isAdmin(env, userId))) {
-          await sendMessage(
-            env,
-            chatId,
-            "⛔ Admin buyruq.\n\n/meningid — IDingizni ko'ring.",
-          );
-          return;
-        }
-        await handleAdminBotMessage(env, message, workerOrigin, "user");
+        await sendMessage(env, chatId, adminRedirectText());
         return;
       }
       await sendMessage(env, chatId, "❓ Noma'lum buyruq. /help");
@@ -217,14 +196,6 @@ async function sendWelcome(
   await sendMessage(env, chatId, welcome, {
     replyMarkup: USER_START_KEYBOARD,
   });
-
-  if (await isAdmin(env, userId)) {
-    await sendMessage(
-      env,
-      chatId,
-      "👑 Admin: /panel — boshqaruv paneli\n📤 Video: ID (masalan 5), keyin video yuboring",
-    );
-  }
 
   if (channels.length > 0 && sub.enabled && !result.subscribed) {
     await sendSubscriptionRequired(env, chatId, userId, result);
@@ -372,13 +343,18 @@ export async function handleList(env: Env, chatId: number): Promise<void> {
   const videos = await listVideos(env);
 
   if (videos.length === 0) {
-    await sendMessage(env, chatId, "Hozircha kino yo'q.");
+    await sendMessage(env, chatId, "Hozircha kino yo'q.", { bot: "admin" });
     return;
   }
 
   const lines = videos.map((video) => `${video.id}. ${movieName(video)}`);
 
-  await sendMessage(env, chatId, ["Kinolar:", "", ...lines].join("\n"));
+  await sendMessage(
+    env,
+    chatId,
+    ["Kinolar:", "", ...lines].join("\n"),
+    { bot: "admin" },
+  );
 }
 
 export async function handleDelete(
@@ -387,7 +363,7 @@ export async function handleDelete(
   args: string,
 ): Promise<void> {
   if (!/^\d+$/.test(args)) {
-    await sendMessage(env, chatId, "Foydalanish: /delete 5");
+    await sendMessage(env, chatId, "Foydalanish: /delete 5", { bot: "admin" });
     return;
   }
 
@@ -395,17 +371,17 @@ export async function handleDelete(
   const deleted = await deleteVideo(env, id);
 
   if (!deleted) {
-    await sendMessage(env, chatId, `Kino topilmadi: ${id}`);
+    await sendMessage(env, chatId, `Kino topilmadi: ${id}`, { bot: "admin" });
     return;
   }
 
-  await sendMessage(env, chatId, `Kino o'chirildi: ${id}`);
+  await sendMessage(env, chatId, `Kino o'chirildi: ${id}`, { bot: "admin" });
 }
 
 export async function handleStats(env: Env, chatId: number): Promise<void> {
   const { buildAdminStatsText } = await import("./stats");
   const text = await buildAdminStatsText(env);
-  await sendMessage(env, chatId, text);
+  await sendMessage(env, chatId, text, { bot: "admin" });
 }
 
 export function formatDate(iso: string): string {
@@ -426,23 +402,6 @@ export async function handleCallbackQuery(
   if (!chatId || !data) {
     await answerCallbackQuery(env, query.id);
     return;
-  }
-
-  if ((data.startsWith("p:") || data.startsWith("pu:")) && (await isAdmin(env, userId))) {
-    const messageId = query.message?.message_id;
-    if (messageId) {
-      const answerBot = parsePanelCallback(data, chatId, env).botKind;
-      await answerCallbackQuery(env, query.id, undefined, answerBot);
-      await handleAdminPanelCallback(
-        env,
-        chatId,
-        messageId,
-        data,
-        userId,
-        workerOrigin,
-      );
-      return;
-    }
   }
 
   if (data.startsWith("adm:") || data.startsWith("p:") || data.startsWith("pu:")) {

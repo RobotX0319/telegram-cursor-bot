@@ -88,7 +88,7 @@ export async function startChannelAddFlow(
       "Bot kanalda admin bo'lishi kerak.",
       "Bekor: /cancel",
     ].join("\n"),
-    { bot: "user", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
 }
 

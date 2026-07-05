@@ -124,7 +124,7 @@ export async function startAdChannelFlow(
       "",
       "Bekor: /cancel",
     ].join("\n"),
-    { bot: "user", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
 }
 
@@ -145,7 +145,7 @@ export async function startAdTemplateFlow(
       "",
       "Bekor: /cancel",
     ].join("\n"),
-    { bot: "user", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
 }
 

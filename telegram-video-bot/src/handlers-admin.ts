@@ -4,6 +4,7 @@ import {
   handleAdminStateInput,
   handleReplyButton,
 } from "./admin-reply-menu";
+import { ADMIN_BOT, USER_BOT, adminRedirectText } from "./bot-labels";
 import { getAdminIds, hasAdminBot, isAdmin, saveBotTokens } from "./bots";
 
 const KV_ADMIN_IDS = "config:admin_ids";
@@ -62,20 +63,22 @@ import type { Env, StoredVideo, TelegramMessage } from "./types";
 const adminMsgBot = new Map<number, BotKind>();
 
 function replyBot(_env: Env, userId: number): BotKind {
-  return adminMsgBot.get(userId) ?? "user";
+  return adminMsgBot.get(userId) ?? "admin";
 }
 
 function adminBot(env: Env, userId: number): { bot: BotKind } {
   return { bot: replyBot(env, userId) };
 }
 
-const ADMIN_HELP = `@Detskebot — Admin
+const ADMIN_HELP = `${ADMIN_BOT} — Admin bot
 
 🎛 /panel — boshqaruv paneli
 📤 Kino yuklash — avval ID (masalan: 5), keyin video
 📋 /list — kinolar ro'yxati
 📊 /stats — statistika
-/cancel — bekor qilish`;
+/cancel — bekor qilish
+
+👥 Foydalanuvchilar: ${USER_BOT}`;
 
 export async function handleAdminBotMessage(
   env: Env,
@@ -91,16 +94,21 @@ export async function handleAdminBotMessage(
 
   adminMsgBot.set(userId, botKind);
 
-  if (!viaUserBot && !hasAdminBot(env)) {
+  if (viaUserBot) {
+    await sendMessage(env, chatId, adminRedirectText());
+    return;
+  }
+
+  if (!hasAdminBot(env)) {
     await sendMessage(
       env,
       chatId,
       [
-        "👋 Admin panel @Detskebot da.",
+        `⚠️ ${ADMIN_BOT} hali ulanmagan.`,
         "",
-        "@Detskebot ga o'ting va /panel yuboring.",
+        "Admin token ulang, keyin qayta /start yuboring.",
       ].join("\n"),
-      { bot: "user" },
+      { bot: "admin" },
     );
     return;
   }
@@ -221,10 +229,10 @@ async function handleAdminCommand(
         [
           "👋 Salom, admin!",
           "",
-          "🎛 /panel — boshqaruv paneli",
-          "📤 Video yuklash: ID yuboring (5), keyin video",
+          `${ADMIN_BOT} — kino boshqaruv boti`,
           "",
-          "/help — barcha buyruqlar",
+          "/panel — boshqaruv paneli",
+          "Video yuklash: ID yuboring (5), keyin video",
         ].join("\n"),
         { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: ADMIN_REPLY_KEYBOARD },
       );

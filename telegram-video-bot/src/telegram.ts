@@ -16,8 +16,6 @@ export const USER_BOT_COMMANDS = [
   { command: "info", description: "Video haqida ma'lumot" },
   { command: "check", description: "Obunani tekshirish" },
   { command: "karta", description: "To'lov kartalari" },
-  { command: "panel", description: "Admin panel (adminlar uchun)" },
-  { command: "meningid", description: "Telegram ID ko'rish" },
   { command: "ping", description: "Tekshirish" },
 ] as const;
 
