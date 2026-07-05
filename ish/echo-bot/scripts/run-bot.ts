@@ -47,6 +47,9 @@ async function main(): Promise<void> {
   await deleteWebhook(vars.TELEGRAM_BOT_TOKEN);
   await setBotCommands(env);
   touchHeartbeat();
+
+  const heartbeatTimer = setInterval(() => touchHeartbeat(), 10_000);
+
   console.log("✅ @Glabalashganbot echo bot ishga tushdi.");
 
   let offset = 0;
@@ -54,7 +57,7 @@ async function main(): Promise<void> {
     touchHeartbeat();
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 60_000);
+      const timer = setTimeout(() => controller.abort(), 35_000);
 
       const response = await fetch(
         `https://api.telegram.org/bot${vars.TELEGRAM_BOT_TOKEN}/getUpdates`,
@@ -64,7 +67,7 @@ async function main(): Promise<void> {
           signal: controller.signal,
           body: JSON.stringify({
             offset: offset > 0 ? offset : undefined,
-            timeout: 8,
+            timeout: 25,
             allowed_updates: ["message"],
           }),
         },

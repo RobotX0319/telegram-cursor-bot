@@ -2,6 +2,7 @@ node_modules/
 .wrangler/
 .dev.vars
 .heartbeat
+.supervisor.lock
 .env
 *.log
 worker-configuration.d.ts
