@@ -1,5 +1,5 @@
 import { isAdmin } from "./bots";
-import { tryAdminOnUserBot } from "./admin-via-user";
+import { tryAdminOnUserBot, openUserAdminPanel } from "./admin-via-user";
 import { handleAdminPanelCallback } from "./panel";
 import {
   trackNotFound,
@@ -73,6 +73,15 @@ export async function handleUserMessage(
     await syncUser(env, message.from);
   }
 
+  const text = message.text?.trim();
+  if (text) {
+    const cmd = text.split(/\s+/)[0]?.toLowerCase().split("@")[0];
+    if (cmd === "/panel" || cmd === "/admin") {
+      await openUserAdminPanel(env, chatId, userId);
+      return;
+    }
+  }
+
   if (await tryAdminOnUserBot(env, message, workerOrigin)) {
     return;
   }
@@ -83,7 +92,7 @@ export async function handleUserMessage(
     return;
   }
 
-  const text = message.text?.trim();
+  if (!text) return;
 
   if (message.video || isVideoDocument(message)) {
     if (!(await isAdmin(env, userId))) {
@@ -91,8 +100,6 @@ export async function handleUserMessage(
     }
     return;
   }
-
-  if (!text) return;
 
   if (text.startsWith("/")) {
     await handleUserCommand(env, chatId, userId, text, message.from);
@@ -161,11 +168,7 @@ async function handleUserCommand(
 
     default:
       if (ADMIN_ONLY_COMMANDS.has(cmd)) {
-        await sendMessage(
-          env,
-          chatId,
-          "👑 Bu buyruq faqat adminlar uchun. /panel",
-        );
+        await openUserAdminPanel(env, chatId, userId);
         return;
       }
       await sendMessage(env, chatId, "❓ Noma'lum buyruq. /help");

@@ -1,11 +1,15 @@
-import type { BotKind } from "./bots";
 import { getAdminIds, isAdmin, saveBotTokens } from "./bots";
 import { isReplyButton } from "./admin-keyboard";
 import { handleAdminBotMessage } from "./handlers-admin";
+import { sendAdminPanel } from "./panel";
+import { sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
+
+const KV_ADMIN_IDS = "config:admin_ids";
 
 const ADMIN_COMMANDS = new Set([
   "/panel",
+  "/admin",
   "/list",
   "/delete",
   "/stats",
@@ -31,7 +35,40 @@ function isImageDocument(message: TelegramMessage): boolean {
   return doc.mime_type.startsWith("image/");
 }
 
-/** Admin @Detskebot orqali panel va yuklash (Detiskebot ulanmagan bo'lsa). */
+/** @Detskebot da /panel — admin panelni ochish */
+export async function openUserAdminPanel(
+  env: Env,
+  chatId: number,
+  userId: number,
+): Promise<void> {
+  const kvAdmins = await env.VIDEOS.get(KV_ADMIN_IDS);
+
+  if (!kvAdmins?.trim()) {
+    await saveBotTokens(env, { adminIds: String(userId) });
+    await sendAdminPanel(env, chatId, "", "user");
+    return;
+  }
+
+  if (!(await isAdmin(env, userId))) {
+    const ids = await getAdminIds(env);
+    await sendMessage(
+      env,
+      chatId,
+      [
+        "⛔ Admin panel — ruxsat yo'q",
+        "",
+        `Sizning Telegram ID: ${userId}`,
+        "",
+        `Hozir adminlar: ${[...ids].join(", ")}`,
+      ].join("\n"),
+    );
+    return;
+  }
+
+  await sendAdminPanel(env, chatId, "", "user");
+}
+
+/** Admin media va boshqa buyruqlar @Detskebot orqali */
 export async function tryAdminOnUserBot(
   env: Env,
   message: TelegramMessage,
@@ -40,18 +77,23 @@ export async function tryAdminOnUserBot(
   const userId = message.from?.id;
   if (!userId) return false;
 
-  const adminIds = await getAdminIds(env);
   const text = message.text?.trim();
   const cmd = text?.split(/\s+/)[0]?.toLowerCase().split("@")[0];
 
-  if (adminIds.size === 0 && (cmd === "/panel" || cmd === "/start")) {
-    await saveBotTokens(env, { adminIds: String(userId) });
-    if (cmd === "/start") {
-      return false;
+  if (cmd === "/panel" || cmd === "/admin") {
+    return false;
+  }
+
+  const kvAdmins = await env.VIDEOS.get(KV_ADMIN_IDS);
+  if (!kvAdmins?.trim()) {
+    if (cmd === "/start") return false;
+    if (text?.startsWith("/")) {
+      await saveBotTokens(env, { adminIds: String(userId) });
     }
   } else if (!(await isAdmin(env, userId))) {
     return false;
   }
+
   const isAdminMedia =
     Boolean(message.video || message.animation || message.photo?.length) ||
     isVideoDocument(message) ||
@@ -68,16 +110,12 @@ export async function tryAdminOnUserBot(
   if (!isAdminMedia && !isAdminText) return false;
 
   if (text) {
-    const cmd = text.split(/\s+/)[0]?.toLowerCase().split("@")[0];
-    if (cmd && !ADMIN_COMMANDS.has(cmd) && text.startsWith("/")) {
+    const c = text.split(/\s+/)[0]?.toLowerCase().split("@")[0];
+    if (c && !ADMIN_COMMANDS.has(c) && text.startsWith("/")) {
       return false;
     }
   }
 
   await handleAdminBotMessage(env, message, workerOrigin, "user");
   return true;
-}
-
-export function adminCallbackBot(data: string): BotKind {
-  return data.startsWith("pu:") ? "user" : "admin";
 }

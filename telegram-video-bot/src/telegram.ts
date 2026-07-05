@@ -13,6 +13,7 @@ const TELEGRAM_API = "https://api.telegram.org";
 export const USER_BOT_COMMANDS = [
   { command: "start", description: "Botni boshlash" },
   { command: "help", description: "Yordam" },
+  { command: "panel", description: "Admin panel (adminlar uchun)" },
   { command: "info", description: "Video haqida ma'lumot" },
   { command: "check", description: "Obunani tekshirish" },
   { command: "karta", description: "To'lov kartalari" },
@@ -136,7 +137,7 @@ export async function sendMessage(
         }
       | { remove_keyboard: true };
   },
-): Promise<void> {
+): Promise<boolean> {
   const token = getBotToken(env, options?.bot ?? "user");
   const response = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
     method: "POST",
@@ -148,10 +149,21 @@ export async function sendMessage(
     }),
   });
 
-  if (!response.ok) {
-    const body = await response.text();
-    console.error("Telegram sendMessage failed:", response.status, body);
+  if (response.ok) return true;
+
+  const body = await response.text();
+  console.error("Telegram sendMessage failed:", response.status, body);
+
+  if (options?.replyMarkup) {
+    const retry = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+    return retry.ok;
   }
+
+  return false;
 }
 
 export async function answerCallbackQuery(
