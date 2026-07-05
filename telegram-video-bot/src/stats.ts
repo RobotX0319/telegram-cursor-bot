@@ -125,6 +125,10 @@ export async function getAdminStatsJson(env: Env): Promise<Record<string, unknow
     channelStats,
     vipCount: vipRecords.length,
     topUsers: topUsers(stats, 5),
-    topMovies: await getTopMovies(env, 10),
+    topMovies: (await getTopMovies(env, 10)).map((m) => ({
+      id: m.id,
+      name: movieName(m),
+      views: m.views ?? 0,
+    })),
   };
 }
