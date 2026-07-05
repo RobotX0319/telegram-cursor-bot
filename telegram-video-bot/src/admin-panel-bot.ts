@@ -3,9 +3,14 @@ import { getAdminPanelPath, getWebhookSecret } from "./config";
 import { getAdminPanelUrl } from "./admin";
 import { countVideos, deleteVideo, getVideo, listVideos } from "./storage";
 import {
-  getSubscriptionConfig,
-  setSubscriptionEnabled,
-} from "./subscription";
+  formatSubscriptionLines,
+  getSubscriptionSummary,
+  removeChannelByIndex,
+  startChannelAddFlow,
+  subscriptionInlineKeyboard,
+  toggleSubscription,
+} from "./subscription-ui";
+import { getSubscriptionConfig } from "./subscription";
 import {
   answerCallbackQuery,
   editMessageText,
@@ -362,18 +367,8 @@ async function showSubscription(
   chatId: number,
   messageId: number,
 ): Promise<void> {
-  const sub = await getSubscriptionConfig(env);
-  const channelLines =
-    sub.channels.length === 0
-      ? ["Kanal qo'shilmagan."]
-      : sub.channels.map((c) => `• ${c.title ?? c.id}`);
-
-  const keyboard: InlineBtn[][] = [];
-  if (sub.enabled) {
-    keyboard.push([{ text: "🔴 O'chirish", callback_data: "adm:suboff" }]);
-  } else if (sub.channels.length > 0) {
-    keyboard.push([{ text: "🟢 Yoqish", callback_data: "adm:subon" }]);
-  }
+  const { config, vipCount } = await getSubscriptionSummary(env);
+  const keyboard = subscriptionInlineKeyboard(config);
   keyboard.push(backRow());
 
   await editMessageText(
@@ -381,13 +376,9 @@ async function showSubscription(
     chatId,
     messageId,
     [
-      "📢 Majburiy obuna",
+      ...formatSubscriptionLines(config, vipCount),
       "",
-      `Holat: ${sub.enabled ? "Yoniq" : "O'chiq"}`,
-      "",
-      ...channelLines,
-      "",
-      "Kanal qo'shish/o'chirish: web panel → Obuna bo'limi.",
+      "Kanal qo'shing — majburiy obuna ishlaydi.",
     ].join("\n"),
     {
       bot: "admin",
@@ -402,7 +393,7 @@ async function toggleSub(
   messageId: number,
   enabled: boolean,
 ): Promise<void> {
-  await setSubscriptionEnabled(env, enabled);
+  await toggleSubscription(env, enabled);
   await showSubscription(env, chatId, messageId);
 }
 
@@ -481,6 +472,28 @@ export async function handleAdminBotCallback(
   }
   if (data === "adm:vip:list") {
     await sendVipList(env, chatId);
+    return;
+  }
+
+  if (data === "adm:ch:add") {
+    await startChannelAddFlow(env, chatId, query.from.id);
+    return;
+  }
+
+  const chDel = data.match(/^adm:ch:del:(\d+)$/);
+  if (chDel) {
+    const index = Number.parseInt(chDel[1]!, 10);
+    const result = await removeChannelByIndex(env, index);
+    if (!result.ok) {
+      await sendMessage(env, chatId, result.error, { bot: "admin" });
+      return;
+    }
+    await sendMessage(
+      env,
+      chatId,
+      `✅ Kanal o'chirildi.\nQolgan: ${result.config.channels.length}`,
+      { bot: "admin" },
+    );
     return;
   }
 

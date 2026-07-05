@@ -20,11 +20,16 @@ import {
   removePaymentCard,
 } from "./payment-cards";
 import { sendMessage } from "./telegram";
+import { removeRequiredChannel } from "./subscription";
 import {
-  addRequiredChannel,
-  getSubscriptionConfig,
-  removeRequiredChannel,
-} from "./subscription";
+  addChannelFromText,
+  formatSubscriptionLines,
+  getSubscriptionSummary,
+  removeChannelByIndex,
+  startChannelAddFlow,
+  subscriptionInlineKeyboard,
+  subscriptionOn,
+} from "./subscription-ui";
 import { addVipUser, listVipUserIds, removeVipUser } from "./vip";
 import type { Env } from "./types";
 
@@ -98,31 +103,10 @@ async function showVideoUploadHelp(env: Env, chatId: number): Promise<void> {
 }
 
 async function showSubscriptionMenu(env: Env, chatId: number): Promise<void> {
-  const sub = await getSubscriptionConfig(env);
-  const on = sub.enabled && sub.channels.length > 0;
-
-  const inline: InlineBtn[][] = [];
-  if (sub.channels.length > 0) {
-    inline.push([
-      on
-        ? { text: "🔴 O'chirish", callback_data: "adm:suboff" }
-        : { text: "🟢 Yoqish", callback_data: "adm:subon" },
-    ]);
-  }
-  inline.push([{ text: "📡 Kanallarni sozlash", callback_data: "adm:sub" }]);
-
+  const { config, vipCount } = await getSubscriptionSummary(env);
   const msg = withKeyboard(
-    [
-      "📢 Majburiy obuna",
-      "",
-      `Holat: ${on ? "✅ Yoniq" : "⏸ O'chiq"}`,
-      `Kanallar: ${sub.channels.length}`,
-      "",
-      on
-        ? "Foydalanuvchi kanalga obuna bo'lmaguncha video ololmaydi."
-        : "Kanal qo'shing va yoqing.",
-    ].join("\n"),
-    inline,
+    formatSubscriptionLines(config, vipCount).join("\n"),
+    subscriptionInlineKeyboard(config),
   );
 
   await sendMessage(env, chatId, msg.text, {
@@ -136,55 +120,40 @@ async function showChannelsMenu(
   chatId: number,
   userId: number,
 ): Promise<void> {
-  const sub = await getSubscriptionConfig(env);
-  const lines =
-    sub.channels.length === 0
-      ? ["Kanal yo'q."]
-      : sub.channels.map((c, i) => `${i + 1}. ${c.title ?? c.id}`);
-
-  await setAdminState(env, userId, "await_channel");
-
-  const msg = withKeyboard(
-    [
-      "📡 Kanallar sozlamalari",
-      "",
-      ...lines,
-      "",
-      "➕ Qo'shish: @kanal yuboring",
-      "➖ O'chirish: o'chirish @kanal",
-      "",
-      "Bekor: /cancel",
-    ].join("\n"),
-  );
-
-  await sendMessage(env, chatId, msg.text, {
-    bot: "admin",
-    replyMarkup: msg.replyMarkup,
-  });
+  await showSubscriptionMenu(env, chatId);
+  await startChannelAddFlow(env, chatId, userId);
 }
 
 async function showVipMenu(env: Env, chatId: number): Promise<void> {
+  const { config, vipCount } = await getSubscriptionSummary(env);
   const ids = await listVipUserIds(env);
-  const lines =
+  const vipLines =
     ids.length === 0
       ? ["VIP mijoz yo'q."]
       : ids.map((id, i) => `${i + 1}. ${id}`);
 
+  const inline: InlineBtn[][] = [
+    [{ text: "➕ VIP qo'shish", callback_data: "adm:vip:add" }],
+    [{ text: "📋 VIP ro'yxati", callback_data: "adm:vip:list" }],
+    [{ text: "➕ Kanal qo'shish", callback_data: "adm:ch:add" }],
+    ...subscriptionInlineKeyboard(config).filter(
+      (row) => !row.some((b) => b.callback_data === "adm:ch:add"),
+    ),
+  ];
+
   const msg = withKeyboard(
     [
-      "⭐ VIP mijozlar",
+      "⭐ VIP & Majburiy obuna",
       "",
-      "VIP — obunasiz video oladi.",
+      ...vipLines,
       "",
-      ...lines,
+      `Obuna: ${subscriptionOn(config) ? "✅ Yoniq" : "⏸ O'chiq"}`,
+      `Kanallar: ${config.channels.length}`,
       "",
-      "➕ Qo'shish tugmasi yoki ID yuboring",
-      "➖ O'chirish: o'chirish 123456789",
+      "VIP — kanalga obuna bo'lmasdan video oladi.",
+      "Oddiy foydalanuvchi — kanalga obuna bo'lishi shart.",
     ].join("\n"),
-    [
-      [{ text: "➕ VIP qo'shish", callback_data: "adm:vip:add" }],
-      [{ text: "📋 VIP ro'yxati", callback_data: "adm:vip:list" }],
-    ],
+    inline,
   );
 
   await sendMessage(env, chatId, msg.text, {
@@ -282,7 +251,7 @@ async function handleChannelInput(
     return true;
   }
 
-  const result = await addRequiredChannel(env, text);
+  const result = await addChannelFromText(env, text);
   if (!result.ok) {
     await sendMessage(env, chatId, result.error, {
       bot: "admin",
@@ -292,10 +261,17 @@ async function handleChannelInput(
   }
 
   await clearAdminState(env, userId);
+  const on = subscriptionOn(result.config);
   await sendMessage(
     env,
     chatId,
-    `✅ Kanal qo'shildi.\nJami: ${result.config.channels.length}`,
+    [
+      `✅ Kanal qo'shildi.`,
+      `Jami kanallar: ${result.config.channels.length}`,
+      on ? "Majburiy obuna yoqildi." : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
     { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
   return true;
