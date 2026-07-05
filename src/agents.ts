@@ -61,29 +61,41 @@ function withCreatedBy(
 }
 
 async function listAllAgentMeta(env: Env): Promise<StoredAgentEntry[]> {
-  const list = await env.SESSIONS.list({ prefix: AGENT_META_PREFIX });
   const agents = new Map<string, StoredAgentEntry>();
 
-  for (const key of list.keys) {
-    const raw = await env.SESSIONS.get(key.name);
-    if (!raw) continue;
-    const entry = withCreatedBy(JSON.parse(raw) as StoredAgentEntry, 0);
-    agents.set(entry.agentId, entry);
-  }
+  let cursor: string | undefined;
+  do {
+    const list = await env.SESSIONS.list({
+      prefix: AGENT_META_PREFIX,
+      ...(cursor ? { cursor } : {}),
+    });
 
-  // Eski agentlar (faqat sessiyada saqlangan) ni migratsiya qilish
-  for (const idStr of getBootstrapAdminIds(env)) {
-    const ownerId = Number.parseInt(idStr, 10);
-    if (Number.isNaN(ownerId)) continue;
+    for (const key of list.keys) {
+      const raw = await env.SESSIONS.get(key.name);
+      if (!raw) continue;
+      const entry = withCreatedBy(JSON.parse(raw) as StoredAgentEntry, 0);
+      agents.set(entry.agentId, entry);
+    }
 
-    const session = normalizeSession(await getSession(env, ownerId));
-    for (const agent of session?.agents ?? []) {
-      const entry = withCreatedBy(agent, ownerId);
-      if (!agents.has(entry.agentId)) {
-        agents.set(entry.agentId, entry);
-        await saveAgentMeta(env, entry);
+    cursor = list.list_complete ? undefined : list.cursor;
+  } while (cursor);
+
+  const migrated = await env.SESSIONS.get("meta:migration_done");
+  if (!migrated) {
+    for (const idStr of getBootstrapAdminIds(env)) {
+      const ownerId = Number.parseInt(idStr, 10);
+      if (Number.isNaN(ownerId)) continue;
+
+      const session = normalizeSession(await getSession(env, ownerId));
+      for (const agent of session?.agents ?? []) {
+        const entry = withCreatedBy(agent, ownerId);
+        if (!agents.has(entry.agentId)) {
+          agents.set(entry.agentId, entry);
+          await saveAgentMeta(env, entry);
+        }
       }
     }
+    await env.SESSIONS.put("meta:migration_done", new Date().toISOString());
   }
 
   return [...agents.values()].sort(
@@ -242,7 +254,12 @@ export async function selectAgent(
   }
 
   try {
-    const agent = await getAgent(env, entry.agentId);
+    const agent = await Promise.race([
+      getAgent(env, entry.agentId),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Cursor API timeout")), 8000),
+      ),
+    ]);
     entry = {
       ...entry,
       name: agent.name,

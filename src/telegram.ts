@@ -157,11 +157,49 @@ export async function configureWebhookFromEnv(
   };
 }
 
-export async function getWebhookInfo(env: Env): Promise<unknown> {
+export async function getWebhookInfo(env: Env): Promise<{
+  ok: boolean;
+  result?: {
+    url?: string;
+    last_error_date?: number;
+    last_error_message?: string;
+    pending_update_count?: number;
+  };
+}> {
   const response = await fetch(
     `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/getWebhookInfo`,
   );
-  return response.json();
+  return response.json() as Promise<{
+    ok: boolean;
+    result?: {
+      url?: string;
+      last_error_date?: number;
+      last_error_message?: string;
+      pending_update_count?: number;
+    };
+  }>;
+}
+
+export async function ensureWebhookHealthy(
+  env: Env,
+  workerOrigin: string,
+): Promise<{ repaired: boolean; info: unknown }> {
+  const origin = workerOrigin.replace(/\/$/, "");
+  const expectedUrl = `${origin}/webhook`;
+  const info = await getWebhookInfo(env);
+
+  const needsSetup =
+    !info.ok ||
+    !info.result?.url ||
+    info.result.url !== expectedUrl ||
+    Boolean(info.result.last_error_date);
+
+  if (!needsSetup) {
+    return { repaired: false, info };
+  }
+
+  const setup = await configureWebhookFromEnv(env, origin);
+  return { repaired: setup.ok, info: await getWebhookInfo(env) };
 }
 
 function splitMessage(text: string, maxLen: number): string[] {

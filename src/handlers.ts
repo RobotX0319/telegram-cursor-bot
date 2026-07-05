@@ -79,21 +79,39 @@ export async function handleMessage(
 
   if (!userId || !text) return;
 
-  if (!(await isAllowedUser(env, userId))) {
+  try {
+    if (!(await isAllowedUser(env, userId))) {
+      await sendMessage(
+        env,
+        chatId,
+        "Ruxsat yo'q. Admin sizni qo'shishi kerak:\n/admin add <telegram_user_id>",
+      );
+      return;
+    }
+
+    if (text.startsWith("/")) {
+      await handleCommand(env, chatId, userId, text, ctx, workerOrigin);
+      return;
+    }
+
+    await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin);
+  } catch (error) {
+    console.error(
+      "handleMessage failed:",
+      error instanceof Error ? error.message : String(error),
+    );
     await sendMessage(
       env,
       chatId,
-      "Ruxsat yo'q. Admin sizni qo'shishi kerak:\n/admin add <telegram_user_id>",
+      [
+        "Bot xatolik berdi. Qayta urinib ko'ring.",
+        error instanceof Error ? error.message : String(error),
+        "",
+        "/ping — tekshirish",
+        "/agents — agentlar ro'yxati",
+      ].join("\n"),
     );
-    return;
   }
-
-  if (text.startsWith("/")) {
-    await handleCommand(env, chatId, userId, text, ctx, workerOrigin);
-    return;
-  }
-
-  await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin);
 }
 
 async function handleCommand(
@@ -168,7 +186,12 @@ async function handleCommand(
       return;
 
     case "/ping":
-      await sendMessage(env, chatId, "pong");
+      await sendMessage(env, chatId, "pong ✅");
+      return;
+
+    case "/wake":
+      await sendChatAction(env, chatId, "typing");
+      await sendMessage(env, chatId, "Bot ishlayapti. /agents yoki /use 1");
       return;
 
     case "/version":
@@ -397,6 +420,8 @@ async function handleUse(
     );
     return;
   }
+
+  await sendChatAction(env, chatId, "typing");
 
   const result = await selectAgent(env, userId, selector);
   if (!result.ok) {

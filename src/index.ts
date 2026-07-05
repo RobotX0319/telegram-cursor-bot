@@ -3,6 +3,7 @@ import { continuePollingPendingRuns, processPendingRuns } from "./pending";
 import { pollTelegramUpdates } from "./poll";
 import {
   configureWebhookFromEnv,
+  ensureWebhookHealthy,
   getWebhookInfo,
   getWebhookSecrets,
   isAcceptedWebhookSecret,
@@ -77,6 +78,16 @@ export default {
       return Response.json(result);
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/ensure-webhook") {
+      const key = url.searchParams.get("key");
+      if (!isAdminKey(env, key)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const result = await ensureWebhookHealthy(env, url.origin);
+      return Response.json(result);
+    }
+
     if (request.method === "POST" && url.pathname === "/webhook") {
       const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
       if (!isAcceptedWebhookSecret(env, secret)) {
@@ -112,7 +123,9 @@ export default {
   ): Promise<void> {
     const origin =
       env.WORKER_PUBLIC_URL?.replace(/\/$/, "") ??
-      "https://telegram-cursor-bot.invincible-wanderer.workers.dev";
-    ctx.waitUntil(pollTelegramUpdates(env, ctx, origin));
+      "https://telegram-cursor-bot.fxjournaluz.workers.dev";
+
+    ctx.waitUntil(ensureWebhookHealthy(env, origin));
+    ctx.waitUntil(processPendingRuns(env));
   },
 };

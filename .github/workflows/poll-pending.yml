@@ -9,7 +9,15 @@ jobs:
   poll:
     runs-on: ubuntu-latest
     steps:
-      - name: Check pending runs
+      - name: Maintain bot (webhook + pending)
+        env:
+          WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
         run: |
+          if [ -z "$WEBHOOK_SECRET" ]; then
+            echo "TELEGRAM_WEBHOOK_SECRET yo'q — o'tkazib yuborildi"
+            exit 0
+          fi
           curl -sf \
-            "https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/poll-pending?key=${{ secrets.TELEGRAM_WEBHOOK_SECRET }}"
+            "https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/ensure-webhook?key=${WEBHOOK_SECRET}"
+          curl -sf \
+            "https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/poll-pending?key=${WEBHOOK_SECRET}"
