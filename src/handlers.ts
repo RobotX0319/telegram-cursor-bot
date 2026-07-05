@@ -96,20 +96,24 @@ export async function handleMessage(
 
     await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin);
   } catch (error) {
-    console.error(
-      "handleMessage failed:",
-      error instanceof Error ? error.message : String(error),
-    );
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("handleMessage failed:", msg);
+    const kvLimit = msg.includes("put() exceeded") || msg.includes("KV");
     await sendMessage(
       env,
       chatId,
-      [
-        "Bot xatolik berdi. Qayta urinib ko'ring.",
-        error instanceof Error ? error.message : String(error),
-        "",
-        "/ping — tekshirish",
-        "/agents — agentlar ro'yxati",
-      ].join("\n"),
+      kvLimit
+        ? [
+            "KV kunlik limiti tugadi (1000 yozuv/kun).",
+            "Limit 00:00 UTC da yangilanadi.",
+            "Hozir /ping va /agents ishlaydi, saqlash vaqtincha cheklangan.",
+          ].join("\n")
+        : [
+            "Bot xatolik berdi. Qayta urinib ko'ring.",
+            msg,
+            "",
+            "/ping — tekshirish",
+          ].join("\n"),
     );
   }
 }

@@ -1,15 +1,29 @@
 import { getBootstrapAdminIds, isBootstrapAdmin } from "./admins";
 import { getAgent } from "./cursor";
 import { getSession, updateSession } from "./session";
-import type { CursorAgent, CursorRun, Env, StoredAgentEntry, UserSession } from "./types";
+import type {
+  CursorAgent,
+  CursorRun,
+  Env,
+  StoredAgentEntry,
+  UserSession,
+} from "./types";
 
-const AGENT_META_PREFIX = "agentmeta:";
+const AGENTS_INDEX_KEY = "agents:index";
 
-function agentMetaKey(agentId: string): string {
-  return `${AGENT_META_PREFIX}${agentId}`;
+function withCreatedBy(
+  entry: StoredAgentEntry,
+  fallbackOwner: number,
+): StoredAgentEntry & { createdBy: number } {
+  return {
+    ...entry,
+    createdBy: entry.createdBy ?? fallbackOwner,
+  };
 }
 
-export function normalizeSession(session: UserSession | null): UserSession | null {
+export function normalizeSession(
+  session: UserSession | null,
+): UserSession | null {
   if (!session) return null;
 
   const activeAgentId = session.activeAgentId ?? session.agentId;
@@ -30,75 +44,73 @@ export async function getNormalizedSession(
   return normalizeSession(await getSession(env, userId));
 }
 
-async function saveAgentMeta(
+async function loadAgentsIndex(env: Env): Promise<StoredAgentEntry[]> {
+  const raw = await env.SESSIONS.get(AGENTS_INDEX_KEY);
+  if (raw) {
+    try {
+      return JSON.parse(raw) as StoredAgentEntry[];
+    } catch {
+      return [];
+    }
+  }
+
+  const agents = new Map<string, StoredAgentEntry>();
+  for (const idStr of getBootstrapAdminIds(env)) {
+    const ownerId = Number.parseInt(idStr, 10);
+    if (Number.isNaN(ownerId)) continue;
+    const session = normalizeSession(await getSession(env, ownerId));
+    for (const agent of session?.agents ?? []) {
+      agents.set(agent.agentId, withCreatedBy(agent, ownerId));
+    }
+  }
+  const list = [...agents.values()];
+  if (list.length > 0) {
+    await env.SESSIONS.put(AGENTS_INDEX_KEY, JSON.stringify(list));
+  }
+  return list;
+}
+
+async function saveAgentsIndex(
+  env: Env,
+  agents: StoredAgentEntry[],
+): Promise<void> {
+  if (agents.length === 0) {
+    await env.SESSIONS.delete(AGENTS_INDEX_KEY);
+    return;
+  }
+  await env.SESSIONS.put(AGENTS_INDEX_KEY, JSON.stringify(agents));
+}
+
+async function upsertAgentInIndex(
   env: Env,
   entry: StoredAgentEntry,
 ): Promise<void> {
-  await env.SESSIONS.put(agentMetaKey(entry.agentId), JSON.stringify(entry));
+  const agents = await loadAgentsIndex(env);
+  const idx = agents.findIndex((a) => a.agentId === entry.agentId);
+  if (idx >= 0) agents[idx] = entry;
+  else agents.push(entry);
+  await saveAgentsIndex(env, agents);
 }
 
 async function getAgentMeta(
   env: Env,
   agentId: string,
 ): Promise<StoredAgentEntry | null> {
-  const raw = await env.SESSIONS.get(agentMetaKey(agentId));
-  if (!raw) return null;
-  return JSON.parse(raw) as StoredAgentEntry;
+  const agents = await loadAgentsIndex(env);
+  return agents.find((a) => a.agentId === agentId) ?? null;
 }
 
 async function deleteAgentMeta(env: Env, agentId: string): Promise<void> {
-  await env.SESSIONS.delete(agentMetaKey(agentId));
-}
-
-function withCreatedBy(
-  entry: StoredAgentEntry,
-  fallbackOwner: number,
-): StoredAgentEntry & { createdBy: number } {
-  return {
-    ...entry,
-    createdBy: entry.createdBy ?? fallbackOwner,
-  };
+  const agents = await loadAgentsIndex(env);
+  await saveAgentsIndex(
+    env,
+    agents.filter((a) => a.agentId !== agentId),
+  );
 }
 
 async function listAllAgentMeta(env: Env): Promise<StoredAgentEntry[]> {
-  const agents = new Map<string, StoredAgentEntry>();
-
-  let cursor: string | undefined;
-  do {
-    const list = await env.SESSIONS.list({
-      prefix: AGENT_META_PREFIX,
-      ...(cursor ? { cursor } : {}),
-    });
-
-    for (const key of list.keys) {
-      const raw = await env.SESSIONS.get(key.name);
-      if (!raw) continue;
-      const entry = withCreatedBy(JSON.parse(raw) as StoredAgentEntry, 0);
-      agents.set(entry.agentId, entry);
-    }
-
-    cursor = list.list_complete ? undefined : list.cursor;
-  } while (cursor);
-
-  const migrated = await env.SESSIONS.get("meta:migration_done");
-  if (!migrated) {
-    for (const idStr of getBootstrapAdminIds(env)) {
-      const ownerId = Number.parseInt(idStr, 10);
-      if (Number.isNaN(ownerId)) continue;
-
-      const session = normalizeSession(await getSession(env, ownerId));
-      for (const agent of session?.agents ?? []) {
-        const entry = withCreatedBy(agent, ownerId);
-        if (!agents.has(entry.agentId)) {
-          agents.set(entry.agentId, entry);
-          await saveAgentMeta(env, entry);
-        }
-      }
-    }
-    await env.SESSIONS.put("meta:migration_done", new Date().toISOString());
-  }
-
-  return [...agents.values()].sort(
+  const agents = await loadAgentsIndex(env);
+  return [...agents].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
 }
@@ -181,7 +193,7 @@ export async function registerAgent(
     agents.push(entry);
   }
 
-  await saveAgentMeta(env, entry);
+  await upsertAgentInIndex(env, entry);
 
   return updateSession(env, userId, {
     agents,
@@ -200,7 +212,7 @@ export async function updateAgentRun(
 ): Promise<UserSession> {
   const meta = await getAgentMeta(env, agentId);
   if (meta) {
-    await saveAgentMeta(env, { ...meta, latestRunId: runId });
+    await upsertAgentInIndex(env, { ...meta, latestRunId: runId });
   }
 
   const creatorId = meta?.createdBy ?? userId;
@@ -266,7 +278,7 @@ export async function selectAgent(
       url: agent.url,
       latestRunId: agent.latestRunId ?? entry.latestRunId,
     };
-    await saveAgentMeta(env, entry);
+    await upsertAgentInIndex(env, entry);
   } catch {
     // Saqlangan ma'lumot bilan davom etamiz
   }

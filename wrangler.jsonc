@@ -16,7 +16,7 @@
     }
   ],
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    "crons": ["*/15 * * * *"]
   },
   "migrations": [
     {

@@ -1,5 +1,4 @@
 import { handleMessage } from "./handlers";
-import { processPendingRuns } from "./pending";
 import type { Env, TelegramUpdate } from "./types";
 
 const OFFSET_KEY = "telegram:poll_offset";
@@ -44,11 +43,7 @@ export async function pollTelegramUpdates(
   for (const update of data.result) {
     lastUpdateId = Math.max(lastUpdateId, update.update_id + 1);
     if (update.message) {
-      const text = update.message.text?.trim() ?? "";
       ctx.waitUntil(handleMessage(env, update.message, ctx, workerOrigin));
-      if (!text.toLowerCase().startsWith("/status")) {
-        ctx.waitUntil(processPendingRuns(env));
-      }
     }
   }
 
