@@ -177,17 +177,12 @@ async function handleAdminUpload(
   const kind = video ? "video" : "document";
   const adminFileId = video?.file_id ?? document!.file_id;
   const adminUniqueId = video?.file_unique_id ?? document!.file_unique_id;
+  const caption = message.caption?.trim();
 
-  await sendMessage(env, chatId, "Video qabul qilindi, tayyorlanmoqda...", {
-    bot: "admin",
-  });
-
-  const userFileId = await mirrorFileToUserBot(
-    env,
-    adminFileId,
-    kind,
-    userId,
-  );
+  const [userFileId, id] = await Promise.all([
+    mirrorFileToUserBot(env, adminFileId, kind, userId),
+    getNextVideoId(env),
+  ]);
 
   if (!userFileId) {
     await sendMessage(
@@ -202,9 +197,6 @@ async function handleAdminUpload(
     );
     return;
   }
-
-  const id = await getNextVideoId(env);
-  const caption = message.caption?.trim();
 
   const stored: StoredVideo = video
     ? {
@@ -232,8 +224,7 @@ async function handleAdminUpload(
   await saveVideo(env, stored);
 
   const lines = [
-    `✅ Video saqlandi.`,
-    `ID: ${id}`,
+    `✅ Saqlandi — ID: ${id}`,
     "",
     "Foydalanuvchilar @Detskebot ga shu raqamni yuboradi.",
   ];
