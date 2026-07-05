@@ -72,7 +72,8 @@ import {
   listVipRecords,
   removeVipUser,
 } from "./vip";
-import { hasAdminBot, isAdmin, type BotKind } from "./bots";
+import { getWebPanelUrl } from "./admin-keyboard";
+import { isAdmin, type BotKind } from "./bots";
 import type { Env } from "./types";
 
 const PAGE = 6;
@@ -151,7 +152,7 @@ export async function sendAdminPanel(
 }
 
 function mainMenu(chatId: number, env: Env): Btn[][] {
-  return [
+  const rows: Btn[][] = [
     [
       { text: "🎬 Kontent", callback_data: cb("p:cnt", chatId, env) },
       { text: "👥 Foydalanuvchilar", callback_data: cb("p:usr", chatId, env) },
@@ -165,6 +166,13 @@ function mainMenu(chatId: number, env: Env): Btn[][] {
       { text: "🔐 Xavfsizlik", callback_data: cb("p:sec", chatId, env) },
     ],
   ];
+
+  const webUrl = getWebPanelUrl(env);
+  if (webUrl) {
+    rows.push([{ text: "🌐 Web panel", url: webUrl }]);
+  }
+
+  return rows;
 }
 
 export async function handleAdminPanelCallback(

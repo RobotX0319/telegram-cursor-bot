@@ -12,17 +12,21 @@ export function isReplyButton(text: string): boolean {
 }
 
 /** Chap tomonda Web App tugmasi (reply keyboard) */
-export function adminPanelKeyboard(env: Env) {
+export function getWebPanelUrl(env: Env): string | null {
   const origin = env.WORKER_PUBLIC_URL?.trim();
-  if (!origin) {
-    return { remove_keyboard: true as const };
-  }
-
-  const url = getAdminPanelUrl(
+  if (!origin) return null;
+  return getAdminPanelUrl(
     origin,
     getWebhookSecret(env),
     getAdminPanelPath(env),
   );
+}
+
+export function adminPanelKeyboard(env: Env) {
+  const url = getWebPanelUrl(env);
+  if (!url) {
+    return { remove_keyboard: true as const };
+  }
 
   return {
     keyboard: [[{ text: BTN_PANEL, web_app: { url } }]],
