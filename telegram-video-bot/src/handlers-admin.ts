@@ -13,6 +13,7 @@ import {
 } from "./handlers-user";
 import { mirrorFileToUserBot, mirrorPhotoToUserBot } from "./mirror";
 import { postVideoAd, setAdTemplate } from "./ad-channel";
+import { resolveExistingVideoForUpload, adminFileExists } from "./video-health";
 import {
   clearAdminState,
   getAdminState,
@@ -429,15 +430,31 @@ async function handleAdminUpload(
   }
 
   const { id, title } = resolved;
-  const existing = await getVideo(env, id);
-  if (existing) {
+  const slot = await resolveExistingVideoForUpload(env, id);
+  if (!slot.ok) {
     await sendMessage(
       env,
       chatId,
-      `ID ${id} band.\n\n/delete ${id} — o'chirish\nBoshqa raqam tanlang.`,
+      [
+        `🔴 ID ${id} band!`,
+        "",
+        "Bu raqam boshqa video uchun ishlatilmoqda.",
+        "",
+        `/delete ${id} — o'chirish`,
+        "Yoki boshqa ID tanlang (masalan: " + (id + 1) + ")",
+      ].join("\n"),
       { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return;
+  }
+
+  if (slot.clearedBroken) {
+    await sendMessage(
+      env,
+      chatId,
+      `ℹ️ ID ${id} dagi eski buzilgan video o'chirildi — yangi video yuklanmoqda...`,
+      { bot: "admin" },
+    );
   }
 
   const kind = video || animation ? "video" : "document";
@@ -448,6 +465,21 @@ async function handleAdminUpload(
     animation?.file_unique_id ??
     document!.file_unique_id;
   const displayCaption = title ?? undefined;
+
+  const sourceOk = await adminFileExists(env, adminFileId);
+  if (!sourceOk) {
+    await sendMessage(
+      env,
+      chatId,
+      [
+        "❌ Video saqlanmadi — fayl topilmadi.",
+        "",
+        "Qayta yuboring yoki boshqa ID tanlang.",
+      ].join("\n"),
+      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    );
+    return;
+  }
 
   const userFileId = await mirrorFileToUserBot(
     env,

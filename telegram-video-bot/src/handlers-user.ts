@@ -4,6 +4,7 @@ import {
   trackVideoRequest,
 } from "./analytics";
 import { deliverMediaFromAdminFile } from "./mirror";
+import { removeBrokenVideo, isVideoPlayable } from "./video-health";
 import { sendPaymentCardsToUser } from "./admin-reply-menu";
 import {
   checkUserSubscription,
@@ -233,6 +234,17 @@ export async function sendVideoById(
     return;
   }
 
+  const playable = await isVideoPlayable(env, video);
+  if (!playable) {
+    await removeBrokenVideo(env, id);
+    await sendMessage(
+      env,
+      chatId,
+      `❌ Video (ID: ${id}) ishlamaydi va o'chirildi.\nAdmin yangi video yuklaydi.`,
+    );
+    return;
+  }
+
   const caption = video.caption
     ? `🎬 ID: ${id}\n${video.caption}`
     : `🎬 ID: ${id}`;
@@ -249,10 +261,11 @@ export async function sendVideoById(
   if (!delivered) {
     const adminFileId = video.adminFileId ?? video.fileId;
     if (!adminFileId) {
+      await removeBrokenVideo(env, id);
       await sendMessage(
         env,
         chatId,
-        `❌ Video yuborilmadi (ID: ${id}). Admin bilan bog'laning.`,
+        `❌ Video (ID: ${id}) topilmadi va o'chirildi.`,
       );
       return;
     }
@@ -266,10 +279,11 @@ export async function sendVideoById(
     );
 
     if (!result.ok) {
+      await removeBrokenVideo(env, id);
       await sendMessage(
         env,
         chatId,
-        `❌ Video yuborilmadi (ID: ${id}). Keyinroq urinib ko'ring.`,
+        `❌ Video (ID: ${id}) yuborilmadi va o'chirildi.\nAdmin qayta yuklaydi.`,
       );
       return;
     }
