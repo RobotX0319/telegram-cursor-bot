@@ -32,8 +32,8 @@ async function deleteWebhook(token: string): Promise<void> {
 
 async function main(): Promise<void> {
   const vars = loadVars();
-  if (!vars.TELEGRAM_BOT_TOKEN || !vars.ALLOWED_USER_ID) {
-    throw new Error("TELEGRAM_BOT_TOKEN va ALLOWED_USER_ID kerak (.dev.vars)");
+  if (!vars.TELEGRAM_BOT_TOKEN) {
+    throw new Error("TELEGRAM_BOT_TOKEN kerak (.dev.vars)");
   }
 
   const env = vars as unknown as Env;

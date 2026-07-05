@@ -12,28 +12,11 @@ Buyruqlar:
 
 Oddiy matn yuboring — bot aynan shu matnni qaytaradi.`;
 
-function isAllowedUser(env: Env, userId: number): boolean {
-  return String(userId) === env.ALLOWED_USER_ID.trim();
-}
-
 export async function handleMessage(
   env: Env,
   message: TelegramMessage,
 ): Promise<void> {
-  const userId = message.from?.id;
   const chatId = message.chat.id;
-
-  if (!userId) return;
-
-  if (!isAllowedUser(env, userId)) {
-    await sendMessage(
-      env,
-      chatId,
-      "Ruxsat yo'q. Bu bot faqat egasiga xizmat qiladi.",
-    );
-    return;
-  }
-
   const text = message.text?.trim();
 
   if (text?.startsWith("/")) {
