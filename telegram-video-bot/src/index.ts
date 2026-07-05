@@ -105,13 +105,13 @@ export default {
         ctx.waitUntil(
           (async () => {
             await processDueBroadcasts(env);
-            await handleUserMessage(env, update.message!);
+            await handleUserMessage(env, update.message!, url.origin);
           })(),
         );
       }
 
       if (update.callback_query) {
-        ctx.waitUntil(handleCallbackQuery(env, update.callback_query));
+        ctx.waitUntil(handleCallbackQuery(env, update.callback_query, url.origin));
       }
 
       return new Response("ok");

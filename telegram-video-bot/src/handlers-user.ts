@@ -1,3 +1,6 @@
+import { isAdmin } from "./bots";
+import { tryAdminOnUserBot } from "./admin-via-user";
+import { handleAdminPanelCallback } from "./panel";
 import {
   trackNotFound,
   trackUserStart,
@@ -59,6 +62,7 @@ function isPublicCommand(text: string): boolean {
 export async function handleUserMessage(
   env: Env,
   message: TelegramMessage,
+  workerOrigin = "",
 ): Promise<void> {
   const userId = message.from?.id;
   const chatId = message.chat.id;
@@ -67,6 +71,10 @@ export async function handleUserMessage(
 
   if (message.from) {
     await syncUser(env, message.from);
+  }
+
+  if (await tryAdminOnUserBot(env, message, workerOrigin)) {
+    return;
   }
 
   if (await isUserBlocked(env, userId)) {
@@ -78,11 +86,9 @@ export async function handleUserMessage(
   const text = message.text?.trim();
 
   if (message.video || isVideoDocument(message)) {
-    await sendMessage(
-      env,
-      chatId,
-      "📤 Video yuklash: @Detiskebot",
-    );
+    if (!(await isAdmin(env, userId))) {
+      await sendMessage(env, chatId, "📤 Video yuklash: @Detiskebot");
+    }
     return;
   }
 
@@ -158,7 +164,7 @@ async function handleUserCommand(
         await sendMessage(
           env,
           chatId,
-          "👑 Bu buyruq faqat admin botda: @Detiskebot",
+          "👑 Bu buyruq faqat adminlar uchun. /panel",
         );
         return;
       }
@@ -188,6 +194,14 @@ async function sendWelcome(
   await sendMessage(env, chatId, welcome, {
     replyMarkup: USER_START_KEYBOARD,
   });
+
+  if (await isAdmin(env, userId)) {
+    await sendMessage(
+      env,
+      chatId,
+      "👑 Admin: /panel — boshqaruv paneli",
+    );
+  }
 
   if (channels.length > 0 && sub.enabled && !result.subscribed) {
     await sendSubscriptionRequired(env, chatId, userId, result);
@@ -385,6 +399,7 @@ export function formatDate(iso: string): string {
 export async function handleCallbackQuery(
   env: Env,
   query: TelegramCallbackQuery,
+  workerOrigin = "",
 ): Promise<void> {
   const userId = query.from.id;
   const chatId = query.message?.chat.id;
@@ -395,7 +410,24 @@ export async function handleCallbackQuery(
     return;
   }
 
-  if (data.startsWith("adm:") || data.startsWith("p:")) {
+  if ((data.startsWith("p:") || data.startsWith("pu:")) && (await isAdmin(env, userId))) {
+    const messageId = query.message?.message_id;
+    if (messageId) {
+      const answerBot = data.startsWith("pu:") ? "user" : "admin";
+      await answerCallbackQuery(env, query.id, undefined, answerBot);
+      await handleAdminPanelCallback(
+        env,
+        chatId,
+        messageId,
+        data,
+        userId,
+        workerOrigin,
+      );
+      return;
+    }
+  }
+
+  if (data.startsWith("adm:") || data.startsWith("p:") || data.startsWith("pu:")) {
     await answerCallbackQuery(env, query.id);
     return;
   }

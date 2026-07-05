@@ -39,7 +39,14 @@ import {
   parseIdFromText,
   parseManualVideoId,
 } from "./video-id";
+import type { BotKind } from "./bots";
 import type { Env, StoredVideo, TelegramMessage } from "./types";
+
+const adminMsgBot = new Map<number, BotKind>();
+
+function adminBot(userId: number): { bot: BotKind } {
+  return { bot: adminMsgBot.get(userId) ?? "admin" };
+}
 
 const ADMIN_HELP = `Admin bot — @Detiskebot
 
@@ -55,14 +62,18 @@ export async function handleAdminBotMessage(
   env: Env,
   message: TelegramMessage,
   workerOrigin: string,
+  botKind: import("./bots").BotKind = "admin",
 ): Promise<void> {
   const userId = message.from?.id;
   const chatId = message.chat.id;
+  const viaUserBot = botKind === "user";
 
   if (!userId) return;
 
-  if (!hasAdminBot(env)) {
-    await sendMessage(env, chatId, "Admin bot sozlanmagan.", { bot: "admin" });
+  adminMsgBot.set(userId, botKind);
+
+  if (!viaUserBot && !hasAdminBot(env)) {
+    await sendMessage(env, chatId, "Admin bot sozlanmagan.", { bot: adminMsgBot.get(userId) ?? "admin" });
     return;
   }
 
@@ -76,7 +87,7 @@ export async function handleAdminBotMessage(
         "",
         `Sizning Telegram ID: ${userId}`,
       ].join("\n"),
-      { bot: "admin" },
+      { bot: adminMsgBot.get(userId) ?? "admin" },
     );
     return;
   }
@@ -86,7 +97,7 @@ export async function handleAdminBotMessage(
       env,
       chatId,
       "Bu bot faqat adminlar uchun.\n\nVideo olish: @Detskebot",
-      { bot: "admin" },
+      { bot: adminMsgBot.get(userId) ?? "admin" },
     );
     return;
   }
@@ -124,7 +135,7 @@ export async function handleAdminBotMessage(
   }
 
   if (text.startsWith("/")) {
-    await handleAdminCommand(env, chatId, userId, text, workerOrigin);
+    await handleAdminCommand(env, chatId, userId, text, workerOrigin, botKind);
     return;
   }
 
@@ -140,7 +151,7 @@ export async function handleAdminBotMessage(
       env,
       chatId,
       ok ? `✅ VIP o'chirildi: ${id}` : "VIP topilmadi.",
-      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return;
   }
@@ -157,7 +168,7 @@ export async function handleAdminBotMessage(
           "1) Ixtiyoriy: reklama rasm shablon yuboring",
           "2) Keyin videoni yuboring",
         ].join("\n"),
-        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
     return;
   }
@@ -166,7 +177,7 @@ export async function handleAdminBotMessage(
     env,
     chatId,
     "🎛 Admin panel: /panel\n\nVideo yuklash: ID yuboring (masalan: 5), keyin video.\n\n/help — yordam",
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
 }
 
@@ -176,6 +187,7 @@ async function handleAdminCommand(
   userId: number,
   text: string,
   workerOrigin: string,
+  botKind: BotKind = "admin",
 ): Promise<void> {
   const [command, ...rest] = text.split(/\s+/);
   const args = rest.join(" ").trim();
@@ -187,9 +199,9 @@ async function handleAdminCommand(
         env,
         chatId,
         "Salom, admin!\n\n/panel — boshqaruv paneli",
-        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
-      await sendAdminPanel(env, chatId, workerOrigin);
+      await sendAdminPanel(env, chatId, workerOrigin, botKind);
       return;
 
     case "/cancel":
@@ -198,13 +210,13 @@ async function handleAdminCommand(
 
     case "/help":
       await sendMessage(env, chatId, ADMIN_HELP, {
-        bot: "admin",
+        bot: adminMsgBot.get(userId) ?? "admin",
         replyMarkup: ADMIN_REPLY_KEYBOARD,
       });
       return;
 
     case "/panel":
-      await sendAdminPanel(env, chatId, workerOrigin);
+      await sendAdminPanel(env, chatId, workerOrigin, botKind);
       return;
 
     case "/id":
@@ -212,7 +224,7 @@ async function handleAdminCommand(
       const id = parseIdCommand(args);
       if (id === null) {
         await sendMessage(env, chatId, "Foydalanish: /id 5", {
-          bot: "admin",
+          bot: adminMsgBot.get(userId) ?? "admin",
           replyMarkup: ADMIN_REPLY_KEYBOARD,
         });
         return;
@@ -227,7 +239,7 @@ async function handleAdminCommand(
           "1) Ixtiyoriy: reklama rasm shablon yuboring",
           "2) Keyin videoni yuboring",
         ].join("\n"),
-        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
       return;
     }
@@ -236,7 +248,7 @@ async function handleAdminCommand(
       const id = parseIdCommand(args);
       if (id === null) {
         await sendMessage(env, chatId, "Foydalanish: /vipremove 123456789", {
-          bot: "admin",
+          bot: adminMsgBot.get(userId) ?? "admin",
           replyMarkup: ADMIN_REPLY_KEYBOARD,
         });
         return;
@@ -246,7 +258,7 @@ async function handleAdminCommand(
         env,
         chatId,
         ok ? `✅ VIP o'chirildi: ${id}` : "VIP topilmadi.",
-        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
       return;
     }
@@ -268,7 +280,7 @@ async function handleAdminCommand(
       return;
 
     case "/ping":
-      await sendMessage(env, chatId, "pong", { bot: "admin" });
+      await sendMessage(env, chatId, "pong", { bot: adminMsgBot.get(userId) ?? "admin" });
       return;
 
     case "/reset": {
@@ -286,7 +298,7 @@ async function handleAdminCommand(
             "",
             "Tasdiqlash: /reset RESET yoki /reset FULL",
           ].join("\n"),
-          { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+          { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
         );
         return;
       }
@@ -295,7 +307,7 @@ async function handleAdminCommand(
         env,
         chatId,
         full ? "⏳ Butun tizim to'liq o'chirilmoqda..." : "⏳ Ma'lumotlar tozalanmoqda...",
-        { bot: "admin" },
+        { bot: adminMsgBot.get(userId) ?? "admin" },
       );
       const result = full ? await resetBotFully(env) : await resetBotData(env);
       await sendMessage(
@@ -324,14 +336,14 @@ async function handleAdminCommand(
               "1) Kanallar sozlamalari",
               "2) Video yuklash (ID: 1 dan)",
             ].join("\n"),
-        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+        { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
       );
       return;
     }
 
     default:
       await sendMessage(env, chatId, "Noma'lum buyruq. /help", {
-        bot: "admin",
+        bot: adminMsgBot.get(userId) ?? "admin",
         replyMarkup: ADMIN_REPLY_KEYBOARD,
       });
   }
@@ -367,7 +379,7 @@ async function saveAdminImageTemplate(
         "",
         "Avval @Detskebot da /start bosing, keyin qayta yuboring.",
       ].join("\n"),
-      { bot: "admin" },
+      { bot: adminMsgBot.get(userId) ?? "admin" },
     );
     return;
   }
@@ -382,7 +394,7 @@ async function saveAdminImageTemplate(
         : "Endi 📢 Reklama kanalini ulang (Kanallar sozlamalari).",
     ];
     await sendMessage(env, chatId, lines.join("\n"), {
-      bot: "admin",
+      bot: adminMsgBot.get(userId) ?? "admin",
       replyMarkup: ADMIN_REPLY_KEYBOARD,
     });
     return;
@@ -399,7 +411,7 @@ async function saveAdminImageTemplate(
         ? `Endi ID ${pendingId} uchun videoni yuboring.`
         : "Avval video ID yuboring, keyin videoni yuboring.",
     ].join("\n"),
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
 }
 
@@ -437,7 +449,7 @@ async function handleAdminPhoto(
       "Reklama rasmi uchun avval video ID yuboring: 5",
       "yoki Sozlamalar → Reklama → Rasm shablon",
     ].join("\n"),
-    { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+    { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
   );
 }
 
@@ -484,7 +496,7 @@ async function handleAdminUpload(
 
   if (!video && !document && !animation) {
     await sendMessage(env, chatId, "Video topilmadi. Qayta yuboring.", {
-      bot: "admin",
+      bot: adminMsgBot.get(userId) ?? "admin",
     });
     return;
   }
@@ -500,7 +512,7 @@ async function handleAdminUpload(
         "ID yuboring: 5",
         "yoki /panel → Toplu yuklash",
       ].join("\n"),
-      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return;
   }
@@ -522,7 +534,7 @@ async function handleAdminUpload(
         `/delete ${id} — o'chirish`,
         "Yoki boshqa ID tanlang (masalan: " + (id + 1) + ")",
       ].join("\n"),
-      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return;
   }
@@ -532,7 +544,7 @@ async function handleAdminUpload(
       env,
       chatId,
       `ℹ️ ID ${id} dagi eski buzilgan video o'chirildi — yangi video yuklanmoqda...`,
-      { bot: "admin" },
+      { bot: adminMsgBot.get(userId) ?? "admin" },
     );
   }
 
@@ -555,7 +567,7 @@ async function handleAdminUpload(
         "",
         "Qayta yuboring yoki boshqa ID tanlang.",
       ].join("\n"),
-      { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      { bot: adminMsgBot.get(userId) ?? "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
     );
     return;
   }
@@ -600,7 +612,7 @@ async function handleAdminUpload(
   await ensureCounterAtLeast(env, id);
   await clearPendingVideoId(env, userId);
 
-  const bulkNext = await popBulkId(env, userId);
+  const bulkNext = usedBulk ? await popBulkId(env, userId) : null;
 
   const pendingTemplate = await getPendingAdTemplate(env, userId);
   const adResult = await postVideoAd(
@@ -643,7 +655,7 @@ async function handleAdminUpload(
   }
 
   await sendMessage(env, chatId, lines.join("\n"), {
-    bot: "admin",
+    bot: adminMsgBot.get(userId) ?? "admin",
     replyMarkup: ADMIN_REPLY_KEYBOARD,
   });
 }
