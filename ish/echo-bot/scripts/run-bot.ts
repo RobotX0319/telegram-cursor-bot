@@ -81,8 +81,17 @@ async function main(): Promise<void> {
       for (const update of data.result) {
         offset = update.update_id + 1;
         if (update.message) {
-          console.log("Xabar:", update.message.text ?? "(media)");
-          await handleMessage(env, update.message);
+          const preview = update.message.text ?? "(media)";
+          console.log("Xabar:", preview);
+          try {
+            await handleMessage(env, update.message);
+            console.log("Javob yuborildi:", preview);
+          } catch (error) {
+            console.error(
+              "Javob yuborishda xato:",
+              error instanceof Error ? error.message : error,
+            );
+          }
         }
       }
     } catch (error) {
