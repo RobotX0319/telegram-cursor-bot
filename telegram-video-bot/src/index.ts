@@ -9,7 +9,7 @@ import { getWebhookSecret, isAdminPanelPath } from "./config";
 import { handleAdminBotCallback } from "./panel";
 import { handleAdminBotMessage } from "./handlers-admin";
 import { handleCallbackQuery, handleUserMessage } from "./handlers-user";
-import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
+import { configureWebhookFromEnv, getWebhookInfo, setBotCommands, sendMessage, answerCallbackQuery } from "./telegram";
 import { resetBotData, resetBotFully } from "./reset";
 import { processDueBroadcasts } from "./broadcast";
 import type { Env, TelegramUpdate } from "./types";
@@ -205,15 +205,45 @@ export default {
       if (update.message) {
         ctx.waitUntil(
           (async () => {
-            await processDueBroadcasts(env);
-            await handleAdminBotMessage(env, update.message!, url.origin);
+            try {
+              await processDueBroadcasts(env);
+              await handleAdminBotMessage(env, update.message!, url.origin);
+            } catch (err) {
+              console.error("handleAdminBotMessage failed:", err);
+              const chatId = update.message?.chat.id;
+              if (chatId) {
+                await sendMessage(
+                  env,
+                  chatId,
+                  "❌ Xatolik yuz berdi. /start yuboring.",
+                  { bot: "admin" },
+                ).catch(() => {});
+              }
+            }
           })(),
         );
       }
 
       if (update.callback_query) {
         ctx.waitUntil(
-          handleAdminBotCallback(env, update.callback_query, url.origin),
+          (async () => {
+            try {
+              await handleAdminBotCallback(
+                env,
+                update.callback_query!,
+                url.origin,
+              );
+            } catch (err) {
+              console.error("handleAdminBotCallback failed:", err);
+              const q = update.callback_query!;
+              await answerCallbackQuery(
+                env,
+                q.id,
+                "Xatolik. /start yuboring.",
+                "admin",
+              ).catch(() => {});
+            }
+          })(),
         );
       }
 

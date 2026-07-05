@@ -181,8 +181,16 @@ export async function handleAdminBotMessage(
   await sendMessage(
     env,
     chatId,
-    "🎛 Admin panel: /panel\n\nVideo yuklash: ID yuboring (masalan: 5), keyin video.\n\n/help — yordam",
-    { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env) },
+    [
+      "🎛 Admin panel: /panel yoki pastdagi tugmalar",
+      "",
+      "📤 Video: ID yuboring (5), keyin video fayl",
+      "/help — yordam",
+    ].join("\n"),
+    {
+      bot: adminMsgBot.get(userId) ?? replyBot(env, userId),
+      replyMarkup: adminPanelKeyboard(env, workerOrigin),
+    },
   );
 }
 
@@ -247,15 +255,10 @@ async function handleAdminCommand(
           "",
           `${ADMIN_BOT} — kino boshqaruv boti`,
           "",
-          "🎛 Admin panel — chap pastdagi tugmalar",
-          "   • 🎛 Admin panel — chat ichidagi panel",
-          "   • 🌐 Web panel — brauzerda ochiladi",
-          "📋 Buyruqlar: chap menyu ☰",
-          "📤 Video: ID yuboring (5), keyin video",
-          "",
-          "/panel — chat ichidagi panel",
+          "📤 Video yuklash: avval ID (masalan 5), keyin video fayl",
+          "📋 /help — barcha buyruqlar",
         ].join("\n"),
-        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId), replyMarkup: adminPanelKeyboard(env, workerOrigin) },
+        { bot: adminMsgBot.get(userId) ?? replyBot(env, userId) },
       );
       await sendAdminPanel(env, chatId, workerOrigin, botKind);
       return;

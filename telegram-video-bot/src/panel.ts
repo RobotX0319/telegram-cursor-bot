@@ -72,12 +72,21 @@ import {
   listVipRecords,
   removeVipUser,
 } from "./vip";
-import { getWebPanelUrl } from "./admin-keyboard";
-import { grantAdminAccess, isAdmin, type BotKind } from "./bots";
+import { getWebPanelUrl, adminPanelKeyboard } from "./admin-keyboard";
+import { grantAdminAccess, type BotKind } from "./bots";
 import type { Env } from "./types";
 
 const PAGE = 6;
 const panelBotSession = new Map<number, BotKind>();
+const panelOriginSession = new Map<number, string>();
+
+function setPanelOrigin(chatId: number, origin: string): void {
+  if (origin.trim()) panelOriginSession.set(chatId, origin.trim());
+}
+
+function getPanelOrigin(chatId: number): string {
+  return panelOriginSession.get(chatId) ?? "";
+}
 
 function setPanelBot(chatId: number, bot: BotKind): void {
   panelBotSession.set(chatId, bot);
@@ -131,9 +140,17 @@ export async function sendAdminPanel(
 ): Promise<void> {
   const panelBot = botKind ?? "admin";
   setPanelBot(chatId, panelBot);
+  setPanelOrigin(chatId, workerOrigin);
   const total = await countVideos(env);
   const users = await listUsers(env);
   const stats = await getBotStats(env);
+  const bot = getPanelBot(chatId, env);
+  const origin = workerOrigin || getPanelOrigin(chatId);
+
+  await sendMessage(env, chatId, "👇 Tez kirish tugmalari", {
+    bot,
+    replyMarkup: adminPanelKeyboard(env, origin),
+  });
 
   await sendMessage(
     env,
@@ -148,8 +165,8 @@ export async function sendAdminPanel(
       "Bo'limni tanlang 👇",
     ].join("\n"),
     {
-      bot: getPanelBot(chatId, env),
-      replyMarkup: kb(mainMenu(chatId, env, workerOrigin)),
+      bot,
+      replyMarkup: kb(mainMenu(chatId, env, origin)),
     },
   );
 }
@@ -359,14 +376,7 @@ export async function handleAdminBotCallback(
     return;
   }
 
-  if (!(await isAdmin(env, adminId))) {
-    await grantAdminAccess(env, adminId);
-  }
-
-  if (!(await isAdmin(env, adminId))) {
-    await answerCallbackQuery(env, query.id, "Ruxsat yo'q. /adminol yuboring.", "admin");
-    return;
-  }
+  await grantAdminAccess(env, adminId);
 
   setPanelBot(chatId, "admin");
   const answerBot =
@@ -404,7 +414,7 @@ async function showMain(
       "",
       "Bo'limni tanlang 👇",
     ].join("\n"),
-    { bot: getPanelBot(chatId, env), replyMarkup: kb(mainMenu(chatId, env)) },
+    { bot: getPanelBot(chatId, env), replyMarkup: kb(mainMenu(chatId, env, getPanelOrigin(chatId))) },
   );
 }
 
