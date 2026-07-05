@@ -93,6 +93,27 @@ export async function getWebhookInfo(env: Env): Promise<unknown> {
   return response.json();
 }
 
+export async function setBotCommands(env: Env): Promise<boolean> {
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/setMyCommands`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commands: [{ command: "ping", description: "Tekshirish" }],
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("Telegram setMyCommands failed:", response.status, body);
+    return false;
+  }
+
+  return true;
+}
+
 function splitMessage(text: string, maxLen: number): string[] {
   if (text.length <= maxLen) return [text];
 

@@ -1,5 +1,5 @@
 import { handleMessage } from "./handlers";
-import { configureWebhookFromEnv, getWebhookInfo } from "./telegram";
+import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
 
 export default {
@@ -25,6 +25,7 @@ export default {
       }
 
       const result = await configureWebhookFromEnv(env, url.origin);
+      await setBotCommands(env);
       const info = await getWebhookInfo(env);
 
       return Response.json({

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleMessage } from "../src/handlers";
+import { setBotCommands } from "../src/telegram";
 import type { Env } from "../src/types";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
   const env = vars as unknown as Env;
 
   await deleteWebhook(vars.TELEGRAM_BOT_TOKEN);
+  await setBotCommands(env);
   console.log("✅ @Glabalashganbot echo bot ishga tushdi.");
 
   let offset = 0;
