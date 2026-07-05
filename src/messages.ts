@@ -1,10 +1,114 @@
 import type { CursorRun, RunStatus } from "./types";
 
+const PLACEHOLDER_PREFIX = "\uE000PH";
+const PLACEHOLDER_SUFFIX = "\uE001";
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+export function stripMarkdown(text: string): string {
+  return text
+    .replace(/```(?:[\w+-]*)?\n?([\s\S]*?)```/g, "$1")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+    .replace(/__([^_\n]+)__/g, "$1")
+    .replace(/(?<![*\w])\*([^*\n]+)\*(?![*])/g, "$1")
+    .replace(/_([^_\n]+)_/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^[\t ]*[-*+]\s+/gm, "• ")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function stashHtml(placeholders: string[], html: string): string {
+  const id = placeholders.length;
+  placeholders.push(html);
+  return `${PLACEHOLDER_PREFIX}${id}${PLACEHOLDER_SUFFIX}`;
+}
+
+function restorePlaceholders(text: string, placeholders: string[]): string {
+  return text.replace(
+    new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, "g"),
+    (_, index) => placeholders[Number(index)] ?? "",
+  );
+}
+
+function applyInlineMarkdown(line: string, placeholders: string[]): string {
+  let s = line;
+
+  s = s.replace(/`([^`\n]+)`/g, (_, code) =>
+    stashHtml(placeholders, `<code>${escapeHtml(code)}</code>`),
+  );
+
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
+    stashHtml(
+      placeholders,
+      `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`,
+    ),
+  );
+
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, (_, text) =>
+    stashHtml(placeholders, `<b>${escapeHtml(text)}</b>`),
+  );
+
+  s = s.replace(/__([^_\n]+)__/g, (_, text) =>
+    stashHtml(placeholders, `<b>${escapeHtml(text)}</b>`),
+  );
+
+  s = s.replace(/(?<![*\w])\*([^*\n]+)\*(?![*])/g, (_, text) =>
+    stashHtml(placeholders, `<i>${escapeHtml(text)}</i>`),
+  );
+
+  const parts = s.split(
+    new RegExp(`(${PLACEHOLDER_PREFIX}\\d+${PLACEHOLDER_SUFFIX})`),
+  );
+
+  return parts
+    .map((part: string) => {
+      const match = part.match(
+        new RegExp(`^${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}$`),
+      );
+      if (match) return placeholders[Number(match[1])] ?? "";
+      return escapeHtml(part);
+    })
+    .join("");
+}
+
+export function markdownToTelegramHtml(text: string): string {
+  const placeholders: string[] = [];
+  let source = text.trim();
+
+  source = source.replace(
+    /```(?:[\w+-]*)?\n?([\s\S]*?)```/g,
+    (_, code) =>
+      stashHtml(
+        placeholders,
+        `<pre>${escapeHtml(String(code).trimEnd())}</pre>`,
+      ),
+  );
+
+  const lines = source.split("\n").map((line) => {
+    const header = line.match(/^(\s*)#{1,6}\s+(.+)$/);
+    if (header) {
+      return `${header[1]}<b>${applyInlineMarkdown(header[2], placeholders)}</b>`;
+    }
+
+    const list = line.match(/^(\s*)[-*+]\s+(.+)$/);
+    if (list) {
+      return `${list[1]}• ${applyInlineMarkdown(list[2], placeholders)}`;
+    }
+
+    if (!line.trim()) return "";
+
+    return applyInlineMarkdown(line, placeholders);
+  });
+
+  return restorePlaceholders(lines.join("\n"), placeholders);
 }
 
 export function statusEmoji(status: RunStatus): string {
@@ -46,7 +150,7 @@ export function statusLabel(status: RunStatus): string {
 }
 
 function extractSummary(text: string, maxLen = 280): string {
-  const cleaned = text.trim().replace(/\s+/g, " ");
+  const cleaned = stripMarkdown(text).replace(/\s+/g, " ");
   if (cleaned.length <= maxLen) return cleaned;
 
   const sentenceEnd = cleaned.search(/[.!?]\s/);
@@ -75,7 +179,7 @@ export function formatRunResultPlain(run: CursorRun): string {
   }
 
   if (run.result) {
-    lines.push("", run.result);
+    lines.push("", stripMarkdown(run.result));
   }
 
   return lines.join("\n");
@@ -112,19 +216,19 @@ export function formatRunResultHtml(run: CursorRun): string {
   }
 
   if (run.result) {
-    const result = run.result.trim();
+    const rendered = markdownToTelegramHtml(run.result);
     parts.push("");
     parts.push("📝 <b>Qisqa xulosa</b>");
-    parts.push(escapeHtml(extractSummary(result)));
+    parts.push(escapeHtml(extractSummary(run.result)));
 
     parts.push("");
-    parts.push("📄 <b>To'liq javob</b>");
-    const maxBody = 3000;
-    const body =
-      result.length > maxBody
-        ? `${result.slice(0, maxBody)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
-        : result;
-    parts.push(`<pre>${escapeHtml(body)}</pre>`);
+    parts.push("📄 <b>Javob</b>");
+    const maxBody = 3200;
+    parts.push(
+      rendered.length > maxBody
+        ? `${rendered.slice(0, maxBody)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
+        : rendered,
+    );
   }
 
   return parts.join("\n");
