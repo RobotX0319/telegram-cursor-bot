@@ -14,6 +14,7 @@ import {
 import { mirrorFileToUserBot, mirrorPhotoToUserBot } from "./mirror";
 import { postVideoAd, setAdTemplate } from "./ad-channel";
 import { resolveExistingVideoForUpload, adminFileExists } from "./video-health";
+import { resetBotData } from "./reset";
 import {
   clearAdminState,
   getAdminState,
@@ -47,6 +48,7 @@ const ADMIN_HELP = `Admin bot — @Detiskebot
 💳 Karta ulash — to'lov kartalari
 
 Video ID: avval 5, keyin rasm (ixtiyoriy), keyin video
+/reset RESET — hamma ma'lumotni o'chirish (0 dan)
 /cancel — bekor qilish
 
 Foydalanuvchilar: @Detskebot`;
@@ -261,6 +263,41 @@ async function handleAdminCommand(
     case "/ping":
       await sendMessage(env, chatId, "pong", { bot: "admin" });
       return;
+
+    case "/reset": {
+      if (args.toUpperCase() !== "RESET") {
+        await sendMessage(
+          env,
+          chatId,
+          [
+            "⚠️ Botni 0 dan boshlash",
+            "",
+            "O'chadi: videolar, kanallar, VIP, kartalar, statistika, reklama",
+            "Saqlanadi: bot tokenlari, admin ID",
+            "",
+            "Tasdiqlash: /reset RESET",
+          ].join("\n"),
+          { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+        );
+        return;
+      }
+      const result = await resetBotData(env);
+      await sendMessage(
+        env,
+        chatId,
+        [
+          "🗑 Bot tozalandi — 0 dan boshlaysiz!",
+          "",
+          `O'chirildi: ${result.deleted} ta yozuv`,
+          "",
+          "Endi:",
+          "1) Kanallar sozlamalari",
+          "2) Video yuklash (ID: 1 dan)",
+        ].join("\n"),
+        { bot: "admin", replyMarkup: ADMIN_REPLY_KEYBOARD },
+      );
+      return;
+    }
 
     default:
       await sendMessage(env, chatId, "Noma'lum buyruq. /help", {

@@ -5,6 +5,7 @@ import { handleAdminBotCallback } from "./admin-panel-bot";
 import { handleAdminBotMessage } from "./handlers-admin";
 import { handleCallbackQuery, handleUserMessage } from "./handlers-user";
 import { configureWebhookFromEnv, getWebhookInfo, setBotCommands } from "./telegram";
+import { resetBotData } from "./reset";
 import type { Env, TelegramUpdate } from "./types";
 
 export default {
@@ -55,6 +56,25 @@ export default {
         : null;
 
       return Response.json({ user: userOk, admin: adminOk });
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/reset") {
+      const key = url.searchParams.get("key");
+      const confirm = url.searchParams.get("confirm");
+      if (!key || key !== getWebhookSecret(env)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      if (confirm !== "RESET") {
+        return Response.json(
+          { ok: false, error: "confirm=RESET kerak" },
+          { status: 400 },
+        );
+      }
+
+      const result = await resetBotData(env);
+      await configureWebhookFromEnv(env, url.origin);
+
+      return Response.json({ ok: true, ...result });
     }
 
     if (isAdminPanelPath(env, url.pathname)) {
