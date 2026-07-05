@@ -1,4 +1,5 @@
 import { getRun, isTerminal, sleep } from "./cursor";
+import { schedulePendingPoller } from "./pending-poller";
 import { getWebhookSecrets, sendRunResult } from "./telegram";
 import type { Env } from "./types";
 
@@ -43,6 +44,7 @@ export async function addPendingRun(
   pending: PendingRun,
 ): Promise<void> {
   await env.SESSIONS.put(pendingKey(pending.runId), JSON.stringify(pending));
+  await schedulePendingPoller(env);
 }
 
 export async function removePendingRun(
@@ -165,13 +167,15 @@ export async function kickoffPendingPoll(
   env: Env,
   workerOrigin?: string,
 ): Promise<void> {
+  await processPendingRuns(env);
+
+  if (await schedulePendingPoller(env)) return;
+
   const origin = resolveWorkerOrigin(env, workerOrigin);
   if (!origin) {
     console.error("Worker origin topilmadi — poll kickoff o'tkazib yuborildi");
     return;
   }
-
-  await processPendingRuns(env);
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {

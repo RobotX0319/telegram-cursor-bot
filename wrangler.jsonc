@@ -14,5 +14,19 @@
       "binding": "SESSIONS",
       "id": "e4f1347ef43c457abe6e81f7b801e94b"
     }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PENDING_POLLER",
+        "class_name": "PendingPoller"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-pending-poller",
+      "new_sqlite_classes": ["PendingPoller"]
+    }
   ]
 }

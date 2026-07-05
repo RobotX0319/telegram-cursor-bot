@@ -25,12 +25,14 @@ import {
   isTerminal,
   pollRunAndFormat,
 } from "./cursor";
+import { schedulePendingPoller } from "./pending-poller";
 import {
   TRACK_RUN_INTERVAL_MS,
   TRACK_RUN_MAX_ATTEMPTS,
   addPendingRun,
   clearPendingForManualStatus,
   kickoffPendingPoll,
+  listPendingRuns,
   notifyIfFinished,
 } from "./pending";
 import {
@@ -40,7 +42,7 @@ import {
 } from "./stickers";
 import { saveCursorApiKey, resolveCursorApiKey } from "./secrets";
 import { defaultRepo, updateSession } from "./session";
-import { sendChatAction, sendMessage, sendRunResult } from "./telegram";
+import { sendChatAction, sendMessage, sendRunResult, configureWebhookFromEnv, getWebhookInfo } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 import { BUILD_DATE, VERSION } from "./version";
 
@@ -61,6 +63,7 @@ Buyruqlar:
 /setkey <key> — Cursor API kalitini saqlash (faqat admin)
 /version — bot versiyasi
 /setsticker finished — stickerga javob qilib natija stikeri saqlash
+/setup — bot sozlamalarini tekshirish va tuzatish (asosiy admin)
 
 Barcha adminlar bir xil agentlar va repo bilan ishlaydi.
 
@@ -172,6 +175,10 @@ async function handleCommand(
       await handleListStickers(env, chatId, userId);
       return;
 
+    case "/setup":
+      await handleSetup(env, chatId, userId, workerOrigin);
+      return;
+
     case "/ask":
       if (!args) {
         await sendMessage(
@@ -248,6 +255,56 @@ async function handleSetSticker(
     chatId,
     `Sticker saqlandi: ${status}${sticker.emoji ? ` ${sticker.emoji}` : ""}`,
   );
+}
+
+async function handleSetup(
+  env: Env,
+  chatId: number,
+  userId: number,
+  workerOrigin: string,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Bu buyruq faqat asosiy admin uchun.");
+    return;
+  }
+
+  await sendChatAction(env, chatId, "typing");
+
+  const lines: string[] = ["🔧 Bot sozlama tekshiruvi", ""];
+
+  const cursorKey = await resolveCursorApiKey(env);
+  lines.push(cursorKey ? "✅ Cursor API key" : "❌ Cursor API key yo'q → /setkey");
+
+  const webhook = await configureWebhookFromEnv(env, workerOrigin);
+  lines.push(webhook.ok ? "✅ Telegram webhook" : "❌ Telegram webhook xato");
+
+  const info = (await getWebhookInfo(env)) as {
+    result?: { url?: string; last_error_message?: string };
+  };
+  if (info.result?.url) {
+    lines.push(`🔗 ${info.result.url}`);
+  }
+  if (info.result?.last_error_message) {
+    lines.push(`⚠️ ${info.result.last_error_message}`);
+  }
+
+  const pending = await listPendingRuns(env);
+  lines.push(`📋 Kutilayotgan runlar: ${pending.length}`);
+
+  const pollerOk = await schedulePendingPoller(env);
+  lines.push(
+    pollerOk
+      ? "✅ Avtomatik polling (Durable Objects)"
+      : "⚠️ Polling zanjir rejimida",
+  );
+
+  await kickoffPendingPoll(env, workerOrigin);
+
+  lines.push("");
+  lines.push("Lokal to'liq o'rnatish:");
+  lines.push("node scripts/setup-all.mjs");
+
+  await sendMessage(env, chatId, lines.join("\n"));
 }
 
 async function handleListStickers(

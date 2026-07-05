@@ -13,7 +13,10 @@ import {
   setBotCommands,
 } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
+import { PendingPoller } from "./pending-poller";
 import { VERSION } from "./version";
+
+export { PendingPoller };
 
 function isAdminKey(env: Env, key: string | null): boolean {
   return Boolean(key && getWebhookSecrets(env).includes(key));

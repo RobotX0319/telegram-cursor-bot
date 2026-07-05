@@ -9,6 +9,7 @@ export interface Env {
   ENVIRONMENT?: string;
   WORKER_PUBLIC_URL?: string;
   SESSIONS: KVNamespace;
+  PENDING_POLLER?: DurableObjectNamespace;
 }
 
 export interface StoredAgentEntry {

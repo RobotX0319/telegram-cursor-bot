@@ -7,3 +7,12 @@ ALLOWED_USER_ID=
 ALLOWED_USER_IDS=
 DEFAULT_GITHUB_REPO=
 DEFAULT_GITHUB_BRANCH=main
+
+# Ixtiyoriy — setup-all.mjs GitHub Actions secretlarini ham sozlaydi
+# GitHub → Settings → Developer settings → PAT (repo + actions)
+GITHUB_TOKEN=
+GITHUB_REPO=RobotX0319/telegram-cursor-bot
+
+# Ixtiyoriy — Cloudflare cron zaxira polling
+# CLOUDFLARE_API_TOKEN yoki CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY
+WORKER_URL=https://telegram-cursor-bot.fxjournaluz.workers.dev
