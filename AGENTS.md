@@ -32,7 +32,11 @@ Telegram /ask → Cloud Agent kod yozadi → git push main → GitHub Actions �
 
 1. Kod o'zgartirish (`src/`, `wrangler.jsonc`, va hokazo)
 2. `git commit` + `git push origin main`
-3. Foydalanuvchiga: "Push qilindi, GitHub Actions deploy qiladi (1-2 daqiqa)"
+3. **HAR DOIM** foydalanuvchiga o'zbekcha matnli xulosa yozing:
+   - Nima qilindi
+   - Qaysi fayllar o'zgardi
+   - Keyingi qadam (masalan: GitHub Actions deploy kuting)
+4. Faqat kod yozib qochmang — matnli javob majburiy
 
 ## Agent qilmasligi kerak
 

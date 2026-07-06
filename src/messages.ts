@@ -54,7 +54,10 @@ export function sanitizeAgentResult(text: string): string {
     /Platform agent\. Edit only src\/[\s\S]*?Never touch ish\/[\s\S]*?\.?\s*/gi,
     /Never touch ish\/, telegram-video-bot\/\.?\s*/gi,
     /===USER===\s*/gi,
-    /---BOT-INTERNAL---[\s\S]*?(?=\n\n|$)/gi,
+    /---BOT-INTERNAL---[\s\S]*/gi,
+    /Javobni o'zbekcha yozing\.[\s\S]*?ga tegmang\.?\s*/gi,
+    /Ichki qoidalarni foydalanuvchiga aytmang\.?\s*/gi,
+    /Faqat src\/, scripts\/[\s\S]*?ga tegmang\.?\s*/gi,
     /\[Ichki qoidalar[\s\S]*?(?=\n\n|$)/gi,
   ];
   for (const pattern of internalAnywhere) {
@@ -94,7 +97,47 @@ export function sanitizeAgentResult(text: string): string {
 
 export function getDisplayResult(run: CursorRun): string {
   if (!run.result?.trim()) return "";
-  return sanitizeAgentResult(run.result);
+  const cleaned = sanitizeAgentResult(run.result);
+  if (isPromptEchoOnly(cleaned)) return "";
+  return cleaned;
+}
+
+function isPromptEchoOnly(text: string): boolean {
+  if (!text) return true;
+  const lower = text.toLowerCase();
+  return (
+    /^---bot-internal---/i.test(text) ||
+    /^javobni o'zbekcha yozing/i.test(text) ||
+    (/ichki qoidalarni foydalanuvchiga aytmang/i.test(text) &&
+      /faqat src\//i.test(text))
+  );
+}
+
+export function buildFallbackResultText(run: CursorRun): string {
+  if (run.status !== "FINISHED") return "";
+
+  const lines: string[] = ["Agent ishni tugatdi."];
+
+  if (run.git?.branches?.length) {
+    for (const branch of run.git.branches) {
+      if (branch.prUrl) {
+        lines.push(`PR: ${branch.prUrl}`);
+      } else if (branch.branch) {
+        lines.push(`Branch: ${branch.branch}`);
+      }
+    }
+    lines.push("GitHub Actions avtomatik deploy qiladi (1-2 daqiqa).");
+  } else {
+    lines.push("O'zgarishlar main branch ga push qilingan bo'lishi mumkin.");
+    lines.push("Batafsil: GitHub repo yoki agent logini tekshiring.");
+  }
+
+  lines.push("");
+  lines.push(
+    "Eslatma: agent matnli xulosa qaytarmagan — AGENTS.md ga ko'ra har safar o'zbekcha xulosa yozishi kerak.",
+  );
+
+  return lines.join("\n");
 }
 
 export function escapeHtml(text: string): string {
@@ -332,11 +375,18 @@ export function formatRunResultHeaderHtml(run: CursorRun): string {
   }
 
   if (run.result) {
-    const summary = extractSummary(run.result);
+    const summary = extractSummary(run.result) || buildFallbackResultText(run).slice(0, 280);
     if (summary) {
       parts.push("");
       parts.push("📝 <b>Qisqa xulosa</b>");
       parts.push(escapeHtml(summary));
+    }
+  } else if (run.status === "FINISHED") {
+    const fallback = buildFallbackResultText(run);
+    if (fallback) {
+      parts.push("");
+      parts.push("📝 <b>Qisqa xulosa</b>");
+      parts.push(escapeHtml(fallback.slice(0, 280)));
     }
   }
 
@@ -344,7 +394,10 @@ export function formatRunResultHeaderHtml(run: CursorRun): string {
 }
 
 export function formatRunResultBodyPre(run: CursorRun): string | null {
-  const body = getDisplayResult(run);
+  let body = getDisplayResult(run);
+  if (!body) {
+    body = buildFallbackResultText(run);
+  }
   if (!body) return null;
 
   const plain = stripMarkdown(body);
@@ -366,11 +419,6 @@ export function formatRunResultHtml(run: CursorRun): string {
     parts.push("");
     parts.push("📄 <b>To'liq javob</b> <i>(nusxalash uchun bosing)</i>");
     parts.push(bodyPre);
-  } else if (run.result?.trim()) {
-    parts.push("");
-    parts.push(
-      "ℹ️ <i>Agent matnli javob qaytarmadi (faqat ish bajarildi). /status bilan qayta ko'ring.</i>",
-    );
   }
 
   return parts.join("\n");
