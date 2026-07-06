@@ -305,17 +305,43 @@ export function statusLabel(status: RunStatus): string {
   }
 }
 
-function extractSummary(text: string, maxLen = 280): string {
-  const cleaned = stripMarkdown(sanitizeAgentResult(text)).replace(/\s+/g, " ");
-  if (!cleaned) return "";
-  if (cleaned.length <= maxLen) return cleaned;
+const SUMMARY_MAX_LEN = 120;
+/** Qisqa xulosa faqat to'liq matn bundan uzun bo'lsa ko'rsatiladi */
+const MIN_FULL_FOR_SUMMARY = 200;
 
-  const sentenceEnd = cleaned.search(/[.!?]\s/);
-  if (sentenceEnd > 40 && sentenceEnd < maxLen) {
+function extractSummary(text: string, maxLen = SUMMARY_MAX_LEN): string {
+  const cleaned = stripMarkdown(sanitizeAgentResult(text)).replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+
+  const sentenceEnd = cleaned.search(/[.!?](?:\s|$)/);
+  if (sentenceEnd >= 20 && sentenceEnd + 1 <= maxLen) {
     return cleaned.slice(0, sentenceEnd + 1);
   }
 
-  return `${cleaned.slice(0, maxLen - 1)}…`;
+  if (cleaned.length <= maxLen) return cleaned;
+
+  return `${cleaned.slice(0, maxLen - 1).trim()}…`;
+}
+
+function shouldShowSummary(summary: string, fullPlain: string): boolean {
+  if (!summary || !fullPlain) return false;
+  if (fullPlain.length < MIN_FULL_FOR_SUMMARY) return false;
+  if (summary.length >= fullPlain.length - 60) return false;
+  return true;
+}
+
+function resolveResultTexts(run: CursorRun): { summary: string; fullPlain: string } {
+  const full = getDisplayResult(run) || buildFallbackResultText(run);
+  if (!full) return { summary: "", fullPlain: "" };
+
+  const fullPlain = stripMarkdown(full).trim();
+  if (!fullPlain) return { summary: "", fullPlain: "" };
+
+  const summary = run.result
+    ? extractSummary(run.result)
+    : extractSummary(fullPlain);
+
+  return { summary, fullPlain };
 }
 
 export function formatRunResultPlain(run: CursorRun): string {
@@ -374,39 +400,26 @@ export function formatRunResultHeaderHtml(run: CursorRun): string {
     }
   }
 
-  if (run.result) {
-    const summary = extractSummary(run.result) || buildFallbackResultText(run).slice(0, 280);
-    if (summary) {
-      parts.push("");
-      parts.push("📝 <b>Qisqa xulosa</b>");
-      parts.push(escapeHtml(summary));
-    }
-  } else if (run.status === "FINISHED") {
-    const fallback = buildFallbackResultText(run);
-    if (fallback) {
-      parts.push("");
-      parts.push("📝 <b>Qisqa xulosa</b>");
-      parts.push(escapeHtml(fallback.slice(0, 280)));
-    }
+  const { summary, fullPlain } = resolveResultTexts(run);
+
+  if (shouldShowSummary(summary, fullPlain)) {
+    parts.push("");
+    parts.push("📝 <b>Qisqa xulosa</b>");
+    parts.push(escapeHtml(summary));
   }
 
   return parts.join("\n");
 }
 
 export function formatRunResultBodyPre(run: CursorRun): string | null {
-  let body = getDisplayResult(run);
-  if (!body) {
-    body = buildFallbackResultText(run);
-  }
-  if (!body) return null;
+  const { fullPlain } = resolveResultTexts(run);
+  if (!fullPlain) return null;
 
-  const plain = stripMarkdown(body);
-  if (!plain) return null;
   const maxBody = 3800;
   const text =
-    plain.length > maxBody
-      ? `${plain.slice(0, maxBody)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
-      : plain;
+    fullPlain.length > maxBody
+      ? `${fullPlain.slice(0, maxBody)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
+      : fullPlain;
 
   return `<pre>${escapeHtml(text)}</pre>`;
 }
