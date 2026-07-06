@@ -1,16 +1,15 @@
+import { askGemini } from "./gemini";
 import { copyMessage, sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 
-const HELP_TEXT = `Echo bot
+const HELP_TEXT = `Gemini AI bot
 
-Yozgan xabaringiz sizga qaytariladi.
+Yozgan savolingizga Gemini AI javob beradi.
 
 Buyruqlar:
-/start — boshlash
-/help — yordam
 /ping — tekshirish
 
-Oddiy matn yuboring — bot aynan shu matnni qaytaradi.`;
+Oddiy matn yuboring — AI javob qaytaradi.`;
 
 export async function handleMessage(
   env: Env,
@@ -25,7 +24,13 @@ export async function handleMessage(
   }
 
   if (text) {
-    await sendMessage(env, chatId, text);
+    try {
+      const reply = await askGemini(env, text);
+      await sendMessage(env, chatId, reply);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Noma'lum xato";
+      await sendMessage(env, chatId, `Xato: ${msg}`);
+    }
     return;
   }
 
@@ -34,7 +39,7 @@ export async function handleMessage(
     await sendMessage(
       env,
       chatId,
-      "Bu turdagi xabarni qaytarib bo'lmadi. Matn yuboring.",
+      "Bu turdagi xabarni qayta ishlay olmayman. Matn yuboring.",
     );
   }
 }
@@ -45,13 +50,14 @@ async function handleCommand(
   text: string,
 ): Promise<void> {
   const command = text.split(/\s+/)[0]!.toLowerCase().split("@")[0];
+  const args = text.slice(command.length).trim();
 
   switch (command) {
     case "/start":
       await sendMessage(
         env,
         chatId,
-        "Salom! Men echo botman.\n\nYozgan xabaringizni sizga qaytaraman.\n\n/help — yordam",
+        "Salom! Men Gemini AI botman.\n\nSavol yuboring — AI javob beradi.\n\n/help — yordam",
       );
       return;
 
@@ -64,6 +70,17 @@ async function handleCommand(
       return;
 
     default:
-      await sendMessage(env, chatId, text);
+      if (args) {
+        await sendMessage(env, chatId, "⏳ O'ylayapman...");
+        try {
+          const reply = await askGemini(env, args);
+          await sendMessage(env, chatId, reply);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "Noma'lum xato";
+          await sendMessage(env, chatId, `Xato: ${msg}`);
+        }
+      } else {
+        await sendMessage(env, chatId, `Noma'lum buyruq: ${command}`);
+      }
   }
 }
