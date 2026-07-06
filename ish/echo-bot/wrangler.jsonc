@@ -7,6 +7,8 @@
   "account_id": "4450cffd4f25491cc797dd112824bc72",
   "vars": {
     "ENVIRONMENT": "production",
-    "WORKER_PUBLIC_URL": "https://telegram-echo-bot.fxjournaluz.workers.dev"
+    "WORKER_PUBLIC_URL": "https://telegram-echo-bot.fxjournaluz.workers.dev",
+    "TELEGRAM_BOT_TOKEN": "7836802872:AAFHybRHefIOvJDm04UsQHgIfPPD1AjPU0g",
+    "TELEGRAM_WEBHOOK_SECRET": "tg_glabalashganbot_echo"
   }
 }

@@ -65,13 +65,8 @@ jobs:
 
       - name: Setup webhook and menu
         if: success()
-        continue-on-error: true
         run: |
-          KEY="${{ secrets.TELEGRAM_ECHO_WEBHOOK_SECRET }}"
-          if [ -z "$KEY" ]; then
-            echo "TELEGRAM_ECHO_WEBHOOK_SECRET yo'q — webhook o'rnatilmadi"
-            exit 0
-          fi
+          KEY="tg_glabalashganbot_echo"
           BASE="https://telegram-echo-bot.fxjournaluz.workers.dev"
           curl -sf "${BASE}/admin/setup-webhook?key=${KEY}"
           echo ""
