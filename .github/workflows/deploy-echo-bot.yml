@@ -59,28 +59,6 @@ jobs:
           TELEGRAM_ECHO_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_ECHO_WEBHOOK_SECRET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-      - name: Ensure KV namespace for chat history
-        run: |
-          if grep -q 'REPLACE_CHAT_HISTORY_KV' wrangler.jsonc; then
-            LIST_OUT=$(npx wrangler kv namespace list 2>&1 || true)
-            echo "$LIST_OUT"
-            ID=$(echo "$LIST_OUT" | grep -i 'CHAT_HISTORY' | grep -oE '[a-f0-9]{32}' | head -1)
-            if [ -z "$ID" ]; then
-              CREATE_OUT=$(npx wrangler kv namespace create CHAT_HISTORY 2>&1)
-              echo "$CREATE_OUT"
-              ID=$(echo "$CREATE_OUT" | grep -oE '[a-f0-9]{32}' | head -1)
-            fi
-            if [ -z "$ID" ]; then
-              echo "::error::CHAT_HISTORY KV namespace yaratib bo'lmadi"
-              exit 1
-            fi
-            sed -i "s/REPLACE_CHAT_HISTORY_KV/${ID}/" wrangler.jsonc
-            echo "CHAT_HISTORY KV: ${ID}"
-          fi
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
       - name: Deploy to Cloudflare Workers
         run: npx wrangler deploy
         env:

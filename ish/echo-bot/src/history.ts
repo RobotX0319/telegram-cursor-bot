@@ -2,13 +2,15 @@ import type { ChatTurn } from "./types";
 
 const MAX_MESSAGES = 10;
 
+const KV_PREFIX = "echo:chat:";
+
 export async function loadHistory(
   kv: KVNamespace | undefined,
   chatId: number,
 ): Promise<ChatTurn[]> {
   if (!kv) return [];
 
-  const raw = await kv.get(`chat:${chatId}`);
+  const raw = await kv.get(`${KV_PREFIX}${chatId}`);
   if (!raw) return [];
 
   try {
