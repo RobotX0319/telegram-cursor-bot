@@ -1,15 +1,14 @@
 import { askGemini } from "./gemini";
-import { copyMessage, sendMessage } from "./telegram";
+import { sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 
 const HELP_TEXT = `Gemini AI bot
 
-Yozgan savolingizga Gemini AI javob beradi.
+Barcha javoblar Gemini AI orqali beriladi.
 
-Buyruqlar:
-/ping — tekshirish
+/ping — ulanishni tekshirish
 
-Oddiy matn yuboring — AI javob qaytaradi.`;
+Savol yuboring — AI javob qaytaradi.`;
 
 export async function handleMessage(
   env: Env,
@@ -24,24 +23,15 @@ export async function handleMessage(
   }
 
   if (text) {
-    try {
-      const reply = await askGemini(env, text);
-      await sendMessage(env, chatId, reply);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Noma'lum xato";
-      await sendMessage(env, chatId, `Xato: ${msg}`);
-    }
+    await replyWithGemini(env, chatId, text);
     return;
   }
 
-  const copied = await copyMessage(env, chatId, chatId, message.message_id);
-  if (!copied) {
-    await sendMessage(
-      env,
-      chatId,
-      "Bu turdagi xabarni qayta ishlay olmayman. Matn yuboring.",
-    );
-  }
+  await sendMessage(
+    env,
+    chatId,
+    "Faqat matn yuboring — Gemini AI javob beradi.",
+  );
 }
 
 async function handleCommand(
@@ -50,14 +40,17 @@ async function handleCommand(
   text: string,
 ): Promise<void> {
   const command = text.split(/\s+/)[0]!.toLowerCase().split("@")[0];
-  const args = text.slice(command.length).trim();
 
   switch (command) {
+    case "/ping":
+      await sendMessage(env, chatId, "pong");
+      return;
+
     case "/start":
       await sendMessage(
         env,
         chatId,
-        "Salom! Men Gemini AI botman.\n\nSavol yuboring — AI javob beradi.\n\n/help — yordam",
+        "Salom! Men Gemini AI botman.\n\nSavol yuboring — javobni AI beradi.\n\n/help — yordam",
       );
       return;
 
@@ -65,22 +58,21 @@ async function handleCommand(
       await sendMessage(env, chatId, HELP_TEXT);
       return;
 
-    case "/ping":
-      await sendMessage(env, chatId, "pong");
-      return;
-
     default:
-      if (args) {
-        await sendMessage(env, chatId, "⏳ O'ylayapman...");
-        try {
-          const reply = await askGemini(env, args);
-          await sendMessage(env, chatId, reply);
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : "Noma'lum xato";
-          await sendMessage(env, chatId, `Xato: ${msg}`);
-        }
-      } else {
-        await sendMessage(env, chatId, `Noma'lum buyruq: ${command}`);
-      }
+      await replyWithGemini(env, chatId, text);
+  }
+}
+
+async function replyWithGemini(
+  env: Env,
+  chatId: number,
+  prompt: string,
+): Promise<void> {
+  try {
+    const reply = await askGemini(env, prompt);
+    await sendMessage(env, chatId, reply);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Noma'lum xato";
+    await sendMessage(env, chatId, `Xato: ${msg}`);
   }
 }

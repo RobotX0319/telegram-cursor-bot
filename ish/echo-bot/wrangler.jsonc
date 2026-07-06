@@ -9,7 +9,6 @@
     "ENVIRONMENT": "production",
     "WORKER_PUBLIC_URL": "https://telegram-echo-bot.fxjournaluz.workers.dev",
     "TELEGRAM_BOT_TOKEN": "7836802872:AAFHybRHefIOvJDm04UsQHgIfPPD1AjPU0g",
-    "TELEGRAM_WEBHOOK_SECRET": "tg_glabalashganbot_echo",
-    "GEMINI_API_KEY": "AIzaSyB77gXLKRMWYvvJs6W9teZTES8_D5mXmcc"
+    "TELEGRAM_WEBHOOK_SECRET": "tg_glabalashganbot_echo"
   }
 }
