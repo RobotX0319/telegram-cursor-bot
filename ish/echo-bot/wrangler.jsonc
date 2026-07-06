@@ -4,7 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-04-01",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "4450cffd4f25491cc797dd112824bc72",
   "vars": {
-    "ENVIRONMENT": "production"
+    "ENVIRONMENT": "production",
+    "WORKER_PUBLIC_URL": "https://telegram-echo-bot.fxjournaluz.workers.dev"
   }
 }

@@ -1,0 +1,79 @@
+name: Deploy telegram-echo-bot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ish/echo-bot/**"
+      - "ish/package.json"
+      - ".github/workflows/deploy-echo-bot.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ish/echo-bot
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ish/echo-bot/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::GitHub Secrets kerak: CLOUDFLARE_API_TOKEN va CLOUDFLARE_ACCOUNT_ID"
+            exit 1
+          fi
+          echo "Cloudflare credentials found."
+
+      - name: Sync Worker secrets
+        run: |
+          sync_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              echo "$value" | npx wrangler secret put "$name"
+            else
+              echo "::warning::Secret $name GitHub da yo'q — o'tkazib yuborildi"
+            fi
+          }
+          sync_secret TELEGRAM_BOT_TOKEN "$TELEGRAM_ECHO_BOT_TOKEN"
+          sync_secret TELEGRAM_WEBHOOK_SECRET "$TELEGRAM_ECHO_WEBHOOK_SECRET"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TELEGRAM_ECHO_BOT_TOKEN: ${{ secrets.TELEGRAM_ECHO_BOT_TOKEN }}
+          TELEGRAM_ECHO_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_ECHO_WEBHOOK_SECRET }}
+
+      - name: Deploy to Cloudflare Workers
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Setup webhook and menu
+        if: success()
+        continue-on-error: true
+        run: |
+          KEY="${{ secrets.TELEGRAM_ECHO_WEBHOOK_SECRET }}"
+          if [ -z "$KEY" ]; then
+            echo "TELEGRAM_ECHO_WEBHOOK_SECRET yo'q — webhook o'rnatilmadi"
+            exit 0
+          fi
+          BASE="https://telegram-echo-bot.fxjournaluz.workers.dev"
+          curl -sf "${BASE}/admin/setup-webhook?key=${KEY}"
+          echo ""
+          curl -sf "${BASE}/health"
+          echo ""
