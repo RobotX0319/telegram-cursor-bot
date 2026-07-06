@@ -134,7 +134,11 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
-    const origin = env.WORKER_PUBLIC_URL?.replace(/\/$/, "") ?? "";
+    const origin =
+      env.WORKER_PUBLIC_URL?.replace(/\/$/, "") ??
+      "https://telegram-cursor-bot.fxjournaluz.workers.dev";
+
+    ctx.waitUntil(ensureWebhookHealthy(env, origin));
     ctx.waitUntil(
       (async () => {
         const notified = await processPendingRuns(env);

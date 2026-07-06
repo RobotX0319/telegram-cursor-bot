@@ -272,7 +272,7 @@ export async function selectAgent(
       (a) =>
         a.agentId === selector ||
         a.agentId.includes(selector) ||
-        a.name.toLowerCase().includes(selector.toLowerCase()),
+        (a.name ?? "").toLowerCase().includes(selector.toLowerCase()),
     );
     if (!entry) {
       return { ok: false, error: `Agent topilmadi: ${selector}` };
@@ -280,7 +280,12 @@ export async function selectAgent(
   }
 
   try {
-    const agent = await getAgent(env, entry.agentId);
+    const agent = await Promise.race([
+      getAgent(env, entry.agentId),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Cursor API timeout")), 8000),
+      ),
+    ]);
     entry = {
       ...entry,
       name: agent.name,

@@ -12,7 +12,12 @@ export async function getSession(
 ): Promise<UserSession | null> {
   const raw = await env.SESSIONS.get(sessionKey(userId));
   if (!raw) return null;
-  return JSON.parse(raw) as UserSession;
+  try {
+    return JSON.parse(raw) as UserSession;
+  } catch {
+    console.error(`Corrupt session for user:${userId}`);
+    return null;
+  }
 }
 
 function sessionFingerprint(session: UserSession): string {

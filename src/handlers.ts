@@ -116,21 +116,41 @@ export async function handleMessage(
 
   if (!userId || !text) return;
 
-  if (!(await isAllowedUser(env, userId))) {
+  try {
+    if (!(await isAllowedUser(env, userId))) {
+      await sendMessage(
+        env,
+        chatId,
+        "Ruxsat yo'q. Admin sizni qo'shishi kerak:\n/admin add <telegram_user_id>",
+      );
+      return;
+    }
+
+    if (text.startsWith("/")) {
+      await handleCommand(env, chatId, userId, text, ctx, workerOrigin, message);
+      return;
+    }
+
+    await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin);
+  } catch (error) {
+    console.error(
+      "handleMessage failed:",
+      error instanceof Error ? error.message : String(error),
+    );
     await sendMessage(
       env,
       chatId,
-      "Ruxsat yo'q. Admin sizni qo'shishi kerak:\n/admin add <telegram_user_id>",
+      isKvWriteLimitError(error)
+        ? formatKvLimitMessage()
+        : [
+            "Bot xatolik berdi. Qayta urinib ko'ring.",
+            error instanceof Error ? error.message : String(error),
+            "",
+            "/ping — tekshirish",
+            "/agents — agentlar ro'yxati",
+          ].join("\n"),
     );
-    return;
   }
-
-  if (text.startsWith("/")) {
-    await handleCommand(env, chatId, userId, text, ctx, workerOrigin, message);
-    return;
-  }
-
-  await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin);
 }
 
 async function handleCommand(
@@ -223,7 +243,12 @@ async function handleCommand(
       return;
 
     case "/ping":
-      await sendMessage(env, chatId, "pong");
+      await sendMessage(env, chatId, "pong ✅");
+      return;
+
+    case "/wake":
+      await sendChatAction(env, chatId, "typing");
+      await sendMessage(env, chatId, "Bot ishlayapti. /agents yoki /use 1");
       return;
 
     case "/version":
@@ -602,6 +627,7 @@ async function handleAgents(
   }
 
   const session = await getNormalizedSession(env, userId);
+  await sendChatAction(env, chatId, "typing");
   await sendMessage(env, chatId, await formatAgentsList(env, userId, session));
 }
 
@@ -620,27 +646,43 @@ async function handleUse(
     return;
   }
 
-  const result = await selectAgent(env, userId, selector);
-  if (!result.ok) {
-    await sendMessage(env, chatId, result.error);
-    return;
-  }
+  await sendChatAction(env, chatId, "typing");
 
-  const { entry } = result;
-  await sendMessage(
-    env,
-    chatId,
-    [
-      `Faol agent tanlandi ★`,
-      `Nom: ${entry.name}`,
-      `ID: ${entry.agentId}`,
-      entry.url ? `URL: ${entry.url}` : null,
-      "",
-      "Endi oddiy matn yuboring — shu agentga ketadi.",
-    ]
-      .filter(Boolean)
-      .join("\n"),
-  );
+  try {
+    const result = await selectAgent(env, userId, selector);
+    if (!result.ok) {
+      await sendMessage(env, chatId, result.error);
+      return;
+    }
+
+    const { entry } = result;
+    await sendMessage(
+      env,
+      chatId,
+      [
+        `Faol agent tanlandi ★`,
+        `Nom: ${entry.name}`,
+        `ID: ${entry.agentId}`,
+        entry.url ? `URL: ${entry.url}` : null,
+        "",
+        "Endi oddiy matn yuboring — shu agentga ketadi.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  } catch (error) {
+    if (isKvWriteLimitError(error)) {
+      await sendMessage(
+        env,
+        chatId,
+        formatKvLimitMessage(
+          "Agent tanlandi, lekin sessiya saqlanmadi. Limit yangilangach /use ni qayta bosing.",
+        ),
+      );
+      return;
+    }
+    throw error;
+  }
 }
 
 async function handleRepo(
@@ -977,7 +1019,7 @@ async function handleNew(
   workerOrigin: string,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
-  const repoUrl = await defaultRepo(env, session);
+  const repoUrl = await defaultRepo(env, session, userId);
 
   if (!repoUrl) {
     await sendMessage(
@@ -1018,7 +1060,7 @@ async function dispatchPrompt(
   workerOrigin: string,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
-  const repoUrl = await defaultRepo(env, session);
+  const repoUrl = await defaultRepo(env, session, userId);
   const activeId = await resolveActiveAgentId(env, userId, session);
 
   if (activeId) {
