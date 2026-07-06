@@ -3,12 +3,18 @@ import type { Env } from "./types";
 const GEMINI_API =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-export async function askGemini(env: Env, prompt: string): Promise<string> {
-  if (!env.GEMINI_API_KEY?.trim()) {
-    throw new Error("GEMINI_API_KEY sozlanmagan");
+function resolveApiKey(env: Env): string {
+  if (env.GEMINI_API_KEY?.trim()) return env.GEMINI_API_KEY.trim();
+  if (env.GEMINI_API_KEY_B64?.trim()) {
+    return atob(env.GEMINI_API_KEY_B64.trim());
   }
+  throw new Error("GEMINI_API_KEY sozlanmagan");
+}
 
-  const response = await fetch(`${GEMINI_API}?key=${env.GEMINI_API_KEY}`, {
+export async function askGemini(env: Env, prompt: string): Promise<string> {
+  const apiKey = resolveApiKey(env);
+
+  const response = await fetch(`${GEMINI_API}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
