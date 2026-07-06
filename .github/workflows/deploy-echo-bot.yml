@@ -62,11 +62,15 @@ jobs:
       - name: Ensure KV namespace for chat history
         run: |
           if grep -q 'REPLACE_CHAT_HISTORY_KV' wrangler.jsonc; then
-            ID=$(npx wrangler kv namespace list --json | jq -r '.[] | select(.title=="CHAT_HISTORY") | .id' | head -1)
-            if [ -z "$ID" ] || [ "$ID" = "null" ]; then
-              ID=$(npx wrangler kv namespace create CHAT_HISTORY --json | jq -r '.id')
+            LIST_OUT=$(npx wrangler kv namespace list 2>&1 || true)
+            echo "$LIST_OUT"
+            ID=$(echo "$LIST_OUT" | grep -i 'CHAT_HISTORY' | grep -oE '[a-f0-9]{32}' | head -1)
+            if [ -z "$ID" ]; then
+              CREATE_OUT=$(npx wrangler kv namespace create CHAT_HISTORY 2>&1)
+              echo "$CREATE_OUT"
+              ID=$(echo "$CREATE_OUT" | grep -oE '[a-f0-9]{32}' | head -1)
             fi
-            if [ -z "$ID" ] || [ "$ID" = "null" ]; then
+            if [ -z "$ID" ]; then
               echo "::error::CHAT_HISTORY KV namespace yaratib bo'lmadi"
               exit 1
             fi
