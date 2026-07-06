@@ -6,7 +6,7 @@ import type { Env, TelegramMessage } from "./types";
 const HELP_TEXT = `Gemini AI bot
 
 Barcha javoblar Gemini AI orqali beriladi.
-Oxirgi 10 ta xabar eslab qolinadi.
+Oxirgi 30 ta yozishma (User + Gemini) eslab qolinadi.
 
 /ping — ulanishni tekshirish
 /clear — xotirani tozalash
@@ -58,7 +58,7 @@ async function handleCommand(
       await sendMessage(
         env,
         chatId,
-        "Salom! Men Gemini AI botman.\n\nSavol yuboring — javobni AI beradi.\nOxirgi *10 ta xabar* eslab qolinadi.\n\n/help — yordam",
+        "Salom! Men Gemini AI botman.\n\nSavol yuboring — javobni AI beradi.\nOxirgi *30 ta yozishma* eslab qolinadi.\n\n/help — yordam",
       );
       return;
 
@@ -74,12 +74,16 @@ async function handleCommand(
 async function replyWithGemini(
   env: Env,
   chatId: number,
-  prompt: string,
+  userMessage: string,
 ): Promise<void> {
   try {
     const history = await loadHistory(env.CHAT_HISTORY, chatId);
-    const reply = await askGemini(env, prompt, history);
-    const updated = appendTurn(appendTurn(history, "user", prompt), "model", reply);
+    const reply = await askGemini(env, userMessage, history);
+    const updated = appendTurn(
+      appendTurn(history, "user", userMessage),
+      "model",
+      reply,
+    );
     await saveHistory(env.CHAT_HISTORY, chatId, updated);
     await sendMessage(env, chatId, reply);
   } catch (error) {

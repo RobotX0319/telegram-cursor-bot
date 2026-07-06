@@ -1,7 +1,21 @@
+import { formatHistoryBlock } from "./history";
 import type { ChatTurn, Env } from "./types";
 
 const GEMINI_API =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+const SYSTEM_INSTRUCTION = `Siz Telegram suhbat botisiz.
+
+Sizga quyidagi ma'lumotlar beriladi:
+1) Oldingi yozishmalar (User va Gemini xabarlari)
+2) Oxirgi User xabari
+
+Vazifangiz:
+- Eski yozishmalarni o'qing va kontekstni tushuning
+- Suhbat tarixidan kerakli ma'lumotlarni eslab qoling
+- FAQAT oxirgi User xabariga javob bering
+- Javob qisqa, aniq va suhbatga mos bo'lsin
+- User/Gemini yorliqlarini javobda takrorlamang`;
 
 function resolveApiKey(env: Env): string {
   if (env.GEMINI_API_KEY?.trim()) return env.GEMINI_API_KEY.trim();
@@ -11,19 +25,17 @@ function resolveApiKey(env: Env): string {
   throw new Error("GEMINI_API_KEY sozlanmagan");
 }
 
-function toGeminiContents(history: ChatTurn[], prompt: string) {
-  const contents = history.map((turn) => ({
-    role: turn.role,
-    parts: [{ text: turn.text }],
-  }));
+function buildUserPrompt(history: ChatTurn[], latestUserMessage: string): string {
+  return `--- Oldingi yozishmalar ---
+${formatHistoryBlock(history)}
 
-  contents.push({ role: "user" as const, parts: [{ text: prompt }] });
-  return contents;
+--- Oxirgi xabar ---
+User: ${latestUserMessage}`;
 }
 
 export async function askGemini(
   env: Env,
-  prompt: string,
+  latestUserMessage: string,
   history: ChatTurn[] = [],
 ): Promise<string> {
   const apiKey = resolveApiKey(env);
@@ -32,7 +44,15 @@ export async function askGemini(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: toGeminiContents(history, prompt),
+      systemInstruction: {
+        parts: [{ text: SYSTEM_INSTRUCTION }],
+      },
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: buildUserPrompt(history, latestUserMessage) }],
+        },
+      ],
     }),
   });
 

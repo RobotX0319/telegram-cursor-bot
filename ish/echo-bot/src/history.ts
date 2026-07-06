@@ -1,8 +1,18 @@
 import type { ChatTurn } from "./types";
 
-const MAX_MESSAGES = 10;
+export const MAX_MESSAGES = 30;
 
 const KV_PREFIX = "echo:chat:";
+
+export function formatTurn(turn: ChatTurn): string {
+  const label = turn.role === "user" ? "User" : "Gemini";
+  return `${label}: ${turn.text}`;
+}
+
+export function formatHistoryBlock(history: ChatTurn[]): string {
+  if (history.length === 0) return "(oldingi yozishmalar yo'q)";
+  return history.map(formatTurn).join("\n");
+}
 
 export async function loadHistory(
   kv: KVNamespace | undefined,
@@ -27,7 +37,7 @@ export async function saveHistory(
   history: ChatTurn[],
 ): Promise<void> {
   if (!kv) return;
-  await kv.put(`chat:${chatId}`, JSON.stringify(history.slice(-MAX_MESSAGES)));
+  await kv.put(`${KV_PREFIX}${chatId}`, JSON.stringify(history.slice(-MAX_MESSAGES)));
 }
 
 export function appendTurn(
