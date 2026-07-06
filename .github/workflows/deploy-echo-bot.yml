@@ -62,30 +62,11 @@ jobs:
       - name: Ensure KV namespace for chat history
         run: |
           if grep -q 'REPLACE_CHAT_HISTORY_KV' wrangler.jsonc; then
-            ID=$(npx wrangler kv namespace list 2>/dev/null | node -e "
-              let input='';
-              process.stdin.on('data',d=>input+=d);
-              process.stdin.on('end',()=>{
-                try {
-                  const list=JSON.parse(input||'[]');
-                  const found=list.find(n=>n.title==='CHAT_HISTORY');
-                  process.stdout.write(found?.id||'');
-                } catch { process.stdout.write(''); }
-              });
-            ")
-            if [ -z "$ID" ]; then
-              ID=$(npx wrangler kv namespace create CHAT_HISTORY 2>/dev/null | node -e "
-                let input='';
-                process.stdin.on('data',d=>input+=d);
-                process.stdin.on('end',()=>{
-                  try {
-                    const data=JSON.parse(input||'{}');
-                    process.stdout.write(data.id||data.result?.id||'');
-                  } catch { process.stdout.write(''); }
-                });
-              ")
+            ID=$(npx wrangler kv namespace list --json | jq -r '.[] | select(.title=="CHAT_HISTORY") | .id' | head -1)
+            if [ -z "$ID" ] || [ "$ID" = "null" ]; then
+              ID=$(npx wrangler kv namespace create CHAT_HISTORY --json | jq -r '.id')
             fi
-            if [ -z "$ID" ]; then
+            if [ -z "$ID" ] || [ "$ID" = "null" ]; then
               echo "::error::CHAT_HISTORY KV namespace yaratib bo'lmadi"
               exit 1
             fi
