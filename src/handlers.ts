@@ -21,7 +21,6 @@ import {
   createAgent,
   createRun,
   getAgent,
-  getRun,
   getRunForDisplay,
   isTerminal,
   pollRunAndFormat,
