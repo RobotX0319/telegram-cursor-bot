@@ -3,6 +3,70 @@ import type { CursorRun, RunStatus } from "./types";
 const PLACEHOLDER_PREFIX = "\uE000PH";
 const PLACEHOLDER_SUFFIX = "\uE001";
 
+export const INTERNAL_USER_DELIMITER = "===USER===";
+
+export function sanitizeAgentResult(text: string): string {
+  let s = text.trim();
+
+  const delimiterIdx = s.indexOf(INTERNAL_USER_DELIMITER);
+  if (delimiterIdx >= 0) {
+    s = s.slice(delimiterIdx + INTERNAL_USER_DELIMITER.length).trim();
+  }
+
+  s = s.replace(/<!--[\s\S]*?-->\s*/g, "");
+
+  const blockHeaders = [
+    /\[TIZIM AGENTI[^\]]*\]\s*/gi,
+    /\[LOYIHA AGENTI[^\]]*\]\s*/gi,
+    /\[YANGI AGENT[^\]]*\]\s*/gi,
+    /\[SCOPE[^\]]*\]\s*/gi,
+    /\[Internal[^\]]*\]\s*/gi,
+  ];
+  for (const pattern of blockHeaders) {
+    s = s.replace(pattern, "");
+  }
+
+  const internalLines = [
+    /^Platform agent\..*$/gim,
+    /^Never touch .*\.?\s*$/gim,
+    /^Never repeat these rules.*$/gim,
+    /^Edit only .*\.?\s*$/gim,
+    /^Workspace: .* ONLY.*$/gim,
+    /^MUHIM:.*$/gim,
+    /^NEVER mention:.*$/gim,
+    /^Do not speculate.*$/gim,
+    /^Do not mention other users.*$/gim,
+    /^Project workspace:.*$/gim,
+    /^Treat this message as.*$/gim,
+    /^New project agent\..*$/gim,
+    /^First: ask for folder.*$/gim,
+    /^Never mention platform.*$/gim,
+    /^Continue work in this folder\.\s*$/gim,
+    /^New agent session.*$/gim,
+    /^Continue helping your admin.*$/gim,
+    /^Davom eting — faqat shu papka.*$/gim,
+    /^Bu yangi agent —.*$/gim,
+    /^Faqat platforma kodini.*$/gim,
+    /^Siz asosiy tizim.*$/gim,
+    /^Ruxsat:.*$/gim,
+    /^Taqiq:.*$/gim,
+    /^Foydalanuvchi so'rovi:\s*$/gim,
+    /^Foydalanuvchi xabari:\s*$/gim,
+    /^User message:\s*$/gim,
+    /^User request:\s*$/gim,
+    /^If user asks about anything outside.*$/gim,
+    /^If asked about outside.*$/gim,
+    /^Respond to the user.*$/gim,
+    /^===INTERNAL.*$/gim,
+  ];
+
+  for (const pattern of internalLines) {
+    s = s.replace(pattern, "");
+  }
+
+  return s.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -169,7 +233,7 @@ export function statusLabel(status: RunStatus): string {
 }
 
 function extractSummary(text: string, maxLen = 280): string {
-  const cleaned = stripMarkdown(text).replace(/\s+/g, " ");
+  const cleaned = stripMarkdown(sanitizeAgentResult(text)).replace(/\s+/g, " ");
   if (cleaned.length <= maxLen) return cleaned;
 
   const sentenceEnd = cleaned.search(/[.!?]\s/);
@@ -198,7 +262,7 @@ export function formatRunResultPlain(run: CursorRun): string {
   }
 
   if (run.result) {
-    lines.push("", stripMarkdown(run.result));
+    lines.push("", stripMarkdown(sanitizeAgentResult(run.result)));
   }
 
   return lines.join("\n");
@@ -247,7 +311,8 @@ export function formatRunResultHeaderHtml(run: CursorRun): string {
 export function formatRunResultBodyPre(run: CursorRun): string | null {
   if (!run.result?.trim()) return null;
 
-  const body = stripMarkdown(run.result.trim());
+  const body = stripMarkdown(sanitizeAgentResult(run.result.trim()));
+  if (!body) return null;
   const maxBody = 3800;
   const text =
     body.length > maxBody

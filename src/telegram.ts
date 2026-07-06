@@ -5,6 +5,7 @@ import {
   formatRunResultHeaderHtml,
   formatRunResultHtml,
   formatRunResultPlain,
+  statusDecoration,
   statusEmoji,
   statusLabel,
 } from "./messages";
@@ -110,7 +111,14 @@ async function sendStatusSticker(
   const fileId = await getStatusStickerFileId(env, run.status);
   if (fileId) {
     await sendSticker(env, chatId, fileId);
+    return;
   }
+
+  await sendMessage(
+    env,
+    chatId,
+    `${statusDecoration(run.status)} ${statusEmoji(run.status)}`,
+  );
 }
 
 export async function sendRunResult(
