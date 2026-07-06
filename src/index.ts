@@ -1,4 +1,6 @@
 import { handleMessage } from "./handlers";
+import { handleUserRepoPush } from "./github-webhook";
+import { pollAndDeployUserRepos } from "./user-deploy";
 import { continuePollingPendingRuns, processPendingRuns } from "./pending";
 import { pollTelegramUpdates } from "./poll";
 import {
@@ -88,6 +90,10 @@ export default {
       return Response.json(result);
     }
 
+    if (request.method === "POST" && url.pathname === "/github/user-deploy") {
+      return handleUserRepoPush(env, request);
+    }
+
     if (request.method === "POST" && url.pathname === "/webhook") {
       const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
       if (!isAcceptedWebhookSecret(env, secret)) {
@@ -122,5 +128,6 @@ export default {
 
     ctx.waitUntil(ensureWebhookHealthy(env, origin));
     ctx.waitUntil(processPendingRuns(env));
+    ctx.waitUntil(pollAndDeployUserRepos(env));
   },
 };

@@ -1,3 +1,4 @@
+import { resolveCursorApiKey } from "./secrets";
 import { wrapPromptForAgent } from "./scope";
 import type {
   CreateAgentResponse,

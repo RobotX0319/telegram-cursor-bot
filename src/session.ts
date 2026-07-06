@@ -1,4 +1,4 @@
-import { putJsonIfChanged } from "./kv-store";
+import { putJsonRequired } from "./kv-store";
 import { getRepoForUser } from "./user-repos";
 import type { Env, UserSession } from "./types";
 
@@ -21,7 +21,7 @@ export async function saveSession(
   session: UserSession,
 ): Promise<void> {
   session.updatedAt = new Date().toISOString();
-  await putJsonIfChanged(env.SESSIONS, sessionKey(userId), session);
+  await putJsonRequired(env.SESSIONS, sessionKey(userId), session);
 }
 
 export async function updateSession(

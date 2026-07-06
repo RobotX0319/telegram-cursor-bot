@@ -9,6 +9,7 @@ export interface Env {
   GITHUB_TOKEN?: string;
   GITHUB_OWNER?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
   ENVIRONMENT?: string;
   WORKER_PUBLIC_URL?: string;
   SESSIONS: KVNamespace;

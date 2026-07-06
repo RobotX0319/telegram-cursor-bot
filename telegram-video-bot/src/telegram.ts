@@ -2,31 +2,49 @@ import type { Env } from "./types";
 
 const TELEGRAM_API = "https://api.telegram.org";
 
-export const BOT_COMMANDS = [
+export type BotKind = "user" | "admin";
+
+export function getBotToken(env: Env, bot: BotKind): string {
+  return bot === "admin"
+    ? env.TELEGRAM_ADMIN_BOT_TOKEN
+    : env.TELEGRAM_BOT_TOKEN;
+}
+
+export const USER_BOT_COMMANDS = [
   { command: "start", description: "Botni boshlash" },
   { command: "help", description: "Yordam" },
   { command: "info", description: "Video haqida ma'lumot" },
-  { command: "list", description: "Videolar ro'yxati (admin)" },
-  { command: "delete", description: "Video o'chirish (admin)" },
-  { command: "stats", description: "Statistika (admin)" },
-  { command: "panel", description: "Admin panel (admin)" },
   { command: "check", description: "Obunani tekshirish" },
   { command: "ping", description: "Tekshirish" },
 ] as const;
 
-export async function setBotCommands(env: Env): Promise<boolean> {
-  const response = await fetch(
-    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/setMyCommands`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commands: BOT_COMMANDS }),
-    },
-  );
+export const ADMIN_BOT_COMMANDS = [
+  { command: "start", description: "Admin bot" },
+  { command: "help", description: "Yordam" },
+  { command: "list", description: "Videolar ro'yxati" },
+  { command: "delete", description: "Video o'chirish" },
+  { command: "stats", description: "Statistika" },
+  { command: "panel", description: "Web admin panel" },
+  { command: "info", description: "Video tafsilotlari" },
+  { command: "ping", description: "Tekshirish" },
+] as const;
+
+export async function setBotCommands(
+  env: Env,
+  bot: BotKind,
+): Promise<boolean> {
+  const token = getBotToken(env, bot);
+  const commands = bot === "admin" ? ADMIN_BOT_COMMANDS : USER_BOT_COMMANDS;
+
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/setMyCommands`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ commands }),
+  });
 
   if (!response.ok) {
     const body = await response.text();
-    console.error("Telegram setMyCommands failed:", response.status, body);
+    console.error(`setMyCommands (${bot}) failed:`, response.status, body);
     return false;
   }
 
@@ -35,6 +53,7 @@ export async function setBotCommands(env: Env): Promise<boolean> {
 
 export async function sendMessage(
   env: Env,
+  bot: BotKind,
   chatId: number,
   text: string,
   options?: {
@@ -45,22 +64,20 @@ export async function sendMessage(
     };
   },
 ): Promise<void> {
-  const response = await fetch(
-    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        ...(options?.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
-      }),
-    },
-  );
+  const token = getBotToken(env, bot);
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      ...(options?.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+    }),
+  });
 
   if (!response.ok) {
     const body = await response.text();
-    console.error("Telegram sendMessage failed:", response.status, body);
+    console.error(`sendMessage (${bot}) failed:`, response.status, body);
   }
 }
 
@@ -69,8 +86,9 @@ export async function answerCallbackQuery(
   callbackQueryId: string,
   text?: string,
 ): Promise<void> {
+  const token = getBotToken(env, "user");
   const response = await fetch(
-    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`,
+    `${TELEGRAM_API}/bot${token}/answerCallbackQuery`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -93,23 +111,23 @@ export async function sendVideoByFileId(
   fileId: string,
   caption?: string,
 ): Promise<boolean> {
-  const response = await fetch(
-    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendVideo`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        video: fileId,
-        ...(caption ? { caption } : {}),
-      }),
-    },
-  );
+  const token = getBotToken(env, "user");
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/sendVideo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      video: fileId,
+      protect_content: true,
+      supports_streaming: true,
+      ...(caption ? { caption } : {}),
+    }),
+  });
 
   if (response.ok) return true;
 
   const body = await response.text();
-  console.error("Telegram sendVideo failed:", response.status, body);
+  console.error("sendVideo failed:", response.status, body);
   return false;
 }
 
@@ -119,24 +137,47 @@ export async function sendDocumentByFileId(
   fileId: string,
   caption?: string,
 ): Promise<boolean> {
-  const response = await fetch(
-    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        document: fileId,
-        ...(caption ? { caption } : {}),
-      }),
-    },
-  );
+  const token = getBotToken(env, "user");
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/sendDocument`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      document: fileId,
+      protect_content: true,
+      ...(caption ? { caption } : {}),
+    }),
+  });
 
   if (response.ok) return true;
 
   const body = await response.text();
-  console.error("Telegram sendDocument failed:", response.status, body);
+  console.error("sendDocument failed:", response.status, body);
   return false;
+}
+
+export async function setAdminMenuButton(
+  env: Env,
+  workerOrigin: string,
+): Promise<void> {
+  const token = getBotToken(env, "admin");
+  const appUrl = `${workerOrigin.replace(/\/$/, "")}/admin/app`;
+
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/setChatMenuButton`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      menu_button: {
+        type: "web_app",
+        text: "Admin panel",
+        web_app: { url: appUrl },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    console.error("setChatMenuButton failed:", await response.text());
+  }
 }
 
 export async function setWebhook(
@@ -159,27 +200,56 @@ export async function setWebhook(
 export async function configureWebhookFromEnv(
   env: Env,
   workerOrigin: string,
-): Promise<{ ok: boolean; status: number; body: string }> {
-  const webhookUrl = `${workerOrigin.replace(/\/$/, "")}/webhook`;
-  const response = await setWebhook(
+): Promise<{
+  user: { ok: boolean; status: number; body: string };
+  admin: { ok: boolean; status: number; body: string };
+}> {
+  const base = workerOrigin.replace(/\/$/, "");
+  const secret = env.TELEGRAM_WEBHOOK_SECRET;
+
+  const userResponse = await setWebhook(
     env.TELEGRAM_BOT_TOKEN,
-    webhookUrl,
-    env.TELEGRAM_WEBHOOK_SECRET,
+    `${base}/webhook`,
+    secret,
   );
-  const body = await response.text();
-  const commandsSet = response.ok ? await setBotCommands(env) : false;
+  const userBody = await userResponse.text();
+  if (userResponse.ok) {
+    await setBotCommands(env, "user");
+  }
+
+  const adminResponse = await setWebhook(
+    env.TELEGRAM_ADMIN_BOT_TOKEN,
+    `${base}/webhook/admin`,
+    secret,
+  );
+  const adminBody = await adminResponse.text();
+  if (adminResponse.ok) {
+    await setBotCommands(env, "admin");
+    await setAdminMenuButton(env, base);
+  }
+
   return {
-    ok: response.ok,
-    status: response.status,
-    body: commandsSet
-      ? body
-      : `${body}\n(setMyCommands failed — buyruqlar menyusi o'rnatilmadi)`,
+    user: { ok: userResponse.ok, status: userResponse.status, body: userBody },
+    admin: {
+      ok: adminResponse.ok,
+      status: adminResponse.status,
+      body: adminBody,
+    },
   };
 }
 
-export async function getWebhookInfo(env: Env): Promise<unknown> {
-  const response = await fetch(
-    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/getWebhookInfo`,
-  );
-  return response.json();
+export async function getWebhookInfo(
+  env: Env,
+): Promise<{ user: unknown; admin: unknown }> {
+  const [userRes, adminRes] = await Promise.all([
+    fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/getWebhookInfo`),
+    fetch(
+      `${TELEGRAM_API}/bot${env.TELEGRAM_ADMIN_BOT_TOKEN}/getWebhookInfo`,
+    ),
+  ]);
+
+  return {
+    user: await userRes.json(),
+    admin: await adminRes.json(),
+  };
 }

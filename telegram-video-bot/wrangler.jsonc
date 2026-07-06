@@ -6,12 +6,28 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "ENVIRONMENT": "production",
-    "WORKER_PUBLIC_URL": "https://telegram-video-bot.fxjournaluz.workers.dev"
+    "WORKER_PUBLIC_URL": "https://tcursor-u7862655091.fxjournaluz.workers.dev",
+    "TELEGRAM_ADMIN_ID": "7862655091",
+    "TELEGRAM_ADMIN_IDS": "7862655091,1380583834"
   },
   "kv_namespaces": [
     {
       "binding": "VIDEOS",
       "id": "99e4fc2121974a9ea8be15e9a7582582"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "VIDEO_COORDINATOR",
+        "class_name": "VideoCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["VideoCoordinator"]
     }
   ]
 }

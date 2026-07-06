@@ -1,6 +1,6 @@
-import { getBootstrapAdminIds, isBootstrapAdmin } from "./admins";
+import { isBootstrapAdmin, listAllAdminIds } from "./admins";
 import { getAgent } from "./cursor";
-import { putJsonIfChanged } from "./kv-store";
+import { putJsonIfChanged, putJsonRequired } from "./kv-store";
 import { getSession, updateSession } from "./session";
 import type {
   CursorAgent,
@@ -45,18 +45,12 @@ export async function getNormalizedSession(
   return normalizeSession(await getSession(env, userId));
 }
 
-async function loadAgentsIndex(env: Env): Promise<StoredAgentEntry[]> {
-  const raw = await env.SESSIONS.get(AGENTS_INDEX_KEY);
-  if (raw) {
-    try {
-      return JSON.parse(raw) as StoredAgentEntry[];
-    } catch {
-      return [];
-    }
-  }
-
+async function rebuildAgentsIndexFromSessions(
+  env: Env,
+): Promise<StoredAgentEntry[]> {
   const agents = new Map<string, StoredAgentEntry>();
-  for (const idStr of getBootstrapAdminIds(env)) {
+
+  for (const idStr of await listAllAdminIds(env)) {
     const ownerId = Number.parseInt(idStr, 10);
     if (Number.isNaN(ownerId)) continue;
     const session = normalizeSession(await getSession(env, ownerId));
@@ -64,7 +58,23 @@ async function loadAgentsIndex(env: Env): Promise<StoredAgentEntry[]> {
       agents.set(agent.agentId, withCreatedBy(agent, ownerId));
     }
   }
-  const list = [...agents.values()];
+
+  return [...agents.values()].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
+async function loadAgentsIndex(env: Env): Promise<StoredAgentEntry[]> {
+  const raw = await env.SESSIONS.get(AGENTS_INDEX_KEY);
+  if (raw) {
+    try {
+      return JSON.parse(raw) as StoredAgentEntry[];
+    } catch {
+      // rebuild below
+    }
+  }
+
+  const list = await rebuildAgentsIndexFromSessions(env);
   if (list.length > 0) {
     await putJsonIfChanged(env.SESSIONS, AGENTS_INDEX_KEY, list);
   }
@@ -83,7 +93,7 @@ async function saveAgentsIndex(
     }
     return;
   }
-  await putJsonIfChanged(env.SESSIONS, AGENTS_INDEX_KEY, agents);
+  await putJsonRequired(env.SESSIONS, AGENTS_INDEX_KEY, agents);
 }
 
 async function upsertAgentInIndex(
@@ -125,7 +135,9 @@ export async function listAccessibleAgents(
   userId: number,
 ): Promise<StoredAgentEntry[]> {
   if (isBootstrapAdmin(env, userId)) {
-    return listAllAgentMeta(env);
+    const agents = await rebuildAgentsIndexFromSessions(env);
+    await putJsonIfChanged(env.SESSIONS, AGENTS_INDEX_KEY, agents);
+    return agents;
   }
 
   const session = await getNormalizedSession(env, userId);
@@ -156,14 +168,31 @@ export async function getActiveAgentEntry(
   const activeId = normalized?.activeAgentId;
   if (!activeId) return null;
 
-  const fromSession = normalized?.agents?.find((a) => a.agentId === activeId);
-  if (fromSession && canAccessAgent(env, userId, fromSession)) {
-    return fromSession;
-  }
-
   const fromMeta = await getAgentMeta(env, activeId);
   if (fromMeta && canAccessAgent(env, userId, fromMeta)) {
-    return fromMeta;
+    return {
+      ...fromMeta,
+      latestRunId: normalized?.latestRunId ?? fromMeta.latestRunId,
+    };
+  }
+
+  const fromSession = normalized?.agents?.find((a) => a.agentId === activeId);
+  if (fromSession && canAccessAgent(env, userId, fromSession)) {
+    return {
+      ...fromSession,
+      latestRunId: normalized?.latestRunId ?? fromSession.latestRunId,
+    };
+  }
+
+  if (isBootstrapAdmin(env, userId)) {
+    return {
+      agentId: activeId,
+      name: fromMeta?.name ?? "Agent",
+      url: fromMeta?.url ?? "",
+      latestRunId: normalized?.latestRunId ?? fromMeta?.latestRunId,
+      createdBy: fromMeta?.createdBy ?? userId,
+      createdAt: fromMeta?.createdAt ?? "",
+    };
   }
 
   return null;
@@ -380,10 +409,9 @@ export async function formatAgentsList(
   const lines = agents.map((agent, index) => {
     const activeMark = agent.agentId === activeId ? " ★" : "";
     const ownerMark = isBootstrapAdmin(env, userId)
-      ? `\n   admin: ${agent.createdBy}`
+      ? ` (${agent.createdBy})`
       : "";
-    const runInfo = agent.latestRunId ? `\n   run: ${agent.latestRunId}` : "";
-    return `${index + 1}. ${agent.name}${activeMark}\n   ${agent.agentId}${ownerMark}${runInfo}`;
+    return `${index + 1}. ${agent.name}${activeMark}${ownerMark}`;
   });
 
   const header = isBootstrapAdmin(env, userId)
@@ -405,6 +433,12 @@ export async function resolveActiveAgentId(
   userId: number,
   session: UserSession | null,
 ): Promise<string | null> {
+  const normalized = normalizeSession(session);
+  const activeId = normalized?.activeAgentId;
+  if (!activeId) return null;
+
+  if (isBootstrapAdmin(env, userId)) return activeId;
+
   const entry = await getActiveAgentEntry(env, userId, session);
   return entry?.agentId ?? null;
 }

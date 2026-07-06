@@ -1,3 +1,4 @@
+import { ensureUserRepoDeploySetup } from "./github-deploy";
 import type { Env } from "./types";
 
 const GITHUB_API = "https://api.github.com";
@@ -45,6 +46,14 @@ async function isGitHubOrganization(
   return res.ok;
 }
 
+export async function resolveGitHubOwner(
+  env: Env,
+  token: string,
+): Promise<string> {
+  const { owner } = await resolveRepoOwner(token, env.GITHUB_OWNER);
+  return owner;
+}
+
 async function resolveRepoOwner(
   token: string,
   configuredOwner: string | undefined,
@@ -87,6 +96,10 @@ export async function createUserGitHubRepo(
 
   if (check.ok) {
     const url = `https://github.com/${owner}/${name}`;
+    await ensureUserRepoDeploySetup(env, token, owner, name, {
+      triggerDeploy: true,
+      userId: Number.parseInt(String(userId), 10),
+    });
     return { url, name, created: false };
   }
 
@@ -130,12 +143,39 @@ export async function createUserGitHubRepo(
   const url =
     created.html_url ?? `https://github.com/${finalOwner}/${name}`;
 
+  // Secretlar + webhook, keyin scaffold, keyin birinchi deploy
+  await ensureUserRepoDeploySetup(env, token, finalOwner, name);
   await seedUserRepoFiles(env, token, finalOwner, name, userId);
+  await ensureUserRepoDeploySetup(env, token, finalOwner, name, {
+    triggerDeploy: true,
+    userId: Number.parseInt(String(userId), 10),
+  });
 
   return { url, name, created: true };
 }
 
-async function putRepoFile(
+export function userDeployWorkflowYml(): string {
+  return `name: Deploy
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+`;
+}
+
+export async function putRepoFile(
   token: string,
   owner: string,
   repo: string,
@@ -143,6 +183,29 @@ async function putRepoFile(
   content: string,
   message: string,
 ): Promise<void> {
+  const result = await putRepoFileInternal(
+    token,
+    owner,
+    repo,
+    path,
+    content,
+    message,
+  );
+  if (!result.ok) {
+    throw new Error(`GitHub fayl yozilmadi: ${path} (${result.detail})`);
+  }
+}
+
+type PutRepoFileResult = { ok: true } | { ok: false; detail: string };
+
+async function putRepoFileInternal(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  content: string,
+  message: string,
+): Promise<PutRepoFileResult> {
   const encoded = btoa(unescape(encodeURIComponent(content)));
   const res = await fetch(
     `${GITHUB_API}/repos/${owner}/${repo}/contents/${path}`,
@@ -153,32 +216,40 @@ async function putRepoFile(
     },
   );
 
-  if (!res.ok) {
-    const getRes = await fetch(
-      `${GITHUB_API}/repos/${owner}/${repo}/contents/${path}`,
-      { headers: authHeaders(token) },
-    );
-    if (getRes.ok) {
-      const existing = (await getRes.json()) as { sha: string };
-      const update = await fetch(
-        `${GITHUB_API}/repos/${owner}/${repo}/contents/${path}`,
-        {
-          method: "PUT",
-          headers: authHeaders(token),
-          body: JSON.stringify({
-            message,
-            content: encoded,
-            sha: existing.sha,
-          }),
-        },
-      );
-      if (!update.ok) {
-        console.error(`GitHub put ${path} failed:`, await update.text());
-      }
-      return;
-    }
-    console.error(`GitHub put ${path} failed:`, await res.text());
+  if (res.ok) return { ok: true };
+
+  const firstErr = await res.text();
+  const getRes = await fetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/contents/${path}`,
+    { headers: authHeaders(token) },
+  );
+
+  if (!getRes.ok) {
+    return { ok: false, detail: `${res.status}: ${firstErr}` };
   }
+
+  const existing = (await getRes.json()) as { sha: string };
+  const update = await fetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/contents/${path}`,
+    {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        message,
+        content: encoded,
+        sha: existing.sha,
+      }),
+    },
+  );
+
+  if (update.ok) return { ok: true };
+
+  const updateErr = await update.text();
+  if (updateErr.includes("identical") || updateErr.includes("same")) {
+    return { ok: true };
+  }
+
+  return { ok: false, detail: `${update.status}: ${updateErr}` };
 }
 
 function userRepoAgentsMd(userId: number | string): string {
@@ -198,7 +269,7 @@ Sen **Telegram bot** va **web interface (admin panel)** ustida ishlaysan.
 - \`wrangler deploy\` (VM da token yo'q)
 - Secret/tokenlarni repoga yozish
 
-Har o'zgarishdan keyin: git commit + git push origin main
+Har o'zgarishdan keyin: git commit + git push origin main (webhook avtomatik deploy qiladi)
 `;
 }
 
@@ -234,7 +305,7 @@ Shaxsiy workspace — Telegram bot va web interface.
 
 ## Deploy
 
-GitHub Actions \`main\` branch push dan keyin Cloudflare ga deploy qiladi.
+\`git push origin main\` — telegram-cursor-bot webhook orqali Cloudflare ga deploy qiladi.
 `,
     "Add README",
   );
@@ -266,7 +337,7 @@ GitHub Actions \`main\` branch push dan keyin Cloudflare ga deploy qiladi.
     repo,
     "src/index.ts",
     `export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/health") {
       return Response.json({ ok: true, userId: "${userId}", service: "${workerName}" });
@@ -282,32 +353,5 @@ GitHub Actions \`main\` branch push dan keyin Cloudflare ga deploy qiladi.
 };
 `,
     "Add worker entry",
-  );
-
-  await putRepoFile(
-    token,
-    owner,
-    repo,
-    ".github/workflows/deploy.yml",
-    `name: Deploy
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - run: npm install -g wrangler
-      - run: wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-`,
-    "Add deploy workflow",
   );
 }

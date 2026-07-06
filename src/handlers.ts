@@ -11,9 +11,10 @@ import {
 import {
   addAdmin,
   getBootstrapAdminIds,
-  getBootstrapRepo,
+  getPrimaryBootstrapId,
   isAllowedUser,
   isBootstrapAdmin,
+  isPrimaryBootstrapAdmin,
   listAllAdminIds,
   listStoredAdmins,
   removeAdmin,
@@ -32,8 +33,13 @@ import {
   clearPendingForManualStatus,
   kickoffPendingPoll,
   notifyIfFinished,
+  type PendingRun,
 } from "./pending";
-import { isKvWriteLimitError } from "./kv-store";
+import {
+  assertKvWritable,
+  formatKvLimitMessage,
+  isKvWriteLimitError,
+} from "./kv-store";
 import {
   approveRequest,
   consumeGrantedPrompt,
@@ -41,10 +47,11 @@ import {
   denyRequest,
 } from "./permissions";
 import { checkTaskScope } from "./scope";
+import { saveCursorApiKey } from "./secrets";
 import { defaultRepo, updateSession } from "./session";
 import { sendChatAction, sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
-import { provisionAllUsersWithoutRepo, provisionUserRepo } from "./user-repos";
+import { provisionUserRepo, syncAllUserRepos, getRepoForUser } from "./user-repos";
 import { BUILD_DATE, VERSION } from "./version";
 
 const HELP_TEXT = `Telegram → Cursor Cloud Agent bot
@@ -106,16 +113,11 @@ export async function handleMessage(
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error("handleMessage failed:", msg);
-    const kvLimit = msg.includes("put() exceeded") || msg.includes("KV");
     await sendMessage(
       env,
       chatId,
-      kvLimit
-        ? [
-            "KV kunlik limiti tugadi (1000 yozuv/kun).",
-            "Limit 00:00 UTC da yangilanadi.",
-            "Hozir /ping va /agents ishlaydi, saqlash vaqtincha cheklangan.",
-          ].join("\n")
+      isKvWriteLimitError(error)
+        ? formatKvLimitMessage()
         : [
             "Bot xatolik berdi. Qayta urinib ko'ring.",
             msg,
@@ -317,19 +319,30 @@ async function handleAdminList(env: Env, chatId: number): Promise<void> {
   const allIds = await listAllAdminIds(env);
   const stored = await listStoredAdmins(env);
   const storedById = new Map(stored.map((admin) => [admin.userId, admin]));
-  const bootstrapRepo = await getBootstrapRepo(env);
 
-  const lines = allIds.map((id) => {
+  const lines: string[] = [];
+  for (const id of allIds) {
+    const uid = Number.parseInt(id, 10);
+    const repo = Number.isNaN(uid) ? null : await getRepoForUser(env, uid);
+    const repoLine = repo ? `\n   repo: ${repo}` : "\n   repo: (yaratilmagan)";
+
     if (bootstrapIds.has(id)) {
-      const repo = bootstrapRepo ? `\n   repo: ${bootstrapRepo}` : "";
-      return `${id} — asosiy admin (env)${repo}`;
+      const primaryId = getPrimaryBootstrapId(env);
+      const label =
+        primaryId === id
+          ? "asosiy admin (telegram-cursor-bot)"
+          : "asosiy admin (env)";
+      lines.push(`${id} — ${label}${repoLine}`);
+      continue;
     }
+
     const info = storedById.get(id);
-    const repo = info?.repoUrl ? `\n   repo: ${info.repoUrl}` : "\n   repo: (yaratilmagan)";
-    return info
-      ? `${id} — qo'shilgan (${info.addedBy})${repo}`
-      : `${id} — admin${repo}`;
-  });
+    lines.push(
+      info
+        ? `${id} — qo'shilgan (${info.addedBy})${repoLine}`
+        : `${id} — admin${repoLine}`,
+    );
+  }
 
   await sendMessage(
     env,
@@ -363,7 +376,7 @@ async function handleAdminAdd(
   await sendChatAction(env, chatId, "typing");
 
   try {
-    const { url, created } = await provisionUserRepo(
+    const { url, created, deployed } = await provisionUserRepo(
       env,
       Number.parseInt(targetId, 10),
       userId,
@@ -375,6 +388,9 @@ async function handleAdminAdd(
         `Yangi admin qo'shildi: ${targetId}`,
         created ? "Yangi GitHub repo yaratildi:" : "Mavjud repo biriktirildi:",
         url,
+        deployed
+          ? "Worker deploy qilindi (webhook orqali)."
+          : "Deploy: git push → avtomatik.",
         "",
         "Endi u faqat o'z repoda ishlaydi.",
       ].join("\n"),
@@ -493,16 +509,9 @@ async function handleUse(
   await sendMessage(
     env,
     chatId,
-    [
-      `Faol agent tanlandi ★`,
-      `Nom: ${entry.name}`,
-      `ID: ${entry.agentId}`,
-      entry.url ? `URL: ${entry.url}` : null,
-      "",
-      "Endi oddiy matn yuboring — shu agentga ketadi.",
-    ]
-      .filter(Boolean)
-      .join("\n"),
+    [`Faol agent: ${entry.name} ★`, "", "Matn yuboring — shu agentga ketadi."].join(
+      "\n",
+    ),
   );
 }
 
@@ -519,14 +528,16 @@ async function handleAdminProvisionRepos(
   await sendChatAction(env, chatId, "typing");
 
   try {
-    const results = await provisionAllUsersWithoutRepo(env, userId);
+    const results = await syncAllUserRepos(env, userId);
     const lines = results.map((r) => {
       const status = r.error
         ? `XATO: ${r.error}`
-        : r.created
-          ? "yangi yaratildi"
-          : "mavjud";
-      return `${r.userId}: ${r.url} (${status})`;
+        : r.deployed
+          ? "Worker deploy qilindi"
+          : "tayyor";
+      const warn =
+        r.warnings?.length ? `\n   ⚠ ${r.warnings.join(" ")}` : "";
+      return `${r.userId}: ${r.url} (${status})${warn}`;
     });
 
     await sendMessage(
@@ -662,6 +673,18 @@ async function handleRepo(
     return;
   }
 
+  if (isPrimaryBootstrapAdmin(env, userId)) {
+    const fixed = await getRepoForUser(env, userId);
+    await sendMessage(
+      env,
+      chatId,
+      fixed
+        ? `Asosiy admin doim shu repoda ishlaydi:\n${fixed}\n\nO'zgartirib bo'lmaydi.`
+        : "DEFAULT_GITHUB_REPO sozlanmagan.",
+    );
+    return;
+  }
+
   if (!repoUrl.startsWith("https://github.com/")) {
     await sendMessage(
       env,
@@ -696,12 +719,8 @@ async function handleAgentInfo(
       chatId,
       [
         `Agent: ${agent.name}`,
-        `ID: ${agent.id}`,
-        `Status: ${agent.status}`,
-        `URL: ${agent.url}`,
-        entry?.latestRunId ? `Latest run: ${entry.latestRunId}` : null,
-        "",
-        "Boshqa agent: /agents → /use 2",
+        `Holat: ${agent.status}`,
+        entry?.latestRunId ? "Oxirgi vazifa bajarilgan." : null,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -721,12 +740,25 @@ async function handleStatus(
   userId: number,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
-  const activeId = await resolveActiveAgentId(env, userId, session);
-  const entry = await getActiveAgentEntry(env, userId, session);
-  const runId = entry?.latestRunId ?? session?.latestRunId;
+  const activeId =
+    session?.activeAgentId ??
+    (await resolveActiveAgentId(env, userId, session));
+  const entry = activeId
+    ? await getActiveAgentEntry(env, userId, session)
+    : null;
+  const runId = session?.latestRunId ?? entry?.latestRunId;
 
-  if (!activeId || !runId) {
-    await sendMessage(env, chatId, "Hozircha faol run yo'q.\n\nAgent tanlash: /agents");
+  if (!activeId) {
+    await sendMessage(env, chatId, "Faol agent yo'q.\n\n/agents → /use 1");
+    return;
+  }
+
+  if (!runId) {
+    await sendMessage(
+      env,
+      chatId,
+      "Hali vazifa yuborilmagan.\n\nMatn yuboring yoki /new",
+    );
     return;
   }
 
@@ -815,34 +847,48 @@ async function startAgentRun(
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
+  let sentToAgent = false;
+
   try {
+    await assertKvWritable(env.SESSIONS);
+
     const { agent, run } = await createAgent(env, prompt, repoUrl);
-    const session = await registerAgent(env, userId, agent, run, repoUrl);
-    const agentNumber = session.agents?.findIndex((a) => a.agentId === agent.id);
+    sentToAgent = true;
+    await registerAgent(env, userId, agent, run, repoUrl);
+
+    const pending: PendingRun = {
+      chatId,
+      userId,
+      agentId: agent.id,
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+    };
+    await addPendingRun(env, pending);
 
     await sendMessage(
       env,
       chatId,
-      [
-        forceNew ? "Yangi agent ochildi." : "Agent ishga tushdi.",
-        agentNumber != null && agentNumber >= 0
-          ? `Ro'yxatdagi raqam: ${agentNumber + 1}`
-          : null,
-        `Agent: ${agent.url}`,
-        `Run: ${run.id}`,
-        "",
-        "Natija tayyor bo'lganda xabar yuboraman...",
-        "Boshqa agent: /agents → /use 2",
-      ]
-        .filter(Boolean)
-        .join("\n"),
+      forceNew
+        ? "Yangi agent ochildi. Kutilmoqda..."
+        : "Yuborildi. Kutilmoqda...",
     );
 
     ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
-    ctx.waitUntil(
-      trackRunUntilFinished(env, chatId, userId, agent.id, run.id),
-    );
+    ctx.waitUntil(trackRunUntilFinished(env, pending));
   } catch (error) {
+    if (isKvWriteLimitError(error)) {
+      await sendMessage(
+        env,
+        chatId,
+        formatKvLimitMessage(
+          sentToAgent
+            ? "Vazifa agentga yuborilgan bo'lishi mumkin. Limit yangilangach /status bilan tekshiring."
+            : undefined,
+        ),
+      );
+      return;
+    }
+
     await sendMessage(
       env,
       chatId,
@@ -862,30 +908,42 @@ async function continueAgentRun(
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
-  try {
-    const { run } = await createRun(env, agentId, prompt);
-    const session = await updateAgentRun(env, userId, agentId, run.id);
-    const entry = session.agents?.find((a) => a.agentId === agentId);
+  let sentToAgent = false;
 
-    await sendMessage(
-      env,
+  try {
+    await assertKvWritable(env.SESSIONS);
+
+    const { run } = await createRun(env, agentId, prompt);
+    sentToAgent = true;
+    await updateAgentRun(env, userId, agentId, run.id);
+
+    const pending: PendingRun = {
       chatId,
-      [
-        `Buyruq yuborildi.`,
-        entry ? `Agent: ${entry.name}` : null,
-        `Run: ${run.id}`,
-        "",
-        "Kutilmoqda...",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
+      userId,
+      agentId,
+      runId: run.id,
+      createdAt: new Date().toISOString(),
+    };
+    await addPendingRun(env, pending);
+
+    await sendMessage(env, chatId, "Yuborildi. Kutilmoqda...");
 
     ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
-    ctx.waitUntil(
-      trackRunUntilFinished(env, chatId, userId, agentId, run.id),
-    );
+    ctx.waitUntil(trackRunUntilFinished(env, pending));
   } catch (error) {
+    if (isKvWriteLimitError(error)) {
+      await sendMessage(
+        env,
+        chatId,
+        formatKvLimitMessage(
+          sentToAgent
+            ? "Vazifa agentga yuborilgan bo'lishi mumkin. Limit yangilangach /status bilan tekshiring."
+            : undefined,
+        ),
+      );
+      return;
+    }
+
     const message = error instanceof Error ? error.message : String(error);
 
     if (message.includes("409") || message.includes("agent_busy")) {
@@ -903,29 +961,22 @@ async function continueAgentRun(
 
 async function trackRunUntilFinished(
   env: Env,
-  chatId: number,
-  userId: number,
-  agentId: string,
-  runId: string,
+  pending: PendingRun,
 ): Promise<void> {
-  const pending = {
-    chatId,
-    userId,
-    agentId,
-    runId,
-    createdAt: new Date().toISOString(),
-  };
-
-  await addPendingRun(env, pending);
-
   try {
-    const run = await pollRunAndFormat(env, agentId, runId, 3, 3000);
+    const run = await pollRunAndFormat(
+      env,
+      pending.agentId,
+      pending.runId,
+      3,
+      3000,
+    );
     if (isTerminal(run.status)) {
       await notifyIfFinished(env, pending);
     }
   } catch (error) {
     console.error(
-      `Run ${runId} kuzatilmadi:`,
+      `Run ${pending.runId} kuzatilmadi:`,
       error instanceof Error ? error.message : String(error),
     );
   }

@@ -1,5 +1,5 @@
 import { formatRunResult, getRun, isTerminal } from "./cursor";
-import { putJsonIfChanged, putTextIfChanged } from "./kv-store";
+import { putJsonIfChanged, putJsonRequired, putTextIfChanged } from "./kv-store";
 import { sendMessage } from "./telegram";
 import type { Env } from "./types";
 
@@ -39,7 +39,7 @@ async function savePendingIndex(
     }
     return;
   }
-  await putJsonIfChanged(env.SESSIONS, PENDING_INDEX_KEY, pending);
+  await putJsonRequired(env.SESSIONS, PENDING_INDEX_KEY, pending);
 }
 
 export async function addPendingRun(
@@ -72,6 +72,18 @@ export async function notifyIfFinished(
 ): Promise<boolean> {
   const run = await getRun(env, pending.agentId, pending.runId);
   if (!isTerminal(run.status)) return false;
+
+  if (run.status === "FINISHED") {
+    try {
+      const { deployUserWorkerFromRepoForUser } = await import("./user-deploy");
+      await deployUserWorkerFromRepoForUser(env, pending.userId);
+    } catch (error) {
+      console.error(
+        `Agent deploy (${pending.userId}):`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
 
   await sendMessage(env, pending.chatId, formatRunResult(run));
   return true;

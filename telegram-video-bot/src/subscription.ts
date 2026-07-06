@@ -212,7 +212,7 @@ export async function sendSubscriptionRequired(
 
   buttons.push([{ text: "✅ Tekshirish", callback_data: "check_sub" }]);
 
-  await sendMessage(env, chatId, lines.join("\n"), {
+  await sendMessage(env, "user", chatId, lines.join("\n"), {
     replyMarkup: { inline_keyboard: buttons },
   });
 }
@@ -243,6 +243,7 @@ export async function handleSubscriptionCheck(
   if (subscribed) {
     await sendMessage(
       env,
+      "user",
       chatId,
       "✅ Obuna tasdiqlandi!\n\nVideo olish uchun ID yuboring.\nMasalan: 1",
     );

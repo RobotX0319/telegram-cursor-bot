@@ -1,15 +1,13 @@
 import {
   countVideos,
   deleteVideo,
-  getNextVideoId,
   getVideo,
   listVideos,
-  saveVideo,
+  registerVideo,
 } from "./storage";
 import { getAdminPanelUrl } from "./admin";
 import {
   ensureSubscribed,
-  getRequiredChannels,
   handleSubscriptionCheck,
   isUserSubscribed,
   sendSubscriptionRequired,
@@ -20,31 +18,42 @@ import {
   sendMessage,
   sendVideoByFileId,
 } from "./telegram";
-import type { Env, StoredVideo, TelegramCallbackQuery, TelegramMessage } from "./types";
+import { isAdminUser } from "./admins";
+import type { Env, TelegramCallbackQuery, TelegramMessage } from "./types";
 
-const HELP_TEXT = `Video bot
+const USER_HELP = `Video bot (@Detskebot)
 
-Foydalanuvchi:
-- 1, 2, 3 ... yuboring — shu ID dagi videoni olasiz
-- /info 3 — video haqida ma'lumot (yubormasdan)
+- 1, 2, 3 ... yuboring — videoni faqat chatda ko'rasiz
+- Yuklab olish va forward qilish cheklangan
+- /info 3 — video haqida ma'lumot
 - /check — obunani tekshirish
+- /help — yordam`;
 
-Admin:
-- Video yuklang — avtomatik ID beriladi
-- /panel — web admin panel havolasi
-- /list — barcha videolar ro'yxati
-- /info 3 — video tafsilotlari
+const ADMIN_USER_HELP = `Admin (@Detskebot da)
+
+- Video yuklang — avtomatik ID beriladi va saqlanadi
+- /list — videolar ro'yxati
 - /delete 5 — videoni o'chirish
-- /stats — statistika`;
+- /stats — statistika
+- /info 3 — video tafsilotlari`;
+
+const ADMIN_HELP = `Boshqaruv boti (@Detiskebot)
+
+- /panel — web admin panel
+- /list — barcha videolar ro'yxati
+- /delete 5 — videoni o'chirish
+- /stats — statistika
+- /info 3 — video tafsilotlari
+
+Video yuklash: @Detskebot ga video yuboring`;
 
 export function isAdmin(env: Env, userId: number): boolean {
-  return String(userId) === env.TELEGRAM_ADMIN_ID;
+  return isAdminUser(env, userId);
 }
 
-export async function handleMessage(
+export async function handleUserMessage(
   env: Env,
   message: TelegramMessage,
-  workerOrigin: string,
 ): Promise<void> {
   const userId = message.from?.id;
   const chatId = message.chat.id;
@@ -53,36 +62,45 @@ export async function handleMessage(
 
   const text = message.text?.trim();
   const isCheckCommand = text?.toLowerCase().split("@")[0] === "/check";
-
-  if (
-    !isAdmin(env, userId) &&
-    !isCheckCommand
-  ) {
-    const channels = await getRequiredChannels(env);
-    if (channels.length > 0) {
-      const subscribed = await ensureSubscribed(env, chatId, userId);
-      if (!subscribed) return;
-    }
-  }
+  const admin = isAdmin(env, userId);
 
   if (message.video || isVideoDocument(message)) {
-    if (!isAdmin(env, userId)) {
+    if (admin) {
+      await handleVideoUpload(env, chatId, userId, message);
+    } else {
       await sendMessage(
         env,
+        "user",
         chatId,
-        "Faqat admin video yuklay oladi.\n\nVideo olish uchun ID yuboring: masalan 1",
+        "Video olish uchun ID yuboring.\nMasalan: 1",
       );
-      return;
     }
+    return;
+  }
 
-    await handleAdminUpload(env, chatId, userId, message);
+  if (!admin && !isCheckCommand) {
+    const subscribed = await ensureSubscribed(env, chatId, userId);
+    if (!subscribed) return;
+  }
+
+  if (message.document) {
+    if (admin) {
+      await sendMessage(env, "user", chatId, "Faqat video fayl yuklang.");
+    } else {
+      await sendMessage(
+        env,
+        "user",
+        chatId,
+        "Video olish uchun ID yuboring.\nMasalan: 1",
+      );
+    }
     return;
   }
 
   if (!text) return;
 
   if (text.startsWith("/")) {
-    await handleCommand(env, chatId, userId, text, workerOrigin);
+    await handleUserCommand(env, chatId, userId, text, admin);
     return;
   }
 
@@ -93,12 +111,125 @@ export async function handleMessage(
 
   await sendMessage(
     env,
+    "user",
     chatId,
     "Video olish uchun raqam yuboring.\nMasalan: 1\n\n/help — yordam",
   );
 }
 
-async function handleCommand(
+export async function handleAdminMessage(
+  env: Env,
+  message: TelegramMessage,
+  workerOrigin: string,
+): Promise<void> {
+  const userId = message.from?.id;
+  const chatId = message.chat.id;
+
+  if (!userId) return;
+
+  if (!isAdmin(env, userId)) {
+    await sendMessage(
+      env,
+      "admin",
+      chatId,
+      "Bu bot faqat admin uchun.\nFoydalanuvchilar uchun boshqa botdan foydalaning.",
+    );
+    return;
+  }
+
+  if (message.video || isVideoDocument(message)) {
+    await sendMessage(
+      env,
+      "admin",
+      chatId,
+      "Video yuklash uchun @Detskebot ga yuboring.\n\nBu bot faqat boshqaruv uchun (/panel, /list, /delete).",
+    );
+    return;
+  }
+
+  const text = message.text?.trim();
+  if (!text) return;
+
+  if (text.startsWith("/")) {
+    await handleAdminCommand(env, chatId, userId, text, workerOrigin);
+    return;
+  }
+
+  await sendMessage(
+    env,
+    "admin",
+    chatId,
+    "Buyruq yuboring: /panel, /list, /help\n\nVideo yuklash: @Detskebot",
+  );
+}
+
+async function handleUserCommand(
+  env: Env,
+  chatId: number,
+  userId: number,
+  text: string,
+  admin: boolean,
+): Promise<void> {
+  const [command, ...rest] = text.split(/\s+/);
+  const args = rest.join(" ").trim();
+  const cmd = command.toLowerCase().split("@")[0];
+
+  switch (cmd) {
+    case "/start":
+      await sendMessage(
+        env,
+        "user",
+        chatId,
+        "Salom! Video olish uchun ID yuboring.\nMasalan: 1\n\nVideoni faqat shu chatda ko'rish mumkin.\n/help — yordam",
+      );
+      return;
+
+    case "/help":
+      await sendMessage(env, "user", chatId, admin ? ADMIN_USER_HELP : USER_HELP);
+      return;
+
+    case "/list":
+      if (!admin) {
+        await sendMessage(env, "user", chatId, "Bu buyruq faqat admin uchun.");
+        return;
+      }
+      await handleList(env, chatId, "user");
+      return;
+
+    case "/delete":
+      if (!admin) {
+        await sendMessage(env, "user", chatId, "Bu buyruq faqat admin uchun.");
+        return;
+      }
+      await handleDelete(env, chatId, args, "user");
+      return;
+
+    case "/stats":
+      if (!admin) {
+        await sendMessage(env, "user", chatId, "Bu buyruq faqat admin uchun.");
+        return;
+      }
+      await handleStats(env, chatId, "user");
+      return;
+
+    case "/info":
+      await handleInfo(env, chatId, userId, args, false);
+      return;
+
+    case "/ping":
+      await sendMessage(env, "user", chatId, "pong");
+      return;
+
+    case "/check":
+      await handleSubscriptionCheck(env, chatId, userId);
+      return;
+
+    default:
+      await sendMessage(env, "user", chatId, "Noma'lum buyruq. /help");
+  }
+}
+
+async function handleAdminCommand(
   env: Env,
   chatId: number,
   userId: number,
@@ -113,61 +244,42 @@ async function handleCommand(
     case "/start":
       await sendMessage(
         env,
+        "admin",
         chatId,
-        "Salom! Video olish uchun ID yuboring.\nMasalan: 1\n\n/help — yordam",
+        "Boshqaruv boti.\n/panel — admin panel\n/help — yordam\n\nVideo yuklash: @Detskebot ga video yuboring.",
       );
       return;
 
     case "/help":
-      await sendMessage(env, chatId, HELP_TEXT);
+      await sendMessage(env, "admin", chatId, ADMIN_HELP);
       return;
 
     case "/list":
-      if (!isAdmin(env, userId)) {
-        await sendMessage(env, chatId, "Bu buyruq faqat admin uchun.");
-        return;
-      }
-      await handleList(env, chatId);
+      await handleList(env, chatId, "admin");
       return;
 
     case "/delete":
-      if (!isAdmin(env, userId)) {
-        await sendMessage(env, chatId, "Bu buyruq faqat admin uchun.");
-        return;
-      }
-      await handleDelete(env, chatId, args);
+      await handleDelete(env, chatId, args, "admin");
       return;
 
     case "/stats":
-      if (!isAdmin(env, userId)) {
-        await sendMessage(env, chatId, "Bu buyruq faqat admin uchun.");
-        return;
-      }
-      await handleStats(env, chatId);
+      await handleStats(env, chatId, "admin");
       return;
 
     case "/info":
-      await handleInfo(env, chatId, userId, args);
+      await handleInfo(env, chatId, userId, args, true);
       return;
 
     case "/panel":
-      if (!isAdmin(env, userId)) {
-        await sendMessage(env, chatId, "Bu buyruq faqat admin uchun.");
-        return;
-      }
       await handlePanel(env, chatId, workerOrigin);
       return;
 
     case "/ping":
-      await sendMessage(env, chatId, "pong");
-      return;
-
-    case "/check":
-      await handleSubscriptionCheck(env, chatId, userId);
+      await sendMessage(env, "admin", chatId, "pong");
       return;
 
     default:
-      await sendMessage(env, chatId, "Noma'lum buyruq. /help");
+      await sendMessage(env, "admin", chatId, "Noma'lum buyruq. /help");
   }
 }
 
@@ -177,7 +289,7 @@ function isVideoDocument(message: TelegramMessage): boolean {
   return doc.mime_type.startsWith("video/");
 }
 
-async function handleAdminUpload(
+async function handleVideoUpload(
   env: Env,
   chatId: number,
   userId: number,
@@ -187,29 +299,26 @@ async function handleAdminUpload(
   const document = message.document;
 
   if (!video && !document) {
-    await sendMessage(env, chatId, "Video topilmadi. Qayta yuboring.");
+    await sendMessage(env, "user", chatId, "Video topilmadi. Qayta yuboring.");
     return;
   }
 
-  const id = await getNextVideoId(env);
   const caption = message.caption?.trim();
 
-  const stored: StoredVideo = video
+  const payload = video
     ? {
-        id,
         fileId: video.file_id,
         fileUniqueId: video.file_unique_id,
-        kind: "video",
+        kind: "video" as const,
         caption,
-        mimeType: "video/mp4",
+        mimeType: video.mime_type ?? "video/mp4",
         uploadedBy: userId,
         uploadedAt: new Date().toISOString(),
       }
     : {
-        id,
         fileId: document!.file_id,
         fileUniqueId: document!.file_unique_id,
-        kind: "document",
+        kind: "document" as const,
         caption,
         fileName: document!.file_name,
         mimeType: document!.mime_type,
@@ -217,20 +326,43 @@ async function handleAdminUpload(
         uploadedAt: new Date().toISOString(),
       };
 
-  await saveVideo(env, stored);
+  try {
+    const result = await registerVideo(env, payload);
 
-  const lines = [
-    `Video saqlandi.`,
-    `ID: ${id}`,
-    "",
-    "Foydalanuvchilar shu raqamni yuborib videoni olishadi.",
-  ];
+    if (result.status === "duplicate") {
+      await sendMessage(
+        env,
+        "user",
+        chatId,
+        `Takrorlandi — bu video allaqachon saqlangan.\nID: ${result.id}`,
+      );
+      return;
+    }
 
-  if (caption) {
-    lines.push("", `Caption: ${caption}`);
+    const lines = [
+      "Video saqlandi.",
+      `ID: ${result.id}`,
+      "",
+      "Foydalanuvchilar shu raqamni yuborib videoni olishadi.",
+    ];
+
+    if (caption) {
+      lines.push("", `Caption: ${caption}`);
+    }
+
+    await sendMessage(env, "user", chatId, lines.join("\n"));
+  } catch (error) {
+    console.error(
+      "Video saqlanmadi:",
+      error instanceof Error ? error.message : String(error),
+    );
+    await sendMessage(
+      env,
+      "user",
+      chatId,
+      "Video saqlanmadi. Biroz kutib qayta yuboring.",
+    );
   }
-
-  await sendMessage(env, chatId, lines.join("\n"));
 }
 
 async function sendVideoById(
@@ -241,7 +373,7 @@ async function sendVideoById(
   const video = await getVideo(env, id);
 
   if (!video) {
-    await sendMessage(env, chatId, `Video topilmadi: ${id}`);
+    await sendMessage(env, "user", chatId, `Video topilmadi: ${id}`);
     return;
   }
 
@@ -255,17 +387,22 @@ async function sendVideoById(
   if (!sent) {
     await sendMessage(
       env,
+      "user",
       chatId,
       `Video yuborilmadi (ID: ${id}). Admin bilan bog'laning.`,
     );
   }
 }
 
-async function handleList(env: Env, chatId: number): Promise<void> {
+async function handleList(
+  env: Env,
+  chatId: number,
+  bot: "user" | "admin",
+): Promise<void> {
   const videos = await listVideos(env);
 
   if (videos.length === 0) {
-    await sendMessage(env, chatId, "Hozircha video yo'q.");
+    await sendMessage(env, bot, chatId, "Hozircha video yo'q.");
     return;
   }
 
@@ -274,16 +411,17 @@ async function handleList(env: Env, chatId: number): Promise<void> {
     return `${video.id}. ${title}`;
   });
 
-  await sendMessage(env, chatId, ["Videolar:", "", ...lines].join("\n"));
+  await sendMessage(env, bot, chatId, ["Videolar:", "", ...lines].join("\n"));
 }
 
 async function handleDelete(
   env: Env,
   chatId: number,
   args: string,
+  bot: "user" | "admin",
 ): Promise<void> {
   if (!/^\d+$/.test(args)) {
-    await sendMessage(env, chatId, "Foydalanish: /delete 5");
+    await sendMessage(env, bot, chatId, "Foydalanish: /delete 5");
     return;
   }
 
@@ -291,16 +429,20 @@ async function handleDelete(
   const deleted = await deleteVideo(env, id);
 
   if (!deleted) {
-    await sendMessage(env, chatId, `Video topilmadi: ${id}`);
+    await sendMessage(env, bot, chatId, `Video topilmadi: ${id}`);
     return;
   }
 
-  await sendMessage(env, chatId, `Video o'chirildi: ${id}`);
+  await sendMessage(env, bot, chatId, `Video o'chirildi: ${id}`);
 }
 
-async function handleStats(env: Env, chatId: number): Promise<void> {
+async function handleStats(
+  env: Env,
+  chatId: number,
+  bot: "user" | "admin",
+): Promise<void> {
   const total = await countVideos(env);
-  await sendMessage(env, chatId, `Jami videolar: ${total}`);
+  await sendMessage(env, bot, chatId, `Jami videolar: ${total}`);
 }
 
 async function handleInfo(
@@ -308,9 +450,15 @@ async function handleInfo(
   chatId: number,
   userId: number,
   args: string,
+  adminBot: boolean,
 ): Promise<void> {
   if (!/^\d+$/.test(args)) {
-    await sendMessage(env, chatId, "Foydalanish: /info 3");
+    await sendMessage(
+      env,
+      adminBot ? "admin" : "user",
+      chatId,
+      "Foydalanish: /info 3",
+    );
     return;
   }
 
@@ -318,7 +466,12 @@ async function handleInfo(
   const video = await getVideo(env, id);
 
   if (!video) {
-    await sendMessage(env, chatId, `Video topilmadi: ${id}`);
+    await sendMessage(
+      env,
+      adminBot ? "admin" : "user",
+      chatId,
+      `Video topilmadi: ${id}`,
+    );
     return;
   }
 
@@ -331,13 +484,18 @@ async function handleInfo(
     `Yuklangan: ${formatDate(video.uploadedAt)}`,
   ];
 
-  if (isAdmin(env, userId)) {
+  if (adminBot && isAdmin(env, userId)) {
     lines.push(`Admin ID: ${video.uploadedBy}`);
   }
 
   lines.push("", "Videoni olish uchun shu raqamni yuboring.");
 
-  await sendMessage(env, chatId, lines.filter(Boolean).join("\n"));
+  await sendMessage(
+    env,
+    adminBot ? "admin" : "user",
+    chatId,
+    lines.filter(Boolean).join("\n"),
+  );
 }
 
 function formatDate(iso: string): string {
@@ -354,6 +512,7 @@ async function handlePanel(
   const url = getAdminPanelUrl(workerOrigin, env.TELEGRAM_WEBHOOK_SECRET);
   await sendMessage(
     env,
+    "admin",
     chatId,
     [
       "Admin panel:",
@@ -382,6 +541,7 @@ export async function handleCallbackQuery(
     await answerCallbackQuery(env, query.id, "Obuna tasdiqlandi!");
     await sendMessage(
       env,
+      "user",
       chatId,
       "✅ Obuna tasdiqlandi!\n\nVideo olish uchun ID yuboring.\nMasalan: 1",
     );
@@ -390,4 +550,14 @@ export async function handleCallbackQuery(
 
   await answerCallbackQuery(env, query.id, "Hali obuna bo'lmadingiz!");
   await sendSubscriptionRequired(env, chatId);
+}
+
+/** @deprecated handleUserMessage / handleAdminMessage ishlating */
+export async function handleMessage(
+  env: Env,
+  message: TelegramMessage,
+  workerOrigin: string,
+): Promise<void> {
+  await handleUserMessage(env, message);
+  void workerOrigin;
 }

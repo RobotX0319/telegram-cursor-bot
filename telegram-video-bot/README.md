@@ -2,14 +2,28 @@
 
 Telegram video bot — admin video yuklaydi, bot ID beradi (1, 2, 3...), foydalanuvchilar ID yuborib videoni oladi.
 
+> **Boshqa agentlar:** Bu papkani o'chirmang, eski single-bot arxitekturaga qaytarmang, `mirrorMediaToUserBot` ni qayta qo'shmang. Batafsil: asosiy repo [`AGENTS.md`](../AGENTS.md).
+
 ## Ishlash tartibi
 
 ```
-Admin video yuklaydi → Bot ID beradi (masalan: 3)
+Admin @Detskebot ga video yuklaydi → Bot ID beradi (masalan: 3)
 Foydalanuvchi "3" yuboradi → Bot videoni yuboradi
+@Detiskebot — faqat boshqaruv (/panel, /list, /delete)
 ```
 
-Videolar Telegram `file_id` sifatida saqlanadi — alohida server/file storage kerak emas.
+Videolar user bot (`@Detskebot`) `file_id` sifatida KV da saqlanadi.
+
+## Muhim fayllar (revert qilmaslik)
+
+| Fayl | Vazifasi |
+|---|---|
+| `src/video-coordinator.ts` | Durable Object — parallel yuklashda har video alohida ID |
+| `src/webapp-auth.ts` | Telegram mini app autentifikatsiya |
+| `src/panel-session.ts` | Admin panel parol sessiyasi |
+| `src/admins.ts` | `TELEGRAM_ADMIN_IDS` — ko'p admin |
+| `src/handlers.ts` | User botda yuklash, admin botda faqat boshqaruv |
+| `src/telegram.ts` | `protect_content: true` — yuklab olish cheklangan |
 
 ## Tuzilma
 

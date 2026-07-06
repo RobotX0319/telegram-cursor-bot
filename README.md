@@ -6,6 +6,59 @@ Telegram orqali **Cursor Cloud Agent** ni boshqarish — Cloudflare Workers da i
 Telegram xabar → Worker webhook → Cursor Cloud Agents API → natija → Telegram
 ```
 
+> **Agentlar uchun (o'qish shart):** Boshqa Cursor/Telegram agentlar bu repoda qilingan o'zgarishlarni revert qilmasin. Batafsil: [`AGENTS.md`](AGENTS.md) va quyidagi **Changelog** bo'limi.
+
+## Versiya
+
+| Manba | Versiya | Izoh |
+|---|---|---|
+| `src/version.ts` (haqiqiy) | **0.4.6** | `/version`, `/health` shu yerdan |
+| `package.json` | 0.4.6 | npm metadata — `version.ts` bilan mos |
+| GitHub `origin/main` (remote) | 0.2.0 | **ESKI** — push qilinmagan commitlar bor |
+| Production `/health` | 0.2.0 | GitHub Actions eski `main` dan deploy qiladi |
+
+**Nima uchun 0.2.0 ko'rinadi?** Yangi kod lokalda (0.4.x) bor, lekin `git push origin main` qilinmagan. Boshqa agent eski `main` ni deploy qilsa yoki lokal o'zgarishlarni `git checkout` bilan yo'q qilsa, versiya qaytadi.
+
+**To'g'rilash:** O'zgarishlarni commit + `git push origin main` → GitHub Actions yangi versiyani deploy qiladi.
+
+## Changelog (0.3.x — 0.4.x, revert qilmaslik)
+
+### 0.4.6
+- README va `AGENTS.md` — agentlar uchun revert ogohlantirishlari
+- `package.json` versiyasi `version.ts` bilan sinxronlashtirildi
+
+### 0.4.5
+- KV kunlik limiti tugaganda aniq xabar (qachon yangilanishi bilan)
+- `"Kutilmoqda..."` faqat muvaffaqiyatdan keyin chiqadi
+
+### 0.4.4
+- Barcha admin agentlari ko'rinadi (`listAccessibleAgents`)
+- `/status` tuzatildi
+
+### 0.4.0 — 0.4.3
+- User workerlar to'g'ridan-to'g'ri Cloudflare API orqali deploy (`user-worker-deploy.ts`)
+- GitHub webhook ixtiyoriy/emas
+- `workers.dev` route yoqish
+
+### 0.3.x
+- Har admin uchun alohida GitHub repo (`tcursor-u<telegram_id>`)
+- KV yozuvlarini tejash (`putJsonIfChanged`, sekin polling)
+- Agent scope va permission flow
+
+### Video bot (`telegram-video-bot/` — alohida deploy)
+
+| Versiya / holat | O'zgarish |
+|---|---|
+| Ikki bot | @Detskebot (foydalanuvchi), @Detiskebot (boshqaruv) |
+| Video yuklash | Faqat @Detskebot ga (admin shu yerda yuklaydi) |
+| Atomik ID | `VideoCoordinator` Durable Object — 100 ta parallel yuklash |
+| Takror | Bir xil video → `Takrorlandi ID: X` |
+| Admin panel | Parol himoyasi (`ADMIN_PANEL_PASSWORD`), mini app |
+| Ko'p admin | `TELEGRAM_ADMIN_IDS=7862655091,1380583834` |
+| Yuklab olish | `protect_content: true` — forward/save blok |
+
+Deploy: `tcursor-u7862655091` worker (`npx wrangler deploy` yoki `scripts/publish-user-projects.mjs`).
+
 ## Funksiyalar
 
 - `/start`, `/help`, `/ping` — asosiy buyruqlar

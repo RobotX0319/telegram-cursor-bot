@@ -1,11 +1,15 @@
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
+  TELEGRAM_ADMIN_BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
   TELEGRAM_ADMIN_ID: string;
+  TELEGRAM_ADMIN_IDS?: string;
+  ADMIN_PANEL_PASSWORD: string;
   REQUIRED_CHANNELS?: string;
   ENVIRONMENT?: string;
   WORKER_PUBLIC_URL?: string;
   VIDEOS: KVNamespace;
+  VIDEO_COORDINATOR: DurableObjectNamespace;
 }
 
 export interface TelegramUser {

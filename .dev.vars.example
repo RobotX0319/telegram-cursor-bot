@@ -10,3 +10,5 @@ DEFAULT_GITHUB_BRANCH=main
 GITHUB_TOKEN=
 GITHUB_OWNER=RobotX0319
 CLOUDFLARE_ACCOUNT_ID=4450cffd4f25491cc797dd112824bc72
+# User repolarga avtomatik deploy uchun (GitHub Actions secret sifatida o'rnatiladi)
+CLOUDFLARE_API_TOKEN=

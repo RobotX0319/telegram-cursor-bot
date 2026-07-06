@@ -37,6 +37,16 @@ export function isBootstrapAdmin(env: Env, userId: number): boolean {
   return getBootstrapAdminIds(env).includes(String(userId));
 }
 
+/** Faqat ALLOWED_USER_ID — asosiy loyiha repoda ishlaydi. */
+export function getPrimaryBootstrapId(env: Env): string | null {
+  return env.ALLOWED_USER_ID?.trim() || null;
+}
+
+export function isPrimaryBootstrapAdmin(env: Env, userId: number): boolean {
+  const primary = getPrimaryBootstrapId(env);
+  return primary !== null && primary === String(userId);
+}
+
 export async function getBootstrapRepo(env: Env): Promise<string | null> {
   const fromKv = await env.SESSIONS.get(BOOTSTRAP_REPO_KEY);
   if (fromKv?.trim()) return fromKv.trim();
@@ -55,18 +65,31 @@ export async function getAdminProfile(
   userId: number,
 ): Promise<StoredAdmin | null> {
   if (isBootstrapAdmin(env, userId)) {
-    const repoUrl = await getBootstrapRepo(env);
+    const repoUrl = isPrimaryBootstrapAdmin(env, userId)
+      ? ((await getBootstrapRepo(env)) ??
+        env.DEFAULT_GITHUB_REPO?.trim() ??
+        undefined)
+      : ((await import("./user-repos")).getStoredUserRepo(env, userId) ??
+        undefined);
     return {
       userId: String(userId),
       addedBy: "env",
       addedAt: "",
-      repoUrl: repoUrl ?? undefined,
+      repoUrl,
     };
   }
 
   const raw = await env.SESSIONS.get(adminKey(String(userId)));
   if (!raw) return null;
-  return JSON.parse(raw) as StoredAdmin;
+  const admin = JSON.parse(raw) as StoredAdmin;
+
+  if (!admin.repoUrl) {
+    const { getStoredUserRepo } = await import("./user-repos");
+    const stored = await getStoredUserRepo(env, userId);
+    if (stored) admin.repoUrl = stored;
+  }
+
+  return admin;
 }
 
 export async function listStoredAdmins(env: Env): Promise<StoredAdmin[]> {
