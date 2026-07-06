@@ -905,26 +905,52 @@ async function handleAgentInfo(
   }
 }
 
+async function resolveStatusRunTarget(
+  env: Env,
+  userId: number,
+  chatId: number,
+  session: Awaited<ReturnType<typeof getNormalizedSession>>,
+): Promise<{ agentId: string; runId: string } | null> {
+  const activeId = await resolveActiveAgentId(env, userId, session);
+  const entry = await getActiveAgentEntry(env, userId, session);
+  const runId =
+    (session?.activeAgentId === activeId ? session.latestRunId : undefined) ??
+    entry?.latestRunId ??
+    session?.latestRunId;
+
+  if (activeId && runId) {
+    return { agentId: activeId, runId };
+  }
+
+  const pending = (await listPendingRuns(env))
+    .filter((p) => p.userId === userId || p.chatId === chatId)
+    .at(-1);
+
+  if (!pending) return null;
+
+  return { agentId: pending.agentId, runId: pending.runId };
+}
+
 async function handleStatus(
   env: Env,
   chatId: number,
   userId: number,
 ): Promise<void> {
-  const session = await getNormalizedSession(env, userId);
-  const activeId = await resolveActiveAgentId(env, userId, session);
-  const entry = await getActiveAgentEntry(env, userId, session);
-  const runId = entry?.latestRunId ?? session?.latestRunId;
+  await sendChatAction(env, chatId, "typing");
 
-  if (!activeId || !runId) {
+  const session = await getNormalizedSession(env, userId);
+  const target = await resolveStatusRunTarget(env, userId, chatId, session);
+
+  if (!target) {
     await sendMessage(env, chatId, "Hozircha faol run yo'q.\n\nAgent tanlash: /agents");
     return;
   }
 
   try {
-    const run = await getRun(env, activeId, runId);
+    const run = await getRun(env, target.agentId, target.runId);
 
     if (isTerminal(run.status)) {
-      await clearPendingForManualStatus(env, runId);
+      await clearPendingForManualStatus(env, target.runId);
     }
 
     await sendRunResult(env, chatId, run);

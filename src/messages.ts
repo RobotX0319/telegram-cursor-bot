@@ -330,6 +330,27 @@ function shouldShowSummary(summary: string, fullPlain: string): boolean {
   return true;
 }
 
+function isActiveRunStatus(status: RunStatus): boolean {
+  return status === "RUNNING" || status === "CREATING";
+}
+
+function formatInProgressBodyPlain(run: CursorRun): string {
+  const lines = [
+    `${statusLabel(run.status)} — agent hali ishlamoqda.`,
+    `Status: ${run.status}`,
+  ];
+
+  if (run.durationMs != null) {
+    lines.push(`Vaqt: ${Math.round(run.durationMs / 1000)} soniya`);
+  }
+
+  lines.push("");
+  lines.push("Natija tayyor bo'lganda avtomatik xabar keladi.");
+  lines.push("Keyinroq yana /status yuborishingiz mumkin.");
+
+  return lines.join("\n");
+}
+
 function resolveResultTexts(run: CursorRun): { summary: string; fullPlain: string } {
   const full = getDisplayResult(run) || buildFallbackResultText(run);
   if (!full) return { summary: "", fullPlain: "" };
@@ -413,13 +434,15 @@ export function formatRunResultHeaderHtml(run: CursorRun): string {
 
 export function formatRunResultBodyPre(run: CursorRun): string | null {
   const { fullPlain } = resolveResultTexts(run);
-  if (!fullPlain) return null;
+  const text = fullPlain
+    ? fullPlain.length > 3800
+      ? `${fullPlain.slice(0, 3800)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
+      : fullPlain
+    : isActiveRunStatus(run.status)
+      ? formatInProgressBodyPlain(run)
+      : null;
 
-  const maxBody = 3800;
-  const text =
-    fullPlain.length > maxBody
-      ? `${fullPlain.slice(0, maxBody)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
-      : fullPlain;
+  if (!text) return null;
 
   return `<pre>${escapeHtml(text)}</pre>`;
 }
@@ -430,7 +453,11 @@ export function formatRunResultHtml(run: CursorRun): string {
   const bodyPre = formatRunResultBodyPre(run);
   if (bodyPre) {
     parts.push("");
-    parts.push("📄 <b>To'liq javob</b> <i>(nusxalash uchun bosing)</i>");
+    parts.push(
+      isActiveRunStatus(run.status)
+        ? "📄 <b>Holat</b>"
+        : "📄 <b>To'liq javob</b> <i>(nusxalash uchun bosing)</i>",
+    );
     parts.push(bodyPre);
   }
 

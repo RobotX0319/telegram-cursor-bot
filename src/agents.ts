@@ -128,12 +128,27 @@ export async function getActiveAgentEntry(
 
   const fromSession = normalized?.agents?.find((a) => a.agentId === activeId);
   if (fromSession && canAccessAgent(env, userId, fromSession)) {
-    return fromSession;
+    const fromMeta = await getAgentMeta(env, activeId);
+    return {
+      ...fromSession,
+      latestRunId:
+        (normalized?.activeAgentId === activeId
+          ? normalized?.latestRunId
+          : undefined) ??
+        fromMeta?.latestRunId ??
+        fromSession.latestRunId,
+    };
   }
 
   const fromMeta = await getAgentMeta(env, activeId);
   if (fromMeta && canAccessAgent(env, userId, fromMeta)) {
-    return fromMeta;
+    return {
+      ...fromMeta,
+      latestRunId:
+        (normalized?.activeAgentId === activeId
+          ? normalized?.latestRunId
+          : undefined) ?? fromMeta.latestRunId,
+    };
   }
 
   return null;
@@ -205,18 +220,27 @@ export async function updateAgentRun(
   }
 
   const requesterSession = normalizeSession(await getSession(env, userId));
+  const agents = requesterSession?.agents?.map((a) =>
+    a.agentId === agentId ? { ...a, latestRunId: runId } : a,
+  );
+  const agentsSynced =
+    !agents?.length ||
+    agents.some((a) => a.agentId === agentId && a.latestRunId === runId);
+
+  if (
+    requesterSession?.activeAgentId === agentId &&
+    requesterSession.latestRunId === runId &&
+    agentsSynced
+  ) {
+    return requesterSession;
+  }
+
   const patch: Partial<UserSession> = {
     activeAgentId: agentId,
     agentId,
     latestRunId: runId,
+    ...(agents?.length ? { agents } : {}),
   };
-
-  if (
-    requesterSession?.activeAgentId === agentId &&
-    requesterSession.latestRunId === runId
-  ) {
-    return requesterSession;
-  }
 
   return updateSession(env, userId, patch);
 }
