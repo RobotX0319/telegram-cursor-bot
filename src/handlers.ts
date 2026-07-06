@@ -11,10 +11,8 @@ import {
 import {
   addAdmin,
   getBootstrapAdminIds,
-  getPrimaryBootstrapId,
   isAllowedUser,
   isBootstrapAdmin,
-  isPrimaryBootstrapAdmin,
   listAllAdminIds,
   listStoredAdmins,
   removeAdmin,
@@ -22,65 +20,89 @@ import {
 import {
   createAgent,
   createRun,
-  formatRunResult,
   getAgent,
-  getRun,
+  getRunForDisplay,
   isTerminal,
   pollRunAndFormat,
 } from "./cursor";
-import {
-  addPendingRun,
-  clearPendingForManualStatus,
-  kickoffPendingPoll,
-  notifyIfFinished,
-  type PendingRun,
-} from "./pending";
 import {
   assertKvWritable,
   formatKvLimitMessage,
   isKvWriteLimitError,
 } from "./kv-store";
+import { schedulePendingPoller } from "./pending-poller";
 import {
-  approveRequest,
-  consumeGrantedPrompt,
-  createPermissionRequest,
-  denyRequest,
-} from "./permissions";
-import { checkTaskScope } from "./scope";
-import { saveCursorApiKey } from "./secrets";
+  TRACK_RUN_INTERVAL_MS,
+  TRACK_RUN_MAX_ATTEMPTS,
+  addPendingRun,
+  clearPendingForManualStatus,
+  kickoffPendingPoll,
+  listPendingRuns,
+  notifyIfFinished,
+} from "./pending";
+import {
+  STICKER_STATUSES,
+  listStatusStickers,
+  setStatusStickerFileId,
+} from "./stickers";
+import { saveCursorApiKey, resolveCursorApiKey } from "./secrets";
 import { defaultRepo, updateSession } from "./session";
-import { sendChatAction, sendMessage } from "./telegram";
+import { sendChatAction, sendMessage, sendRunResult, configureWebhookFromEnv, getWebhookInfo } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
-import { provisionUserRepo, syncAllUserRepos, getRepoForUser } from "./user-repos";
 import { BUILD_DATE, VERSION } from "./version";
+import type { StoredAgentEntry } from "./types";
+import {
+  NO_WORKSPACE_MESSAGE,
+  OUT_OF_SCOPE_PROBE_REPLY,
+  buildAgentPrompt,
+  detectFolderSetupIntent,
+  detectOutOfScopeProbe,
+  formatWorkspaceStatus,
+  getAdminWorkspaceFolder,
+  isLikelyWorkPrompt,
+  isSystemAdmin,
+  listLegacyWorkspaceMappings,
+  resolvePromptContext,
+  resolveWorkspaceScope,
+  setAdminWorkspaceFolder,
+  setLegacyWorkspaceMapping,
+  type PromptContext,
+  type WorkspaceScope,
+} from "./workspace";
 
-const HELP_TEXT = `Telegram → Cursor Cloud Agent bot
+const HELP_TEXT_BOOTSTRAP = `Telegram → Cursor Cloud Agent bot (asosiy admin)
 
-Buyruqlar:
-/start — xush kelibsiz
+/start /help /status /repo /new /agents /use /agent
+/papka — ish papkasi
+/admin list|add|remove|workspace — adminlar boshqaruvi
+/setkey /setup /setsticker /stickers /version
+
+Siz barcha agentlarni ko'rasiz va ishlata olasiz.
+Boshqa adminning agentini tanlasangiz — u o'z egasiga javob berayotgandek ishlaydi.
+
+Oddiy matn — agentga vazifa.`;
+
+const HELP_TEXT_USER = `Telegram → Cursor Cloud Agent bot
+
+/start — boshlash
 /help — yordam
-/status — agent va run holati
-/repo <url> — faqat asosiy admin (boshqalar o'z repoda)
-/new — yangi cloud agent ochish
-/agents — barcha agentlar ro'yxati
-/use 2 — agent tanlash (raqam yoki ID)
-/agent — faol agent haqida
-/request <vazifa> — cheklangan vazifa uchun ruxsat so'rash
-/admin list — adminlar ro'yxati
-/admin add <id> — yangi admin (+ avtomatik repo)
-/admin provision-repos — barcha userlar uchun repo yaratish
-/admin remove <id> — adminni olib tashlash
-/approve <id> — ruxsat berish (asosiy admin)
-/deny <id> — ruxsat rad etish (asosiy admin)
-/setkey <key> — Cursor API kalitini saqlash (faqat admin)
-/version — bot versiyasi
+/status — agent holati
+/repo <url> — GitHub repo
+/new — yangi agent
+/agents — agentlar ro'yxati
+/use 2 — agent tanlash
+/agent — faol agent
+/papka — ish papkasi
+/papka <nom> — papka belgilash
+/version — versiya
 
-Har bir admin o'z GitHub repoda ishlaydi (izolyatsiya).
-Agent faqat Telegram bot va web interface vazifalarida ishlaydi.
-Boshqa vazifa: /request yoki asosiy admindan ruxsat.
+Oddiy matn yuboring — agent avtomatik ishlaydi.
 
-Asosiy admin barcha agentlarni ko'radi.
-Boshqa adminlar faqat o'z agentlarini ko'radi.`;
+Avval /new → papka yarating → keyin ish buyrug'i.`;
+
+function helpTextFor(env: Env, userId: number): string {
+  return isBootstrapAdmin(env, userId) ? HELP_TEXT_BOOTSTRAP : HELP_TEXT_USER;
+}
 
 export async function handleMessage(
   env: Env,
@@ -94,38 +116,21 @@ export async function handleMessage(
 
   if (!userId || !text) return;
 
-  try {
-    if (!(await isAllowedUser(env, userId))) {
-      await sendMessage(
-        env,
-        chatId,
-        "Ruxsat yo'q. Admin sizni qo'shishi kerak:\n/admin add <telegram_user_id>",
-      );
-      return;
-    }
-
-    if (text.startsWith("/")) {
-      await handleCommand(env, chatId, userId, text, ctx, workerOrigin);
-      return;
-    }
-
-    await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin);
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error("handleMessage failed:", msg);
+  if (!(await isAllowedUser(env, userId))) {
     await sendMessage(
       env,
       chatId,
-      isKvWriteLimitError(error)
-        ? formatKvLimitMessage()
-        : [
-            "Bot xatolik berdi. Qayta urinib ko'ring.",
-            msg,
-            "",
-            "/ping — tekshirish",
-          ].join("\n"),
+      "Ruxsat yo'q. Admin sizni qo'shishi kerak:\n/admin add <telegram_user_id>",
     );
+    return;
   }
+
+  if (text.startsWith("/")) {
+    await handleCommand(env, chatId, userId, text, ctx, workerOrigin, message);
+    return;
+  }
+
+  await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin);
 }
 
 async function handleCommand(
@@ -135,6 +140,7 @@ async function handleCommand(
   text: string,
   ctx: ExecutionContext,
   workerOrigin: string,
+  message: TelegramMessage,
 ): Promise<void> {
   const [command, ...rest] = text.split(/\s+/);
   const args = rest.join(" ").trim();
@@ -150,7 +156,7 @@ async function handleCommand(
       return;
 
     case "/help":
-      await sendMessage(env, chatId, HELP_TEXT);
+      await sendMessage(env, chatId, helpTextFor(env, userId));
       return;
 
     case "/status":
@@ -159,6 +165,11 @@ async function handleCommand(
 
     case "/repo":
       await handleRepo(env, chatId, userId, args);
+      return;
+
+    case "/papka":
+    case "/folder":
+      await handleFolder(env, chatId, userId, args);
       return;
 
     case "/new":
@@ -187,16 +198,16 @@ async function handleCommand(
       await handleSetKey(env, chatId, userId, args);
       return;
 
-    case "/request":
-      await handleRequest(env, chatId, userId, args);
+    case "/setsticker":
+      await handleSetSticker(env, chatId, userId, message, args);
       return;
 
-    case "/approve":
-      await handleApprove(env, chatId, userId, args);
+    case "/stickers":
+      await handleListStickers(env, chatId, userId);
       return;
 
-    case "/deny":
-      await handleDeny(env, chatId, userId, args);
+    case "/setup":
+      await handleSetup(env, chatId, userId, workerOrigin);
       return;
 
     case "/ask":
@@ -212,12 +223,7 @@ async function handleCommand(
       return;
 
     case "/ping":
-      await sendMessage(env, chatId, "pong ✅");
-      return;
-
-    case "/wake":
-      await sendChatAction(env, chatId, "typing");
-      await sendMessage(env, chatId, "Bot ishlayapti. /agents yoki /use 1");
+      await sendMessage(env, chatId, "pong");
       return;
 
     case "/version":
@@ -237,12 +243,146 @@ async function handleCommand(
   }
 }
 
+async function handleSetSticker(
+  env: Env,
+  chatId: number,
+  userId: number,
+  message: TelegramMessage,
+  statusArg: string,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Bu buyruq faqat asosiy admin uchun.");
+    return;
+  }
+
+  const sticker = message.reply_to_message?.sticker ?? message.sticker;
+  if (!sticker) {
+    await sendMessage(
+      env,
+      chatId,
+      [
+        "Stickerga javob qilib yuboring:",
+        "/setsticker finished",
+        "",
+        `Statuslar: ${STICKER_STATUSES.join(", ")}`,
+      ].join("\n"),
+    );
+    return;
+  }
+
+  const status = (statusArg || "finished").toLowerCase();
+  if (!STICKER_STATUSES.includes(status as (typeof STICKER_STATUSES)[number])) {
+    await sendMessage(
+      env,
+      chatId,
+      `Noto'g'ri status. Mavjud: ${STICKER_STATUSES.join(", ")}`,
+    );
+    return;
+  }
+
+  await setStatusStickerFileId(env, status, sticker.file_id);
+  await sendMessage(
+    env,
+    chatId,
+    `Sticker saqlandi: ${status}${sticker.emoji ? ` ${sticker.emoji}` : ""}`,
+  );
+}
+
+async function handleSetup(
+  env: Env,
+  chatId: number,
+  userId: number,
+  workerOrigin: string,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Bu buyruq faqat asosiy admin uchun.");
+    return;
+  }
+
+  await sendChatAction(env, chatId, "typing");
+
+  const lines: string[] = ["🔧 Bot sozlama tekshiruvi", ""];
+
+  const cursorKey = await resolveCursorApiKey(env);
+  lines.push(cursorKey ? "✅ Cursor API key" : "❌ Cursor API key yo'q → /setkey");
+
+  const webhook = await configureWebhookFromEnv(env, workerOrigin);
+  lines.push(webhook.ok ? "✅ Telegram webhook" : "❌ Telegram webhook xato");
+
+  const info = (await getWebhookInfo(env)) as {
+    result?: { url?: string; last_error_message?: string };
+  };
+  if (info.result?.url) {
+    lines.push(`🔗 ${info.result.url}`);
+  }
+  if (info.result?.last_error_message) {
+    lines.push(`⚠️ ${info.result.last_error_message}`);
+  }
+
+  const pending = await listPendingRuns(env);
+  lines.push(`📋 Kutilayotgan runlar: ${pending.length}`);
+
+  const pollerOk = await schedulePendingPoller(env);
+  lines.push(
+    pollerOk
+      ? "✅ Avtomatik polling (Durable Objects)"
+      : "⚠️ Polling zanjir rejimida",
+  );
+
+  await kickoffPendingPoll(env, workerOrigin);
+
+  lines.push("");
+  lines.push("Lokal to'liq o'rnatish:");
+  lines.push("node scripts/setup-all.mjs");
+
+  await sendMessage(env, chatId, lines.join("\n"));
+}
+
+async function handleListStickers(
+  env: Env,
+  chatId: number,
+  userId: number,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Bu buyruq faqat asosiy admin uchun.");
+    return;
+  }
+
+  const stickers = await listStatusStickers(env);
+  if (stickers.length === 0) {
+    await sendMessage(
+      env,
+      chatId,
+      "Stickerlar yo'q.\n\nStickerga javob: /setsticker finished",
+    );
+    return;
+  }
+
+  const lines = stickers.map((s) => `• ${s.status}`);
+  await sendMessage(
+    env,
+    chatId,
+    ["Saqlandi:", "", ...lines, "", "O'rnatish: stickerga javob /setsticker finished"].join(
+      "\n",
+    ),
+  );
+}
+
 async function handleAdmin(
   env: Env,
   chatId: number,
   userId: number,
   args: string,
 ): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(
+      env,
+      chatId,
+      "Bu buyruq mavjud emas. /help — buyruqlar ro'yxati",
+    );
+    return;
+  }
+
   const [subcommand, ...rest] = args.split(/\s+/);
   const sub = (subcommand || "list").toLowerCase();
   const value = rest.join(" ").trim();
@@ -256,21 +396,28 @@ async function handleAdmin(
       await handleAdminAdd(env, chatId, userId, value);
       return;
 
-    case "provision-repos":
-    case "provision":
-      await handleAdminProvisionRepos(env, chatId, userId);
-      return;
-
     case "remove":
     case "delete":
       await handleAdminRemove(env, chatId, value);
+      return;
+
+    case "workspace":
+    case "papka":
+      await handleAdminWorkspace(env, chatId, userId, value);
       return;
 
     default:
       await sendMessage(
         env,
         chatId,
-        "Foydalanish:\n/admin list\n/admin add 123456789\n/admin provision-repos\n/admin remove 123456789",
+        [
+          "Foydalanish:",
+          "/admin list",
+          "/admin add 123456789",
+          "/admin remove 123456789",
+          "/admin workspace set 123 ish",
+          "/admin workspace list",
+        ].join("\n"),
       );
   }
 }
@@ -319,30 +466,27 @@ async function handleAdminList(env: Env, chatId: number): Promise<void> {
   const allIds = await listAllAdminIds(env);
   const stored = await listStoredAdmins(env);
   const storedById = new Map(stored.map((admin) => [admin.userId, admin]));
+  const workspaceMap = new Map(
+    (await listLegacyWorkspaceMappings(env)).map((w) => [w.userId, w.folder]),
+  );
 
-  const lines: string[] = [];
-  for (const id of allIds) {
-    const uid = Number.parseInt(id, 10);
-    const repo = Number.isNaN(uid) ? null : await getRepoForUser(env, uid);
-    const repoLine = repo ? `\n   repo: ${repo}` : "\n   repo: (yaratilmagan)";
+  const lines = await Promise.all(
+    allIds.map(async (id) => {
+      if (bootstrapIds.has(id)) {
+        return `${id} — asosiy admin (tizim kodi)`;
+      }
 
-    if (bootstrapIds.has(id)) {
-      const primaryId = getPrimaryBootstrapId(env);
-      const label =
-        primaryId === id
-          ? "asosiy admin (telegram-cursor-bot)"
-          : "asosiy admin (env)";
-      lines.push(`${id} — ${label}${repoLine}`);
-      continue;
-    }
+      const folder =
+        (await getAdminWorkspaceFolder(env, Number.parseInt(id, 10))) ??
+        workspaceMap.get(id);
 
-    const info = storedById.get(id);
-    lines.push(
-      info
-        ? `${id} — qo'shilgan (${info.addedBy})${repoLine}`
-        : `${id} — admin${repoLine}`,
-    );
-  }
+      const info = storedById.get(id);
+      const base = info
+        ? `${id} — qo'shilgan (${info.addedBy})`
+        : `${id} — admin`;
+      return folder ? `${base}, papka: ${folder}/` : `${base}, papka: —`;
+    }),
+  );
 
   await sendMessage(
     env,
@@ -373,40 +517,19 @@ async function handleAdminAdd(
     return;
   }
 
-  await sendChatAction(env, chatId, "typing");
-
-  try {
-    const { url, created, deployed } = await provisionUserRepo(
-      env,
-      Number.parseInt(targetId, 10),
-      userId,
-    );
-    await sendMessage(
-      env,
-      chatId,
-      [
-        `Yangi admin qo'shildi: ${targetId}`,
-        created ? "Yangi GitHub repo yaratildi:" : "Mavjud repo biriktirildi:",
-        url,
-        deployed
-          ? "Worker deploy qilindi (webhook orqali)."
-          : "Deploy: git push → avtomatik.",
-        "",
-        "Endi u faqat o'z repoda ishlaydi.",
-      ].join("\n"),
-    );
-  } catch (error) {
-    await sendMessage(
-      env,
-      chatId,
-      [
-        `Admin qo'shildi: ${targetId}`,
-        `Repo yaratilmadi: ${error instanceof Error ? error.message : String(error)}`,
-        "",
-        "GITHUB_TOKEN sozlang, keyin: /admin provision-repos",
-      ].join("\n"),
-    );
-  }
+  await sendMessage(
+    env,
+    chatId,
+    [
+      `Yangi admin qo'shildi: ${targetId}`,
+      "",
+      "Foydalanuvchiga yo'riqnoma:",
+      "1. /new — agent ochish",
+      '2. Agentga: "loyiha papkasini yarat: nom"',
+      "3. Yoki: /papka nom",
+      "4. Keyin ish buyruqlarini yuborish",
+    ].join("\n"),
+  );
 }
 
 async function handleAdminRemove(
@@ -497,8 +620,6 @@ async function handleUse(
     return;
   }
 
-  await sendChatAction(env, chatId, "typing");
-
   const result = await selectAgent(env, userId, selector);
   if (!result.ok) {
     await sendMessage(env, chatId, result.error);
@@ -509,153 +630,17 @@ async function handleUse(
   await sendMessage(
     env,
     chatId,
-    [`Faol agent: ${entry.name} ★`, "", "Matn yuboring — shu agentga ketadi."].join(
-      "\n",
-    ),
-  );
-}
-
-async function handleAdminProvisionRepos(
-  env: Env,
-  chatId: number,
-  userId: number,
-): Promise<void> {
-  if (!isBootstrapAdmin(env, userId)) {
-    await sendMessage(env, chatId, "Faqat asosiy admin.");
-    return;
-  }
-
-  await sendChatAction(env, chatId, "typing");
-
-  try {
-    const results = await syncAllUserRepos(env, userId);
-    const lines = results.map((r) => {
-      const status = r.error
-        ? `XATO: ${r.error}`
-        : r.deployed
-          ? "Worker deploy qilindi"
-          : "tayyor";
-      const warn =
-        r.warnings?.length ? `\n   ⚠ ${r.warnings.join(" ")}` : "";
-      return `${r.userId}: ${r.url} (${status})${warn}`;
-    });
-
-    await sendMessage(
-      env,
-      chatId,
-      ["Repo natijalari:", "", ...lines].join("\n"),
-    );
-  } catch (error) {
-    await sendMessage(
-      env,
-      chatId,
-      `Provision xato: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-}
-
-async function handleRequest(
-  env: Env,
-  chatId: number,
-  userId: number,
-  prompt: string,
-): Promise<void> {
-  if (!prompt) {
-    await sendMessage(env, chatId, "Foydalanish: /request <vazifa tavsifi>");
-    return;
-  }
-
-  const req = await createPermissionRequest(env, userId, chatId, prompt);
-  await sendMessage(
-    env,
-    chatId,
     [
-      "Ruxsat so'rovi yuborildi.",
-      `ID: ${req.id}`,
+      `Faol agent tanlandi ★`,
+      `Nom: ${entry.name}`,
+      `ID: ${entry.agentId}`,
+      entry.url ? `URL: ${entry.url}` : null,
       "",
-      "Asosiy admin javobini kuting.",
-    ].join("\n"),
+      "Endi oddiy matn yuboring — shu agentga ketadi.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
   );
-}
-
-async function handleApprove(
-  env: Env,
-  chatId: number,
-  userId: number,
-  requestId: string,
-): Promise<void> {
-  if (!isBootstrapAdmin(env, userId)) {
-    await sendMessage(env, chatId, "Faqat asosiy admin /approve ishlata oladi.");
-    return;
-  }
-
-  if (!requestId) {
-    await sendMessage(env, chatId, "Foydalanish: /approve <so'rov_id>");
-    return;
-  }
-
-  const req = await approveRequest(env, requestId, userId);
-  if (!req) {
-    await sendMessage(env, chatId, "So'rov topilmadi yoki allaqachon hal qilingan.");
-    return;
-  }
-
-  await sendMessage(env, chatId, `Tasdiqlandi: ${requestId} → user ${req.userId}`);
-}
-
-async function handleDeny(
-  env: Env,
-  chatId: number,
-  userId: number,
-  requestId: string,
-): Promise<void> {
-  if (!isBootstrapAdmin(env, userId)) {
-    await sendMessage(env, chatId, "Faqat asosiy admin /deny ishlata oladi.");
-    return;
-  }
-
-  if (!requestId) {
-    await sendMessage(env, chatId, "Foydalanish: /deny <so'rov_id>");
-    return;
-  }
-
-  const req = await denyRequest(env, requestId, userId);
-  if (!req) {
-    await sendMessage(env, chatId, "So'rov topilmadi yoki allaqachon hal qilingan.");
-    return;
-  }
-
-  await sendMessage(env, chatId, `Rad etildi: ${requestId}`);
-}
-
-async function ensureScopeAllowed(
-  env: Env,
-  chatId: number,
-  userId: number,
-  prompt: string,
-): Promise<boolean> {
-  if (isBootstrapAdmin(env, userId)) return true;
-
-  if (await consumeGrantedPrompt(env, userId, prompt)) return true;
-
-  const scope = checkTaskScope(prompt);
-  if (scope.ok) return true;
-
-  if (scope.reason === "blocked") {
-    await sendMessage(env, chatId, scope.message);
-    return false;
-  }
-
-  await sendMessage(
-    env,
-    chatId,
-    [
-      scope.message,
-      "",
-      "Ruxsat so'rash: /request " + prompt.slice(0, 200),
-    ].join("\n"),
-  );
-  return false;
 }
 
 async function handleRepo(
@@ -664,27 +649,6 @@ async function handleRepo(
   userId: number,
   repoUrl: string,
 ): Promise<void> {
-  if (!isBootstrapAdmin(env, userId)) {
-    await sendMessage(
-      env,
-      chatId,
-      "Repo faqat avtomatik biriktiriladi.\n/admin list — sizning repoingiz",
-    );
-    return;
-  }
-
-  if (isPrimaryBootstrapAdmin(env, userId)) {
-    const fixed = await getRepoForUser(env, userId);
-    await sendMessage(
-      env,
-      chatId,
-      fixed
-        ? `Asosiy admin doim shu repoda ishlaydi:\n${fixed}\n\nO'zgartirib bo'lmaydi.`
-        : "DEFAULT_GITHUB_REPO sozlanmagan.",
-    );
-    return;
-  }
-
   if (!repoUrl.startsWith("https://github.com/")) {
     await sendMessage(
       env,
@@ -696,6 +660,203 @@ async function handleRepo(
 
   await updateSession(env, userId, { repoUrl });
   await sendMessage(env, chatId, `Repo saqlandi:\n${repoUrl}`);
+}
+
+async function handleFolder(
+  env: Env,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  const scope = await resolveWorkspaceScope(env, userId);
+
+  if (!args.trim()) {
+    await sendMessage(
+      env,
+      chatId,
+      [
+        formatWorkspaceStatus(scope),
+        "",
+        isSystemAdmin(env, userId)
+          ? "Siz tizim adminisiz — src/, scripts/ ni o'zgartira olasiz."
+          : "Papka belgilash: /papka my-loyiha",
+      ].join("\n"),
+    );
+    return;
+  }
+
+  if (isSystemAdmin(env, userId)) {
+    await sendMessage(
+      env,
+      chatId,
+      "Asosiy admin papka cheklovisiz — butun platforma kodiga kira olasiz.",
+    );
+    return;
+  }
+
+  try {
+    const folder = await setAdminWorkspaceFolder(env, userId, args);
+    await sendMessage(
+      env,
+      chatId,
+      [
+        `✅ Ish papkasi saqlandi: ${folder}/`,
+        "",
+        "Endi agent faqat shu papkada ishlaydi.",
+        "Keyingi qadam: /new yoki mavjud agentga vazifa yuboring.",
+      ].join("\n"),
+    );
+  } catch (error) {
+    await sendMessage(
+      env,
+      chatId,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+async function handleAdminWorkspace(
+  env: Env,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  if (!isBootstrapAdmin(env, userId)) {
+    await sendMessage(env, chatId, "Faqat asosiy admin uchun.");
+    return;
+  }
+
+  const [sub, targetId, ...folderParts] = args.split(/\s+/);
+  const subcommand = (sub || "list").toLowerCase();
+
+  if (subcommand === "list") {
+    const mappings = await listLegacyWorkspaceMappings(env);
+    const allIds = await listAllAdminIds(env);
+    const bootstrapIds = new Set(getBootstrapAdminIds(env));
+
+    const lines = await Promise.all(
+      allIds
+        .filter((id) => !bootstrapIds.has(id))
+        .map(async (id) => {
+          const folder = await getAdminWorkspaceFolder(env, Number.parseInt(id, 10));
+          return `${id} → ${folder ?? "—"}`;
+        }),
+    );
+
+    await sendMessage(
+      env,
+      chatId,
+      [
+        "Admin papkalari:",
+        "",
+        ...lines,
+        "",
+        mappings.length ? "Legacy map ham saqlangan." : "",
+        "Belgilash: /admin workspace set 123456 ish",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    return;
+  }
+
+  if (subcommand === "set") {
+    const folder = folderParts.join(" ").trim();
+    if (!targetId || !/^\d+$/.test(targetId) || !folder) {
+      await sendMessage(
+        env,
+        chatId,
+        "Foydalanish: /admin workspace set 123456789 ish",
+      );
+      return;
+    }
+
+    try {
+      await setLegacyWorkspaceMapping(env, targetId, folder);
+      await sendMessage(
+        env,
+        chatId,
+        `✅ Admin ${targetId} papkasi: ${folder}/`,
+      );
+    } catch (error) {
+      await sendMessage(
+        env,
+        chatId,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    return;
+  }
+
+  await sendMessage(
+    env,
+    chatId,
+    "/admin workspace list\n/admin workspace set 123456789 ish",
+  );
+}
+
+async function preparePromptForDispatch(
+  env: Env,
+  operatorUserId: number,
+  prompt: string,
+  options: { isNewAgent: boolean; agentEntry?: StoredAgentEntry | null },
+): Promise<
+  | {
+      ok: true;
+      wrappedPrompt: string;
+      scope: WorkspaceScope;
+      workspaceFolder?: string;
+      ctx: PromptContext;
+    }
+  | { ok: false; message: string }
+> {
+  let ctx = await resolvePromptContext(
+    env,
+    operatorUserId,
+    options.agentEntry,
+  );
+  const operatorIsBootstrap = isBootstrapAdmin(env, operatorUserId);
+
+  if (
+    !operatorIsBootstrap &&
+    ctx.mode === "project" &&
+    detectOutOfScopeProbe(prompt)
+  ) {
+    return { ok: false, message: OUT_OF_SCOPE_PROBE_REPLY };
+  }
+
+  if (ctx.mode === "awaiting_folder") {
+    const folderFromPrompt = detectFolderSetupIntent(prompt);
+    if (folderFromPrompt) {
+      await setAdminWorkspaceFolder(env, ctx.ownerId, folderFromPrompt);
+      ctx = {
+        ...ctx,
+        mode: "project",
+        folder: folderFromPrompt,
+      };
+    } else if (isLikelyWorkPrompt(prompt) && !options.isNewAgent) {
+      return { ok: false, message: NO_WORKSPACE_MESSAGE };
+    }
+  }
+
+  const wrappedPrompt = buildAgentPrompt(prompt, ctx, {
+    isNewAgent: options.isNewAgent,
+  });
+
+  const scope: WorkspaceScope =
+    ctx.mode === "system"
+      ? { kind: "system" }
+      : ctx.mode === "project" && ctx.folder
+        ? { kind: "folder", folder: ctx.folder }
+        : { kind: "none" };
+
+  return {
+    ok: true,
+    wrappedPrompt,
+    scope,
+    workspaceFolder: ctx.folder,
+    ctx,
+  };
 }
 
 async function handleAgentInfo(
@@ -714,13 +875,28 @@ async function handleAgentInfo(
   try {
     const agent = await getAgent(env, activeId);
     const entry = await getActiveAgentEntry(env, userId, session);
+    const pCtx = entry
+      ? await resolvePromptContext(env, userId, entry)
+      : null;
+
     await sendMessage(
       env,
       chatId,
       [
         `Agent: ${agent.name}`,
-        `Holat: ${agent.status}`,
-        entry?.latestRunId ? "Oxirgi vazifa bajarilgan." : null,
+        `ID: ${agent.id}`,
+        `Status: ${agent.status}`,
+        pCtx?.folder ? `Papka: ${pCtx.folder}/` : null,
+        pCtx?.stealth ? `Ega: ${pCtx.ownerId} (siz egasi rejimidasiz)` : null,
+        isBootstrapAdmin(env, userId) && entry?.createdBy
+          ? `Yaratuvchi: ${entry.createdBy}`
+          : null,
+        `URL: ${agent.url}`,
+        entry?.latestRunId ? `Latest run: ${entry.latestRunId}` : null,
+        "",
+        isBootstrapAdmin(env, userId)
+          ? "Boshqa agent: /agents → /use 2"
+          : null,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -734,42 +910,55 @@ async function handleAgentInfo(
   }
 }
 
+async function resolveStatusRunTarget(
+  env: Env,
+  userId: number,
+  chatId: number,
+  session: Awaited<ReturnType<typeof getNormalizedSession>>,
+): Promise<{ agentId: string; runId: string } | null> {
+  const activeId = await resolveActiveAgentId(env, userId, session);
+  const entry = await getActiveAgentEntry(env, userId, session);
+  const runId =
+    (session?.activeAgentId === activeId ? session.latestRunId : undefined) ??
+    entry?.latestRunId ??
+    session?.latestRunId;
+
+  if (activeId && runId) {
+    return { agentId: activeId, runId };
+  }
+
+  const pending = (await listPendingRuns(env))
+    .filter((p) => p.userId === userId || p.chatId === chatId)
+    .at(-1);
+
+  if (!pending) return null;
+
+  return { agentId: pending.agentId, runId: pending.runId };
+}
+
 async function handleStatus(
   env: Env,
   chatId: number,
   userId: number,
 ): Promise<void> {
+  await sendChatAction(env, chatId, "typing");
+
   const session = await getNormalizedSession(env, userId);
-  const activeId =
-    session?.activeAgentId ??
-    (await resolveActiveAgentId(env, userId, session));
-  const entry = activeId
-    ? await getActiveAgentEntry(env, userId, session)
-    : null;
-  const runId = session?.latestRunId ?? entry?.latestRunId;
+  const target = await resolveStatusRunTarget(env, userId, chatId, session);
 
-  if (!activeId) {
-    await sendMessage(env, chatId, "Faol agent yo'q.\n\n/agents → /use 1");
-    return;
-  }
-
-  if (!runId) {
-    await sendMessage(
-      env,
-      chatId,
-      "Hali vazifa yuborilmagan.\n\nMatn yuboring yoki /new",
-    );
+  if (!target) {
+    await sendMessage(env, chatId, "Hozircha faol run yo'q.\n\nAgent tanlash: /agents");
     return;
   }
 
   try {
-    const run = await getRun(env, activeId, runId);
+    const run = await getRunForDisplay(env, target.agentId, target.runId);
 
     if (isTerminal(run.status)) {
-      await clearPendingForManualStatus(env, runId);
+      await clearPendingForManualStatus(env, target.runId);
     }
 
-    await sendMessage(env, chatId, formatRunResult(run));
+    await sendRunResult(env, chatId, run);
   } catch (error) {
     await sendMessage(
       env,
@@ -788,20 +977,36 @@ async function handleNew(
   workerOrigin: string,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
-  const repoUrl = await defaultRepo(env, session, userId);
+  const repoUrl = await defaultRepo(env, session);
 
   if (!repoUrl) {
     await sendMessage(
       env,
       chatId,
-      "Repo topilmadi.\nAsosiy admin: /admin provision-repos",
+      "Avval repo belgilang:\n/repo https://github.com/user/telegram-cursor-bot",
     );
     return;
   }
 
-  if (!(await ensureScopeAllowed(env, chatId, userId, prompt))) return;
+  const promptCtx = await resolvePromptContext(env, userId, null);
+  const wrappedPrompt = buildAgentPrompt(
+    prompt || "Yangi agent tayyor.",
+    promptCtx,
+    { isNewAgent: true },
+  );
 
-  await startAgentRun(env, chatId, userId, prompt, repoUrl, true, ctx, workerOrigin);
+  await startAgentRun(
+    env,
+    chatId,
+    userId,
+    wrappedPrompt,
+    repoUrl,
+    true,
+    ctx,
+    workerOrigin,
+    promptCtx.folder,
+    promptCtx,
+  );
 }
 
 async function dispatchPrompt(
@@ -813,13 +1018,31 @@ async function dispatchPrompt(
   workerOrigin: string,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
-  const repoUrl = await defaultRepo(env, session, userId);
+  const repoUrl = await defaultRepo(env, session);
   const activeId = await resolveActiveAgentId(env, userId, session);
 
-  if (!(await ensureScopeAllowed(env, chatId, userId, prompt))) return;
-
   if (activeId) {
-    await continueAgentRun(env, chatId, userId, activeId, prompt, ctx, workerOrigin);
+    const entry = await getActiveAgentEntry(env, userId, session);
+    const prepared = await preparePromptForDispatch(env, userId, prompt, {
+      isNewAgent: false,
+      agentEntry: entry,
+    });
+    if (!prepared.ok) {
+      await sendMessage(env, chatId, prepared.message);
+      return;
+    }
+
+    await continueAgentRun(
+      env,
+      chatId,
+      userId,
+      activeId,
+      prepared.wrappedPrompt,
+      ctx,
+      workerOrigin,
+      prepared.workspaceFolder,
+      prepared.ctx,
+    );
     return;
   }
 
@@ -827,12 +1050,31 @@ async function dispatchPrompt(
     await sendMessage(
       env,
       chatId,
-      "Repo topilmadi.\nAsosiy admin: /admin provision-repos",
+      "Birinchi marta repo kerak:\n/repo https://github.com/user/repo\n\nKeyin shu matnni qayta yuboring.",
     );
     return;
   }
 
-  await startAgentRun(env, chatId, userId, prompt, repoUrl, false, ctx, workerOrigin);
+  const prepared = await preparePromptForDispatch(env, userId, prompt, {
+    isNewAgent: true,
+  });
+  if (!prepared.ok) {
+    await sendMessage(env, chatId, prepared.message);
+    return;
+  }
+
+  await startAgentRun(
+    env,
+    chatId,
+    userId,
+    prepared.wrappedPrompt,
+    repoUrl,
+    false,
+    ctx,
+    workerOrigin,
+    prepared.workspaceFolder,
+    prepared.ctx,
+  );
 }
 
 async function startAgentRun(
@@ -842,10 +1084,21 @@ async function startAgentRun(
   prompt: string,
   repoUrl: string,
   forceNew: boolean,
-  ctx: ExecutionContext,
+  execCtx: ExecutionContext,
   workerOrigin: string,
+  workspaceFolder?: string,
+  promptCtx?: PromptContext,
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
+
+  const pCtx =
+    promptCtx ?? (await resolvePromptContext(env, userId, null));
+  const scope: WorkspaceScope =
+    pCtx.mode === "system"
+      ? { kind: "system" }
+      : pCtx.mode === "project" && pCtx.folder
+        ? { kind: "folder", folder: pCtx.folder }
+        : { kind: "none" };
 
   let sentToAgent = false;
 
@@ -854,27 +1107,51 @@ async function startAgentRun(
 
     const { agent, run } = await createAgent(env, prompt, repoUrl);
     sentToAgent = true;
-    await registerAgent(env, userId, agent, run, repoUrl);
-
-    const pending: PendingRun = {
-      chatId,
+    await registerAgent(
+      env,
       userId,
-      agentId: agent.id,
-      runId: run.id,
-      createdAt: new Date().toISOString(),
-    };
-    await addPendingRun(env, pending);
+      agent,
+      run,
+      repoUrl,
+      workspaceFolder ?? pCtx.folder,
+    );
+    const agentNumber = (
+      await getNormalizedSession(env, userId)
+    )?.agents?.findIndex((a) => a.agentId === agent.id);
+    const scopeLabel = formatWorkspaceStatus(scope, pCtx);
 
     await sendMessage(
       env,
       chatId,
-      forceNew
-        ? "Yangi agent ochildi. Kutilmoqda..."
-        : "Yuborildi. Kutilmoqda...",
+      [
+        forceNew ? "Yangi agent ochildi." : "Agent ishga tushdi.",
+        scopeLabel,
+        pCtx.stealth ? "Agent egasiga o'xshash rejimda ishlaydi." : null,
+        agentNumber != null && agentNumber >= 0
+          ? `Ro'yxatdagi raqam: ${agentNumber + 1}`
+          : null,
+        workspaceFolder ?? pCtx.folder
+          ? `Papka: ${workspaceFolder ?? pCtx.folder}/`
+          : null,
+        pCtx.mode === "awaiting_folder"
+          ? "Avval papka yarating yoki /papka nom bering."
+          : null,
+        `Agent: ${agent.url}`,
+        `Run: ${run.id}`,
+        "",
+        "Natija tayyor bo'lganda xabar yuboraman...",
+        isBootstrapAdmin(env, userId)
+          ? "Boshqa agent: /agents → /use 2"
+          : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
     );
 
-    ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
-    ctx.waitUntil(trackRunUntilFinished(env, pending));
+    execCtx.waitUntil(kickoffPendingPoll(env, workerOrigin));
+    execCtx.waitUntil(
+      trackRunUntilFinished(env, chatId, userId, agent.id, run.id),
+    );
   } catch (error) {
     if (isKvWriteLimitError(error)) {
       await sendMessage(
@@ -903,8 +1180,10 @@ async function continueAgentRun(
   userId: number,
   agentId: string,
   prompt: string,
-  ctx: ExecutionContext,
+  execCtx: ExecutionContext,
   workerOrigin: string,
+  workspaceFolder?: string,
+  promptCtx?: PromptContext,
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
@@ -915,21 +1194,30 @@ async function continueAgentRun(
 
     const { run } = await createRun(env, agentId, prompt);
     sentToAgent = true;
-    await updateAgentRun(env, userId, agentId, run.id);
+    const session = await updateAgentRun(env, userId, agentId, run.id);
+    const entry = session.agents?.find((a) => a.agentId === agentId);
+    const folder = workspaceFolder ?? entry?.workspaceFolder ?? promptCtx?.folder;
 
-    const pending: PendingRun = {
+    await sendMessage(
+      env,
       chatId,
-      userId,
-      agentId,
-      runId: run.id,
-      createdAt: new Date().toISOString(),
-    };
-    await addPendingRun(env, pending);
+      [
+        "Buyruq yuborildi.",
+        promptCtx?.stealth ? "(egasi rejimi — chat davom etadi)" : null,
+        entry ? `Agent: ${entry.name}` : null,
+        folder ? `Papka: ${folder}/` : null,
+        `Run: ${run.id}`,
+        "",
+        "Kutilmoqda...",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
 
-    await sendMessage(env, chatId, "Yuborildi. Kutilmoqda...");
-
-    ctx.waitUntil(kickoffPendingPoll(env, workerOrigin));
-    ctx.waitUntil(trackRunUntilFinished(env, pending));
+    execCtx.waitUntil(kickoffPendingPoll(env, workerOrigin));
+    execCtx.waitUntil(
+      trackRunUntilFinished(env, chatId, userId, agentId, run.id),
+    );
   } catch (error) {
     if (isKvWriteLimitError(error)) {
       await sendMessage(
@@ -961,22 +1249,35 @@ async function continueAgentRun(
 
 async function trackRunUntilFinished(
   env: Env,
-  pending: PendingRun,
+  chatId: number,
+  userId: number,
+  agentId: string,
+  runId: string,
 ): Promise<void> {
+  const pending = {
+    chatId,
+    userId,
+    agentId,
+    runId,
+    createdAt: new Date().toISOString(),
+  };
+
+  await addPendingRun(env, pending);
+
   try {
     const run = await pollRunAndFormat(
       env,
-      pending.agentId,
-      pending.runId,
-      3,
-      3000,
+      agentId,
+      runId,
+      TRACK_RUN_MAX_ATTEMPTS,
+      TRACK_RUN_INTERVAL_MS,
     );
     if (isTerminal(run.status)) {
       await notifyIfFinished(env, pending);
     }
   } catch (error) {
     console.error(
-      `Run ${pending.runId} kuzatilmadi:`,
+      `Run ${runId} kuzatilmadi:`,
       error instanceof Error ? error.message : String(error),
     );
   }

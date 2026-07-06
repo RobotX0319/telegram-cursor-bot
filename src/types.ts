@@ -13,6 +13,7 @@ export interface Env {
   ENVIRONMENT?: string;
   WORKER_PUBLIC_URL?: string;
   SESSIONS: KVNamespace;
+  PENDING_POLLER?: DurableObjectNamespace;
 }
 
 export interface StoredAgentEntry {
@@ -22,6 +23,7 @@ export interface StoredAgentEntry {
   latestRunId?: string;
   createdAt: string;
   createdBy?: number;
+  workspaceFolder?: string;
 }
 
 export interface UserSession {
@@ -30,6 +32,7 @@ export interface UserSession {
   agents?: StoredAgentEntry[];
   repoUrl?: string;
   latestRunId?: string;
+  workspaceFolder?: string;
   updatedAt: string;
 }
 
@@ -44,11 +47,19 @@ export interface TelegramChat {
   type: string;
 }
 
+export interface TelegramSticker {
+  file_id: string;
+  emoji?: string;
+  set_name?: string;
+}
+
 export interface TelegramMessage {
   message_id: number;
   from?: TelegramUser;
   chat: TelegramChat;
   text?: string;
+  sticker?: TelegramSticker;
+  reply_to_message?: TelegramMessage;
 }
 
 export interface TelegramUpdate {

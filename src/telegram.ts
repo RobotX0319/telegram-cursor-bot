@@ -1,4 +1,15 @@
 import type { Env } from "./types";
+import type { CursorRun } from "./types";
+import {
+  formatRunResultBodyPre,
+  formatRunResultHeaderHtml,
+  formatRunResultHtml,
+  formatRunResultPlain,
+  statusDecoration,
+  statusEmoji,
+  statusLabel,
+} from "./messages";
+import { getStatusStickerFileId } from "./stickers";
 
 const TELEGRAM_API = "https://api.telegram.org";
 
@@ -7,6 +18,7 @@ export const BOT_COMMANDS = [
   { command: "help", description: "Yordam" },
   { command: "status", description: "Agent holati" },
   { command: "repo", description: "GitHub repo belgilash" },
+  { command: "papka", description: "Ish papkasi" },
   { command: "new", description: "Yangi agent ochish" },
   { command: "agents", description: "Agentlar ro'yxati" },
   { command: "use", description: "Agent tanlash" },
@@ -15,6 +27,7 @@ export const BOT_COMMANDS = [
   { command: "request", description: "Ruxsat so'rash" },
   { command: "approve", description: "Ruxsat berish (admin)" },
   { command: "setkey", description: "Cursor API key saqlash" },
+  { command: "setup", description: "Bot sozlamalarini tekshirish" },
   { command: "ping", description: "Tekshirish" },
   { command: "version", description: "Bot versiyasi" },
 ] as const;
@@ -42,7 +55,7 @@ export async function sendMessage(
   env: Env,
   chatId: number,
   text: string,
-  options?: { parseMode?: "Markdown" | "HTML" },
+  options?: { parseMode?: "Markdown" | "HTML"; disablePreview?: boolean },
 ): Promise<void> {
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
@@ -55,6 +68,9 @@ export async function sendMessage(
           chat_id: chatId,
           text: chunk,
           ...(options?.parseMode ? { parse_mode: options.parseMode } : {}),
+          ...(options?.disablePreview
+            ? { disable_web_page_preview: true }
+            : {}),
         }),
       },
     );
@@ -64,6 +80,116 @@ export async function sendMessage(
       console.error("Telegram sendMessage failed:", response.status, body);
     }
   }
+}
+
+export async function sendSticker(
+  env: Env,
+  chatId: number,
+  fileId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendSticker`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        sticker: fileId,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("Telegram sendSticker failed:", response.status, body);
+  }
+}
+
+async function sendStatusSticker(
+  env: Env,
+  chatId: number,
+  run: CursorRun,
+): Promise<void> {
+  const fileId = await getStatusStickerFileId(env, run.status);
+  if (fileId) {
+    await sendSticker(env, chatId, fileId);
+    return;
+  }
+
+  await sendMessage(
+    env,
+    chatId,
+    `${statusDecoration(run.status)} ${statusEmoji(run.status)}`,
+  );
+}
+
+export async function sendRunResult(
+  env: Env,
+  chatId: number,
+  run: CursorRun,
+): Promise<void> {
+  await sendStatusSticker(env, chatId, run);
+
+  const header = formatRunResultHeaderHtml(run);
+  const bodyPre = formatRunResultBodyPre(run);
+  const full = formatRunResultHtml(run);
+
+  if (full.length <= 4096) {
+    const sent = await trySendHtml(env, chatId, full);
+    if (sent) return;
+  }
+
+  const headerSent = await trySendHtml(env, chatId, header);
+  if (!headerSent) {
+    await sendMessage(
+      env,
+      chatId,
+      `${statusEmoji(run.status)} ${statusLabel(run.status)}`,
+    );
+  }
+
+  if (bodyPre) {
+    const preMessage = `📄 <b>To'liq javob</b> <i>(nusxalash uchun bosing)</i>\n${bodyPre}`;
+    const sent = await trySendHtml(env, chatId, preMessage);
+    if (!sent) {
+      for (const chunk of splitMessage(formatRunResultPlain(run), 4096)) {
+        await sendMessage(env, chatId, chunk);
+      }
+    }
+    return;
+  }
+
+  if (!headerSent) return;
+
+  for (const chunk of splitMessage(formatRunResultPlain(run), 4096)) {
+    await sendMessage(env, chatId, chunk);
+  }
+}
+
+async function trySendHtml(
+  env: Env,
+  chatId: number,
+  html: string,
+): Promise<boolean> {
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: html,
+        parse_mode: "HTML",
+        disable_web_page_preview: false,
+      }),
+    },
+  );
+
+  if (response.ok) return true;
+
+  const body = await response.text();
+  console.error("Telegram HTML send failed:", response.status, body);
+  return false;
 }
 
 export async function sendChatAction(

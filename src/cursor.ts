@@ -1,3 +1,4 @@
+import { formatRunResultPlain } from "./messages";
 import { resolveCursorApiKey } from "./secrets";
 import { wrapPromptForAgent } from "./scope";
 import type {
@@ -104,6 +105,89 @@ export async function getRun(
   return cursorFetch<CursorRun>(env, `/agents/${agentId}/runs/${runId}`);
 }
 
+function parseRunStreamText(sseBody: string): string {
+  let resultText = "";
+  const assistantParts: string[] = [];
+
+  for (const block of sseBody.split(/\n\n+/)) {
+    const eventMatch = block.match(/^event:\s*(\S+)/m);
+    const dataMatch = block.match(/^data:\s*(.+)$/m);
+    if (!eventMatch || !dataMatch) continue;
+
+    try {
+      const data = JSON.parse(dataMatch[1]) as {
+        text?: string;
+      };
+      const event = eventMatch[1];
+
+      if (event === "assistant" && data.text) {
+        assistantParts.push(data.text);
+      }
+      if (event === "result" && data.text) {
+        resultText = data.text;
+      }
+    } catch {
+      // not-json SSE chunk
+    }
+  }
+
+  return resultText.trim() || assistantParts.join("").trim();
+}
+
+async function fetchRunStreamAssistantText(
+  env: Env,
+  agentId: string,
+  runId: string,
+): Promise<string> {
+  const apiKey = await resolveCursorApiKey(env);
+  if (!apiKey) return "";
+
+  try {
+    const response = await fetch(
+      `${CURSOR_API}/agents/${agentId}/runs/${runId}/stream`,
+      {
+        headers: {
+          Authorization: authHeader(apiKey),
+          Accept: "text/event-stream",
+        },
+      },
+    );
+
+    if (!response.ok) return "";
+
+    const body = await response.text();
+    return parseRunStreamText(body);
+  } catch {
+    return "";
+  }
+}
+
+/** Terminal run uchun result bo'sh bo'lsa qayta urinadi va streamdan matn oladi. */
+export async function getRunForDisplay(
+  env: Env,
+  agentId: string,
+  runId: string,
+): Promise<CursorRun> {
+  let run = await getRun(env, agentId, runId);
+
+  if (!isTerminal(run.status) || run.result?.trim()) {
+    return run;
+  }
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await sleep(2000);
+    run = await getRun(env, agentId, runId);
+    if (run.result?.trim()) return run;
+  }
+
+  const streamText = await fetchRunStreamAssistantText(env, agentId, runId);
+  if (streamText) {
+    return { ...run, result: streamText };
+  }
+
+  return run;
+}
+
 export const TERMINAL_STATUSES: RunStatus[] = [
   "FINISHED",
   "ERROR",
@@ -116,27 +200,7 @@ export function isTerminal(status: RunStatus): boolean {
 }
 
 export function formatRunResult(run: CursorRun): string {
-  const lines: string[] = [];
-
-  lines.push(`Status: ${run.status}`);
-
-  if (run.result) {
-    lines.push("", run.result);
-  }
-
-  if (run.git?.branches?.length) {
-    lines.push("", "Git:");
-    for (const branch of run.git.branches) {
-      if (branch.prUrl) lines.push(`PR: ${branch.prUrl}`);
-      else if (branch.branch) lines.push(`Branch: ${branch.branch}`);
-    }
-  }
-
-  if (run.durationMs != null) {
-    lines.push("", `Duration: ${Math.round(run.durationMs / 1000)}s`);
-  }
-
-  return lines.join("\n");
+  return formatRunResultPlain(run);
 }
 
 export async function sleep(ms: number): Promise<void> {
@@ -152,9 +216,11 @@ export async function pollRunAndFormat(
 ): Promise<CursorRun> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const run = await getRun(env, agentId, runId);
-    if (isTerminal(run.status)) return run;
+    if (isTerminal(run.status)) {
+      return getRunForDisplay(env, agentId, runId);
+    }
     await sleep(intervalMs);
   }
 
-  return getRun(env, agentId, runId);
+  return getRunForDisplay(env, agentId, runId);
 }

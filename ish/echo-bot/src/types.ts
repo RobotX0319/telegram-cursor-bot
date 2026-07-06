@@ -1,8 +1,15 @@
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
-  ALLOWED_USER_ID: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_API_KEY_B64?: string;
+  CHAT_HISTORY?: KVNamespace;
   ENVIRONMENT?: string;
+}
+
+export interface ChatTurn {
+  role: "user" | "model";
+  text: string;
 }
 
 export interface TelegramUser {

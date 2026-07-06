@@ -1,30 +1,15 @@
-import { isBootstrapAdmin, listAllAdminIds } from "./admins";
+import { getBootstrapAdminIds, isBootstrapAdmin } from "./admins";
 import { getAgent } from "./cursor";
-import { putJsonIfChanged, putJsonRequired } from "./kv-store";
 import { getSession, updateSession } from "./session";
-import type {
-  CursorAgent,
-  CursorRun,
-  Env,
-  StoredAgentEntry,
-  UserSession,
-} from "./types";
+import type { CursorAgent, CursorRun, Env, StoredAgentEntry, UserSession } from "./types";
 
-const AGENTS_INDEX_KEY = "agents:index";
+const AGENT_META_PREFIX = "agentmeta:";
 
-function withCreatedBy(
-  entry: StoredAgentEntry,
-  fallbackOwner: number,
-): StoredAgentEntry & { createdBy: number } {
-  return {
-    ...entry,
-    createdBy: entry.createdBy ?? fallbackOwner,
-  };
+function agentMetaKey(agentId: string): string {
+  return `${AGENT_META_PREFIX}${agentId}`;
 }
 
-export function normalizeSession(
-  session: UserSession | null,
-): UserSession | null {
+export function normalizeSession(session: UserSession | null): UserSession | null {
   if (!session) return null;
 
   const activeAgentId = session.activeAgentId ?? session.agentId;
@@ -45,87 +30,62 @@ export async function getNormalizedSession(
   return normalizeSession(await getSession(env, userId));
 }
 
-async function rebuildAgentsIndexFromSessions(
+export async function getAgentMeta(
   env: Env,
-): Promise<StoredAgentEntry[]> {
+  agentId: string,
+): Promise<StoredAgentEntry | null> {
+  const raw = await env.SESSIONS.get(agentMetaKey(agentId));
+  if (!raw) return null;
+  return JSON.parse(raw) as StoredAgentEntry;
+}
+
+async function saveAgentMeta(
+  env: Env,
+  entry: StoredAgentEntry,
+): Promise<void> {
+  await env.SESSIONS.put(agentMetaKey(entry.agentId), JSON.stringify(entry));
+}
+
+async function deleteAgentMeta(env: Env, agentId: string): Promise<void> {
+  await env.SESSIONS.delete(agentMetaKey(agentId));
+}
+
+function withCreatedBy(
+  entry: StoredAgentEntry,
+  fallbackOwner: number,
+): StoredAgentEntry & { createdBy: number } {
+  return {
+    ...entry,
+    createdBy: entry.createdBy ?? fallbackOwner,
+  };
+}
+
+async function listAllAgentMeta(env: Env): Promise<StoredAgentEntry[]> {
+  const list = await env.SESSIONS.list({ prefix: AGENT_META_PREFIX });
   const agents = new Map<string, StoredAgentEntry>();
 
-  for (const idStr of await listAllAdminIds(env)) {
+  for (const key of list.keys) {
+    const raw = await env.SESSIONS.get(key.name);
+    if (!raw) continue;
+    const entry = withCreatedBy(JSON.parse(raw) as StoredAgentEntry, 0);
+    agents.set(entry.agentId, entry);
+  }
+
+  // Eski agentlar (faqat sessiyada) — KV yozmasdan xotirada birlashtirish
+  for (const idStr of getBootstrapAdminIds(env)) {
     const ownerId = Number.parseInt(idStr, 10);
     if (Number.isNaN(ownerId)) continue;
+
     const session = normalizeSession(await getSession(env, ownerId));
     for (const agent of session?.agents ?? []) {
-      agents.set(agent.agentId, withCreatedBy(agent, ownerId));
+      const entry = withCreatedBy(agent, ownerId);
+      if (!agents.has(entry.agentId)) {
+        agents.set(entry.agentId, entry);
+      }
     }
   }
 
   return [...agents.values()].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  );
-}
-
-async function loadAgentsIndex(env: Env): Promise<StoredAgentEntry[]> {
-  const raw = await env.SESSIONS.get(AGENTS_INDEX_KEY);
-  if (raw) {
-    try {
-      return JSON.parse(raw) as StoredAgentEntry[];
-    } catch {
-      // rebuild below
-    }
-  }
-
-  const list = await rebuildAgentsIndexFromSessions(env);
-  if (list.length > 0) {
-    await putJsonIfChanged(env.SESSIONS, AGENTS_INDEX_KEY, list);
-  }
-  return list;
-}
-
-async function saveAgentsIndex(
-  env: Env,
-  agents: StoredAgentEntry[],
-): Promise<void> {
-  if (agents.length === 0) {
-    try {
-      await env.SESSIONS.delete(AGENTS_INDEX_KEY);
-    } catch (error) {
-      console.error("KV delete agents:index:", error);
-    }
-    return;
-  }
-  await putJsonRequired(env.SESSIONS, AGENTS_INDEX_KEY, agents);
-}
-
-async function upsertAgentInIndex(
-  env: Env,
-  entry: StoredAgentEntry,
-): Promise<void> {
-  const agents = await loadAgentsIndex(env);
-  const idx = agents.findIndex((a) => a.agentId === entry.agentId);
-  if (idx >= 0) agents[idx] = entry;
-  else agents.push(entry);
-  await saveAgentsIndex(env, agents);
-}
-
-async function getAgentMeta(
-  env: Env,
-  agentId: string,
-): Promise<StoredAgentEntry | null> {
-  const agents = await loadAgentsIndex(env);
-  return agents.find((a) => a.agentId === agentId) ?? null;
-}
-
-async function deleteAgentMeta(env: Env, agentId: string): Promise<void> {
-  const agents = await loadAgentsIndex(env);
-  await saveAgentsIndex(
-    env,
-    agents.filter((a) => a.agentId !== agentId),
-  );
-}
-
-async function listAllAgentMeta(env: Env): Promise<StoredAgentEntry[]> {
-  const agents = await loadAgentsIndex(env);
-  return [...agents].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
 }
@@ -135,9 +95,7 @@ export async function listAccessibleAgents(
   userId: number,
 ): Promise<StoredAgentEntry[]> {
   if (isBootstrapAdmin(env, userId)) {
-    const agents = await rebuildAgentsIndexFromSessions(env);
-    await putJsonIfChanged(env.SESSIONS, AGENTS_INDEX_KEY, agents);
-    return agents;
+    return listAllAgentMeta(env);
   }
 
   const session = await getNormalizedSession(env, userId);
@@ -168,30 +126,28 @@ export async function getActiveAgentEntry(
   const activeId = normalized?.activeAgentId;
   if (!activeId) return null;
 
+  const fromSession = normalized?.agents?.find((a) => a.agentId === activeId);
+  if (fromSession && canAccessAgent(env, userId, fromSession)) {
+    const fromMeta = await getAgentMeta(env, activeId);
+    return {
+      ...fromSession,
+      latestRunId:
+        (normalized?.activeAgentId === activeId
+          ? normalized?.latestRunId
+          : undefined) ??
+        fromMeta?.latestRunId ??
+        fromSession.latestRunId,
+    };
+  }
+
   const fromMeta = await getAgentMeta(env, activeId);
   if (fromMeta && canAccessAgent(env, userId, fromMeta)) {
     return {
       ...fromMeta,
-      latestRunId: normalized?.latestRunId ?? fromMeta.latestRunId,
-    };
-  }
-
-  const fromSession = normalized?.agents?.find((a) => a.agentId === activeId);
-  if (fromSession && canAccessAgent(env, userId, fromSession)) {
-    return {
-      ...fromSession,
-      latestRunId: normalized?.latestRunId ?? fromSession.latestRunId,
-    };
-  }
-
-  if (isBootstrapAdmin(env, userId)) {
-    return {
-      agentId: activeId,
-      name: fromMeta?.name ?? "Agent",
-      url: fromMeta?.url ?? "",
-      latestRunId: normalized?.latestRunId ?? fromMeta?.latestRunId,
-      createdBy: fromMeta?.createdBy ?? userId,
-      createdAt: fromMeta?.createdAt ?? "",
+      latestRunId:
+        (normalized?.activeAgentId === activeId
+          ? normalized?.latestRunId
+          : undefined) ?? fromMeta.latestRunId,
     };
   }
 
@@ -204,6 +160,7 @@ export async function registerAgent(
   agent: CursorAgent,
   run: CursorRun,
   repoUrl?: string,
+  workspaceFolder?: string,
 ): Promise<UserSession> {
   const session = normalizeSession(await getSession(env, userId));
   const agents = [...(session?.agents ?? [])];
@@ -215,6 +172,7 @@ export async function registerAgent(
     url: agent.url,
     latestRunId: run.id,
     createdBy: userId,
+    workspaceFolder: workspaceFolder ?? session?.workspaceFolder,
     createdAt:
       existingIndex >= 0
         ? agents[existingIndex].createdAt
@@ -227,7 +185,7 @@ export async function registerAgent(
     agents.push(entry);
   }
 
-  await upsertAgentInIndex(env, entry);
+  await saveAgentMeta(env, entry);
 
   return updateSession(env, userId, {
     agents,
@@ -245,24 +203,46 @@ export async function updateAgentRun(
   runId: string,
 ): Promise<UserSession> {
   const meta = await getAgentMeta(env, agentId);
-  if (meta) {
-    await upsertAgentInIndex(env, { ...meta, latestRunId: runId });
+  if (meta && meta.latestRunId !== runId) {
+    await saveAgentMeta(env, { ...meta, latestRunId: runId });
   }
 
   const creatorId = meta?.createdBy ?? userId;
-  const creatorSession = normalizeSession(await getSession(env, creatorId));
-  if (creatorSession?.agents?.length) {
-    const agents = creatorSession.agents.map((a) =>
-      a.agentId === agentId ? { ...a, latestRunId: runId } : a,
-    );
-    await updateSession(env, creatorId, { agents });
+  if (creatorId !== userId) {
+    const creatorSession = normalizeSession(await getSession(env, creatorId));
+    const existing = creatorSession?.agents?.find((a) => a.agentId === agentId);
+    if (creatorSession?.agents?.length && existing?.latestRunId !== runId) {
+      const agents = creatorSession.agents.map((a) =>
+        a.agentId === agentId ? { ...a, latestRunId: runId } : a,
+      );
+      await updateSession(env, creatorId, { agents });
+    }
   }
 
-  return updateSession(env, userId, {
+  const requesterSession = normalizeSession(await getSession(env, userId));
+  const agents = requesterSession?.agents?.map((a) =>
+    a.agentId === agentId ? { ...a, latestRunId: runId } : a,
+  );
+  const agentsSynced =
+    !agents?.length ||
+    agents.some((a) => a.agentId === agentId && a.latestRunId === runId);
+
+  if (
+    requesterSession?.activeAgentId === agentId &&
+    requesterSession.latestRunId === runId &&
+    agentsSynced
+  ) {
+    return requesterSession;
+  }
+
+  const patch: Partial<UserSession> = {
     activeAgentId: agentId,
     agentId,
     latestRunId: runId,
-  });
+    ...(agents?.length ? { agents } : {}),
+  };
+
+  return updateSession(env, userId, patch);
 }
 
 export async function selectAgent(
@@ -300,26 +280,14 @@ export async function selectAgent(
   }
 
   try {
-    const agent = await Promise.race([
-      getAgent(env, entry.agentId),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Cursor API timeout")), 8000),
-      ),
-    ]);
-    const refreshed = {
+    const agent = await getAgent(env, entry.agentId);
+    entry = {
       ...entry,
       name: agent.name,
       url: agent.url,
       latestRunId: agent.latestRunId ?? entry.latestRunId,
     };
-    if (
-      refreshed.name !== entry.name ||
-      refreshed.url !== entry.url ||
-      refreshed.latestRunId !== entry.latestRunId
-    ) {
-      entry = refreshed;
-      await upsertAgentInIndex(env, entry);
-    }
+    await saveAgentMeta(env, entry);
   } catch {
     // Saqlangan ma'lumot bilan davom etamiz
   }
@@ -409,9 +377,13 @@ export async function formatAgentsList(
   const lines = agents.map((agent, index) => {
     const activeMark = agent.agentId === activeId ? " ★" : "";
     const ownerMark = isBootstrapAdmin(env, userId)
-      ? ` (${agent.createdBy})`
+      ? `\n   admin: ${agent.createdBy}`
       : "";
-    return `${index + 1}. ${agent.name}${activeMark}${ownerMark}`;
+    const folderMark = agent.workspaceFolder
+      ? `\n   papka: ${agent.workspaceFolder}/`
+      : "";
+    const runInfo = agent.latestRunId ? `\n   run: ${agent.latestRunId}` : "";
+    return `${index + 1}. ${agent.name}${activeMark}\n   ${agent.agentId}${ownerMark}${folderMark}${runInfo}`;
   });
 
   const header = isBootstrapAdmin(env, userId)
@@ -433,12 +405,6 @@ export async function resolveActiveAgentId(
   userId: number,
   session: UserSession | null,
 ): Promise<string | null> {
-  const normalized = normalizeSession(session);
-  const activeId = normalized?.activeAgentId;
-  if (!activeId) return null;
-
-  if (isBootstrapAdmin(env, userId)) return activeId;
-
   const entry = await getActiveAgentEntry(env, userId, session);
   return entry?.agentId ?? null;
 }

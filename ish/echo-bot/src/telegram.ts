@@ -1,3 +1,4 @@
+import { markdownToTelegramHtml } from "./format";
 import type { Env } from "./types";
 
 const TELEGRAM_API = "https://api.telegram.org";
@@ -7,51 +8,46 @@ export async function sendMessage(
   chatId: number,
   text: string,
 ): Promise<void> {
-  const chunks = splitMessage(text, 4096);
+  const html = markdownToTelegramHtml(text);
+  const chunks = splitMessage(html, 4096);
 
   for (const chunk of chunks) {
-    const response = await fetch(
-      `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: chunk,
-        }),
-      },
-    );
-
-    if (!response.ok) {
-      const body = await response.text();
-      console.error("Telegram sendMessage failed:", response.status, body);
+    const sent = await sendChunk(env, chatId, chunk, "HTML");
+    if (!sent) {
+      const plainChunks = splitMessage(text, 4096);
+      for (const plain of plainChunks) {
+        await sendChunk(env, chatId, plain);
+      }
+      return;
     }
   }
 }
 
-export async function copyMessage(
+async function sendChunk(
   env: Env,
   chatId: number,
-  fromChatId: number,
-  messageId: number,
+  text: string,
+  parseMode?: "HTML",
 ): Promise<boolean> {
+  const body: Record<string, unknown> = {
+    chat_id: chatId,
+    text,
+  };
+  if (parseMode) body.parse_mode = parseMode;
+
   const response = await fetch(
-    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/copyMessage`,
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        from_chat_id: fromChatId,
-        message_id: messageId,
-      }),
+      body: JSON.stringify(body),
     },
   );
 
   if (response.ok) return true;
 
-  const body = await response.text();
-  console.error("Telegram copyMessage failed:", response.status, body);
+  const errorBody = await response.text();
+  console.error("Telegram sendMessage failed:", response.status, errorBody);
   return false;
 }
 
@@ -91,6 +87,27 @@ export async function getWebhookInfo(env: Env): Promise<unknown> {
     `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/getWebhookInfo`,
   );
   return response.json();
+}
+
+export async function setBotCommands(env: Env): Promise<boolean> {
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/setMyCommands`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commands: [{ command: "ping", description: "Tekshirish" }],
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("Telegram setMyCommands failed:", response.status, body);
+    return false;
+  }
+
+  return true;
 }
 
 function splitMessage(text: string, maxLen: number): string[] {

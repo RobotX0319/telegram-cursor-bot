@@ -1,6 +1,20 @@
 # Cloud Agent qoidalari
 
-## Faqat Telegram bot + Web interface
+Bu loyiha **Cloudflare Workers** da ishlaydi.
+
+## Papka tizimi
+
+| Kim | Qayerda ishlaydi |
+|-----|------------------|
+| **Asosiy admin (tizim agenti)** | `src/`, `scripts/`, `wrangler.jsonc` — platforma kodi |
+| **Boshqa adminlar** | Faqat o'z papkalarida (`ish/`, `telegram-video-bot/`, ...) |
+
+### Qoidalar
+
+- Tizim agenti boshqa adminlar papkalariga **tegmaydi**
+- Loyiha agentlari `src/` va platforma kodiga **tegmaydi**
+- Papka belgilanmagan holda kod buyruqlari **qabul qilinmaydi**
+- Yangi admin: `/new` → papka yarat → keyin ish
 
 Agent **faqat** quyidagilarda ishlaydi:
 - Telegram bot (Cloudflare Worker, webhook, buyruqlar)
@@ -15,8 +29,19 @@ Boshqa admin repolariga kirmang.
 
 ## Deploy
 
-- Faqat `git push origin main` — GitHub Actions deploy qiladi
-- `wrangler deploy` qilmang (VM da token yo'q)
+1. Kod o'zgartirish (`src/`, `wrangler.jsonc`, va hokazo)
+2. `git commit` + `git push origin main`
+3. **HAR DOIM** foydalanuvchiga o'zbekcha matnli xulosa yozing:
+   - Nima qilindi
+   - Qaysi fayllar o'zgardi
+   - Keyingi qadam (masalan: GitHub Actions deploy kuting)
+4. Faqat kod yozib qochmang — matnli javob majburiy
+
+## Agent qilmasligi kerak
+
+- `wrangler deploy` (Cloud VM da token yo'q)
+- `wrangler secret put` (faqat foydalanuvchi mahalliy mashinada)
+- Cloudflare dashboard ga kirishga urinish
 
 ## Worker secretlari
 

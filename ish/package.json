@@ -9,6 +9,8 @@
     "echo-bot:setup-webhook": "npm run setup-webhook --prefix echo-bot",
     "echo-bot:health": "node echo-bot/scripts/check-health.mjs",
     "echo-bot:types": "npm run types --prefix echo-bot",
-    "echo-bot:setup": "node setup-echo-bot.mjs"
+    "echo-bot:setup": "node setup-echo-bot.mjs",
+    "echo-bot:bot": "npm run bot --prefix echo-bot",
+    "echo-bot:daemon": "npm run bot:daemon --prefix echo-bot"
   }
 }

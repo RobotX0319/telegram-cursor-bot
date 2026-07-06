@@ -8,7 +8,9 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "setup-webhook": "node scripts/setup-webhook.mjs",
-    "check-health": "node scripts/check-health.mjs"
+    "check-health": "node scripts/check-health.mjs",
+    "bot": "npx tsx scripts/run-bot.ts",
+    "bot:daemon": "node scripts/run-bot-supervisor.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250701.0",

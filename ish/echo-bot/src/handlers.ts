@@ -1,39 +1,23 @@
-import { copyMessage, sendMessage } from "./telegram";
+import { askGemini } from "./gemini";
+import { appendTurn, loadHistory, saveHistory } from "./history";
+import { sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 
-const HELP_TEXT = `Echo bot
+const HELP_TEXT = `Gemini AI bot
 
-Yozgan xabaringiz sizga qaytariladi.
+Barcha javoblar Gemini AI orqali beriladi.
+Oxirgi 30 ta yozishma (User + Gemini) eslab qolinadi.
 
-Buyruqlar:
-/start — boshlash
-/help — yordam
-/ping — tekshirish
+/ping — ulanishni tekshirish
+/clear — xotirani tozalash
 
-Oddiy matn yuboring — bot aynan shu matnni qaytaradi.`;
-
-function isAllowedUser(env: Env, userId: number): boolean {
-  return String(userId) === env.ALLOWED_USER_ID.trim();
-}
+Savol yuboring — AI javob qaytaradi.`;
 
 export async function handleMessage(
   env: Env,
   message: TelegramMessage,
 ): Promise<void> {
-  const userId = message.from?.id;
   const chatId = message.chat.id;
-
-  if (!userId) return;
-
-  if (!isAllowedUser(env, userId)) {
-    await sendMessage(
-      env,
-      chatId,
-      "Ruxsat yo'q. Bu bot faqat egasiga xizmat qiladi.",
-    );
-    return;
-  }
-
   const text = message.text?.trim();
 
   if (text?.startsWith("/")) {
@@ -42,18 +26,15 @@ export async function handleMessage(
   }
 
   if (text) {
-    await sendMessage(env, chatId, text);
+    await replyWithGemini(env, chatId, text);
     return;
   }
 
-  const copied = await copyMessage(env, chatId, chatId, message.message_id);
-  if (!copied) {
-    await sendMessage(
-      env,
-      chatId,
-      "Bu turdagi xabarni qaytarib bo'lmadi. Matn yuboring.",
-    );
-  }
+  await sendMessage(
+    env,
+    chatId,
+    "Faqat matn yuboring — Gemini AI javob beradi.",
+  );
 }
 
 async function handleCommand(
@@ -64,11 +45,20 @@ async function handleCommand(
   const command = text.split(/\s+/)[0]!.toLowerCase().split("@")[0];
 
   switch (command) {
+    case "/ping":
+      await sendMessage(env, chatId, "pong");
+      return;
+
+    case "/clear":
+      await saveHistory(env.CHAT_HISTORY, chatId, []);
+      await sendMessage(env, chatId, "Xotira tozalandi.");
+      return;
+
     case "/start":
       await sendMessage(
         env,
         chatId,
-        "Salom! Men echo botman.\n\nYozgan xabaringizni sizga qaytaraman.\n\n/help — yordam",
+        "Salom! Men Gemini AI botman.\n\nSavol yuboring — javobni AI beradi.\nOxirgi *30 ta yozishma* eslab qolinadi.\n\n/help — yordam",
       );
       return;
 
@@ -76,11 +66,28 @@ async function handleCommand(
       await sendMessage(env, chatId, HELP_TEXT);
       return;
 
-    case "/ping":
-      await sendMessage(env, chatId, "pong");
-      return;
-
     default:
-      await sendMessage(env, chatId, text);
+      await replyWithGemini(env, chatId, text);
+  }
+}
+
+async function replyWithGemini(
+  env: Env,
+  chatId: number,
+  userMessage: string,
+): Promise<void> {
+  try {
+    const history = await loadHistory(env.CHAT_HISTORY, chatId);
+    const reply = await askGemini(env, userMessage, history);
+    const updated = appendTurn(
+      appendTurn(history, "user", userMessage),
+      "model",
+      reply,
+    );
+    await saveHistory(env.CHAT_HISTORY, chatId, updated);
+    await sendMessage(env, chatId, reply);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Noma'lum xato";
+    await sendMessage(env, chatId, `Xato: ${msg}`);
   }
 }

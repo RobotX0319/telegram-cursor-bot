@@ -69,7 +69,7 @@ export async function getAdminProfile(
       ? ((await getBootstrapRepo(env)) ??
         env.DEFAULT_GITHUB_REPO?.trim() ??
         undefined)
-      : ((await import("./user-repos")).getStoredUserRepo(env, userId) ??
+      : ((await (await import("./user-repos")).getStoredUserRepo(env, userId)) ??
         undefined);
     return {
       userId: String(userId),

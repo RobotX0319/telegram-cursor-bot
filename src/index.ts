@@ -1,7 +1,11 @@
 import { handleMessage } from "./handlers";
 import { handleUserRepoPush } from "./github-webhook";
 import { pollAndDeployUserRepos } from "./user-deploy";
-import { continuePollingPendingRuns, processPendingRuns } from "./pending";
+import {
+  continuePollingPendingRuns,
+  listPendingRuns,
+  processPendingRuns,
+} from "./pending";
 import { pollTelegramUpdates } from "./poll";
 import {
   configureWebhookFromEnv,
@@ -12,7 +16,10 @@ import {
   setBotCommands,
 } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
+import { PendingPoller } from "./pending-poller";
 import { VERSION } from "./version";
+
+export { PendingPoller };
 
 function isAdminKey(env: Env, key: string | null): boolean {
   return Boolean(key && getWebhookSecrets(env).includes(key));
@@ -66,8 +73,13 @@ export default {
         return new Response("Unauthorized", { status: 401 });
       }
 
+      const pending = await listPendingRuns(env);
       ctx.waitUntil(continuePollingPendingRuns(env, url.origin));
-      return Response.json({ ok: true, polling: true });
+      return Response.json({
+        ok: true,
+        polling: true,
+        pending: pending.length,
+      });
     }
 
     if (request.method === "GET" && url.pathname === "/admin/poll-telegram") {
@@ -118,16 +130,24 @@ export default {
   },
 
   async scheduled(
-    event: ScheduledEvent,
+    _event: ScheduledEvent,
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
-    const origin =
-      env.WORKER_PUBLIC_URL?.replace(/\/$/, "") ??
-      "https://telegram-cursor-bot.fxjournaluz.workers.dev";
+    const origin = env.WORKER_PUBLIC_URL?.replace(/\/$/, "") ?? "";
+    ctx.waitUntil(
+      (async () => {
+        const notified = await processPendingRuns(env);
+        if (notified > 0) {
+          console.log(`Cron poll: ${notified} ta natija yuborildi`);
+        }
 
-    ctx.waitUntil(ensureWebhookHealthy(env, origin));
-    ctx.waitUntil(processPendingRuns(env));
+        const remaining = await listPendingRuns(env);
+        if (remaining.length > 0) {
+          await continuePollingPendingRuns(env, origin);
+        }
+      })(),
+    );
     ctx.waitUntil(pollAndDeployUserRepos(env));
   },
 };

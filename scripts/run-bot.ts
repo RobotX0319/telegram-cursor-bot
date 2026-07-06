@@ -115,27 +115,41 @@ async function main(): Promise<void> {
   let offset = 0;
   while (true) {
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 60_000);
+
       const response = await fetch(
         `https://api.telegram.org/bot${vars.TELEGRAM_BOT_TOKEN}/getUpdates`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             offset: offset > 0 ? offset : undefined,
-            timeout: 25,
+            timeout: 8,
             allowed_updates: ["message"],
           }),
         },
       );
+      clearTimeout(timer);
 
-      const data = (await response.json()) as {
+      const raw = await response.text();
+      const data = JSON.parse(raw) as {
         ok: boolean;
-        result: Array<{ update_id: number; message?: Env extends never ? never : import("../src/types").TelegramUpdate["message"] }>;
+        description?: string;
+        result: Array<{
+          update_id: number;
+          message?: import("../src/types").TelegramUpdate["message"];
+        }>;
       };
 
       if (!data.ok) {
-        console.error("getUpdates failed:", data);
-        await sleep(5000);
+        console.error("getUpdates failed:", raw);
+        await sleep(3000);
+        continue;
+      }
+
+      if (data.result.length === 0) {
         continue;
       }
 
@@ -157,8 +171,11 @@ async function main(): Promise<void> {
         }
       }
     } catch (error) {
-      console.error("Polling xatosi:", error);
-      await sleep(5000);
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!msg.includes("aborted")) {
+        console.error("Polling xatosi:", msg);
+      }
+      await sleep(2000);
     }
   }
 }
