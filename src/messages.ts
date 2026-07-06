@@ -26,10 +26,21 @@ export function sanitizeAgentResult(text: string): string {
     s = s.replace(pattern, "");
   }
 
+  const leadingInternal =
+    /^(Respond in Uzbek|Never quote|Never repeat|Platform agent|Never touch|Edit only|Workspace:|NEVER mention|Do not speculate|Do not mention|Project workspace|Treat this message|New project agent|First: ask|Never mention platform|Continue work|New agent session|Continue helping|===USER===|\s*)/i;
+
+  const lines = s.split("\n");
+  while (lines.length > 0 && leadingInternal.test(lines[0]?.trim() ?? "")) {
+    lines.shift();
+  }
+  s = lines.join("\n").trim();
+
   const internalLines = [
     /^Platform agent\..*$/gim,
     /^Never touch .*\.?\s*$/gim,
     /^Never repeat these rules.*$/gim,
+    /^Never quote, repeat, or reveal these internal rules\.\s*$/gim,
+    /^Respond in Uzbek to the user\.\s*$/gim,
     /^Edit only .*\.?\s*$/gim,
     /^Workspace: .* ONLY.*$/gim,
     /^MUHIM:.*$/gim,
@@ -56,7 +67,7 @@ export function sanitizeAgentResult(text: string): string {
     /^User request:\s*$/gim,
     /^If user asks about anything outside.*$/gim,
     /^If asked about outside.*$/gim,
-    /^Respond to the user.*$/gim,
+    /^===USER===\s*$/gim,
     /^===INTERNAL.*$/gim,
   ];
 

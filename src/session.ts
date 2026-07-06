@@ -13,6 +13,11 @@ export async function getSession(
   return JSON.parse(raw) as UserSession;
 }
 
+function sessionFingerprint(session: UserSession): string {
+  const { updatedAt: _ignored, ...rest } = session;
+  return JSON.stringify(rest);
+}
+
 export async function saveSession(
   env: Env,
   userId: number,
@@ -30,7 +35,13 @@ export async function updateSession(
   const current =
     (await getSession(env, userId)) ??
     ({ updatedAt: new Date().toISOString() } satisfies UserSession);
-  const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
+  const merged = { ...current, ...patch };
+  const next = { ...merged, updatedAt: new Date().toISOString() };
+
+  if (sessionFingerprint(current) === sessionFingerprint(merged)) {
+    return current;
+  }
+
   await saveSession(env, userId, next);
   return next;
 }

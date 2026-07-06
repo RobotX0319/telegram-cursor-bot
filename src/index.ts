@@ -103,12 +103,7 @@ export default {
       }
 
       if (update.message) {
-        const text = update.message.text?.trim() ?? "";
         ctx.waitUntil(handleMessage(env, update.message, ctx, url.origin));
-
-        if (!text.toLowerCase().startsWith("/status")) {
-          ctx.waitUntil(processPendingRuns(env));
-        }
       }
 
       return new Response("ok");

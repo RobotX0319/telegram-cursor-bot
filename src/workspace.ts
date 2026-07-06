@@ -1,5 +1,5 @@
 import { isBootstrapAdmin } from "./admins";
-import { updateSession } from "./session";
+import { getSession, updateSession } from "./session";
 import type { StoredAgentEntry } from "./types";
 import { INTERNAL_USER_DELIMITER } from "./messages";
 import type { Env } from "./types";
@@ -86,6 +86,12 @@ export async function setAdminWorkspaceFolder(
     throw new Error(
       "Papka nomi noto'g'ri. Faqat harf, raqam, _ va - (masalan: my-bot)",
     );
+  }
+
+  const existing = await env.SESSIONS.get(workspaceKey(userId));
+  if (existing === normalized) {
+    const session = await getSession(env, userId);
+    if (session?.workspaceFolder === normalized) return normalized;
   }
 
   await env.SESSIONS.put(workspaceKey(userId), normalized);

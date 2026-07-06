@@ -14,7 +14,7 @@ export interface PendingRun {
 const PENDING_PREFIX = "pending:";
 const NOTIFIED_PREFIX = "notified:";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const POLL_INTERVAL_MS = 10_000;
+const POLL_INTERVAL_MS = 30_000;
 /** Har bir HTTP chaqiruv ~30s limit ichida 2 marta tekshiradi, keyin zanjir davom etadi. */
 const CYCLES_PER_INVOCATION = 2;
 
@@ -167,9 +167,9 @@ export async function kickoffPendingPoll(
   env: Env,
   workerOrigin?: string,
 ): Promise<void> {
-  await processPendingRuns(env);
-
   if (await schedulePendingPoller(env)) return;
+
+  await processPendingRuns(env);
 
   const origin = resolveWorkerOrigin(env, workerOrigin);
   if (!origin) {

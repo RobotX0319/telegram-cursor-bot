@@ -71,7 +71,7 @@ async function listAllAgentMeta(env: Env): Promise<StoredAgentEntry[]> {
     agents.set(entry.agentId, entry);
   }
 
-  // Eski agentlar (faqat sessiyada saqlangan) ni migratsiya qilish
+  // Eski agentlar (faqat sessiyada) — KV yozmasdan xotirada birlashtirish
   for (const idStr of getBootstrapAdminIds(env)) {
     const ownerId = Number.parseInt(idStr, 10);
     if (Number.isNaN(ownerId)) continue;
@@ -81,7 +81,6 @@ async function listAllAgentMeta(env: Env): Promise<StoredAgentEntry[]> {
       const entry = withCreatedBy(agent, ownerId);
       if (!agents.has(entry.agentId)) {
         agents.set(entry.agentId, entry);
-        await saveAgentMeta(env, entry);
       }
     }
   }
@@ -189,24 +188,37 @@ export async function updateAgentRun(
   runId: string,
 ): Promise<UserSession> {
   const meta = await getAgentMeta(env, agentId);
-  if (meta) {
+  if (meta && meta.latestRunId !== runId) {
     await saveAgentMeta(env, { ...meta, latestRunId: runId });
   }
 
   const creatorId = meta?.createdBy ?? userId;
-  const creatorSession = normalizeSession(await getSession(env, creatorId));
-  if (creatorSession?.agents?.length) {
-    const agents = creatorSession.agents.map((a) =>
-      a.agentId === agentId ? { ...a, latestRunId: runId } : a,
-    );
-    await updateSession(env, creatorId, { agents });
+  if (creatorId !== userId) {
+    const creatorSession = normalizeSession(await getSession(env, creatorId));
+    const existing = creatorSession?.agents?.find((a) => a.agentId === agentId);
+    if (creatorSession?.agents?.length && existing?.latestRunId !== runId) {
+      const agents = creatorSession.agents.map((a) =>
+        a.agentId === agentId ? { ...a, latestRunId: runId } : a,
+      );
+      await updateSession(env, creatorId, { agents });
+    }
   }
 
-  return updateSession(env, userId, {
+  const requesterSession = normalizeSession(await getSession(env, userId));
+  const patch: Partial<UserSession> = {
     activeAgentId: agentId,
     agentId,
     latestRunId: runId,
-  });
+  };
+
+  if (
+    requesterSession?.activeAgentId === agentId &&
+    requesterSession.latestRunId === runId
+  ) {
+    return requesterSession;
+  }
+
+  return updateSession(env, userId, patch);
 }
 
 export async function selectAgent(
