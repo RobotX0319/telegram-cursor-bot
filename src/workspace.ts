@@ -218,6 +218,10 @@ export function detectOutOfScopeProbe(prompt: string): boolean {
     /\badmin\s+(?:list|qo'sh|ol|remove|boshqar)/,
     /(?:src|scripts)\//,
     /platforma\s+(?:kod|tizim)/,
+    /tizim\s+ma'?lumot/,
+    /tizim\s+haqida/,
+    /tizimni\s+ko'r/,
+    /ko'ryapsanmi.*tizim/,
     /telegram-cursor-bot/,
     /\bish\/|\btelegram-video-bot\//,
     /tizim\s+agent/,
@@ -231,6 +235,7 @@ export function detectOutOfScopeProbe(prompt: string): boolean {
     /\/admin\b/,
     /bootstrap\s+admin/,
     /asosiy\s+admin/,
+    /\[scope/i,
   ];
 
   return probes.some((p) => p.test(text));
