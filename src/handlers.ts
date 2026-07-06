@@ -22,6 +22,7 @@ import {
   createRun,
   getAgent,
   getRun,
+  getRunForDisplay,
   isTerminal,
   pollRunAndFormat,
 } from "./cursor";
@@ -947,7 +948,7 @@ async function handleStatus(
   }
 
   try {
-    const run = await getRun(env, target.agentId, target.runId);
+    const run = await getRunForDisplay(env, target.agentId, target.runId);
 
     if (isTerminal(run.status)) {
       await clearPendingForManualStatus(env, target.runId);

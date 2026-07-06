@@ -48,17 +48,10 @@ export function sanitizeAgentResult(text: string): string {
   }
   s = lines.join("\n").trim();
 
+  // Faqat aniq ichki delimiterlardan keyingi qismni olib tashlash
   const internalAnywhere = [
-    /Respond in Uzbek to the user\.?\s*/gi,
-    /Never quote, repeat, or reveal these internal rules\.?\s*/gi,
-    /Platform agent\. Edit only src\/[\s\S]*?Never touch ish\/[\s\S]*?\.?\s*/gi,
-    /Never touch ish\/, telegram-video-bot\/\.?\s*/gi,
-    /===USER===\s*/gi,
     /---BOT-INTERNAL---[\s\S]*/gi,
-    /Javobni o'zbekcha yozing\.[\s\S]*?ga tegmang\.?\s*/gi,
-    /Ichki qoidalarni foydalanuvchiga aytmang\.?\s*/gi,
-    /Faqat src\/, scripts\/[\s\S]*?ga tegmang\.?\s*/gi,
-    /\[Ichki qoidalar[\s\S]*?(?=\n\n|$)/gi,
+    /===USER===[\s\S]*/gi,
   ];
   for (const pattern of internalAnywhere) {
     s = s.replace(pattern, "");
@@ -95,49 +88,58 @@ export function sanitizeAgentResult(text: string): string {
   return s.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function sanitizeAgentResultLight(text: string): string {
+  if (!text?.trim()) return "";
+
+  let s = text.trim();
+
+  for (const delimiter of [INTERNAL_USER_DELIMITER, "===USER==="]) {
+    const idx = s.indexOf(delimiter);
+    if (idx >= 0) {
+      s = s.slice(idx + delimiter.length).trim();
+    }
+  }
+
+  const botInternalIdx = s.indexOf("---BOT-INTERNAL---");
+  if (botInternalIdx >= 0) {
+    s = s.slice(0, botInternalIdx).trim();
+  }
+
+  return s.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function getDisplayResult(run: CursorRun): string {
   if (!run.result?.trim()) return "";
+
   const cleaned = sanitizeAgentResult(run.result);
-  if (isPromptEchoOnly(cleaned)) return "";
-  return cleaned;
+  if (cleaned && !isPromptEchoOnly(cleaned)) return cleaned;
+
+  const light = sanitizeAgentResultLight(run.result);
+  if (light && !isPromptEchoOnly(light)) return light;
+
+  return "";
 }
 
 function isPromptEchoOnly(text: string): boolean {
   if (!text) return true;
-  const lower = text.toLowerCase();
+  const trimmed = text.trim();
   return (
-    /^---bot-internal---/i.test(text) ||
-    /^javobni o'zbekcha yozing/i.test(text) ||
-    (/ichki qoidalarni foydalanuvchiga aytmang/i.test(text) &&
-      /faqat src\//i.test(text))
+    /^---bot-internal---/i.test(trimmed) ||
+    (/^javobni o'zbekcha yozing/i.test(trimmed) &&
+      /ichki qoidalarni foydalanuvchiga aytmang/i.test(trimmed) &&
+      /faqat src\//i.test(trimmed))
   );
 }
 
-export function buildFallbackResultText(run: CursorRun): string {
-  if (run.status !== "FINISHED") return "";
+function resolveResultTexts(run: CursorRun): { summary: string; fullPlain: string } {
+  const display = getDisplayResult(run);
+  if (!display) return { summary: "", fullPlain: "" };
 
-  const lines: string[] = ["Agent ishni tugatdi."];
+  const fullPlain = stripMarkdown(display).trim();
+  if (!fullPlain) return { summary: "", fullPlain: "" };
 
-  if (run.git?.branches?.length) {
-    for (const branch of run.git.branches) {
-      if (branch.prUrl) {
-        lines.push(`PR: ${branch.prUrl}`);
-      } else if (branch.branch) {
-        lines.push(`Branch: ${branch.branch}`);
-      }
-    }
-    lines.push("GitHub Actions avtomatik deploy qiladi (1-2 daqiqa).");
-  } else {
-    lines.push("O'zgarishlar main branch ga push qilingan bo'lishi mumkin.");
-    lines.push("Batafsil: GitHub repo yoki agent logini tekshiring.");
-  }
-
-  lines.push("");
-  lines.push(
-    "Eslatma: agent matnli xulosa qaytarmagan — AGENTS.md ga ko'ra har safar o'zbekcha xulosa yozishi kerak.",
-  );
-
-  return lines.join("\n");
+  const summary = extractSummary(display);
+  return { summary, fullPlain };
 }
 
 export function escapeHtml(text: string): string {
@@ -349,20 +351,6 @@ function formatInProgressBodyPlain(run: CursorRun): string {
   lines.push("Keyinroq yana /status yuborishingiz mumkin.");
 
   return lines.join("\n");
-}
-
-function resolveResultTexts(run: CursorRun): { summary: string; fullPlain: string } {
-  const full = getDisplayResult(run) || buildFallbackResultText(run);
-  if (!full) return { summary: "", fullPlain: "" };
-
-  const fullPlain = stripMarkdown(full).trim();
-  if (!fullPlain) return { summary: "", fullPlain: "" };
-
-  const summary = run.result
-    ? extractSummary(run.result)
-    : extractSummary(fullPlain);
-
-  return { summary, fullPlain };
 }
 
 export function formatRunResultPlain(run: CursorRun): string {

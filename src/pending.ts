@@ -1,4 +1,4 @@
-import { getRun, isTerminal, sleep } from "./cursor";
+import { getRunForDisplay, isTerminal, sleep } from "./cursor";
 import { schedulePendingPoller } from "./pending-poller";
 import { getWebhookSecrets, sendRunResult } from "./telegram";
 import type { Env } from "./types";
@@ -85,7 +85,7 @@ export async function notifyIfFinished(
   env: Env,
   pending: PendingRun,
 ): Promise<boolean> {
-  const run = await getRun(env, pending.agentId, pending.runId);
+  const run = await getRunForDisplay(env, pending.agentId, pending.runId);
   if (!isTerminal(run.status)) return false;
 
   const pendingRaw = await env.SESSIONS.get(pendingKey(pending.runId));
