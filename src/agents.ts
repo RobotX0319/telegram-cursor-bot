@@ -1,5 +1,6 @@
 import { getBootstrapAdminIds, isBootstrapAdmin } from "./admins";
 import { getAgent } from "./cursor";
+import { getBotStorage } from "./kv-store";
 import { getSession, updateSession } from "./session";
 import type { CursorAgent, CursorRun, Env, StoredAgentEntry, UserSession } from "./types";
 
@@ -34,13 +35,13 @@ export async function getAgentMeta(
   env: Env,
   agentId: string,
 ): Promise<StoredAgentEntry | null> {
-  const raw = await env.SESSIONS.get(agentMetaKey(agentId));
+  const raw = await getBotStorage(env).get(agentMetaKey(agentId));
   if (!raw) return null;
   return JSON.parse(raw) as StoredAgentEntry;
 }
 
 async function deleteAgentMeta(env: Env, agentId: string): Promise<void> {
-  await env.SESSIONS.delete(agentMetaKey(agentId));
+  await getBotStorage(env).delete(agentMetaKey(agentId));
 }
 
 function withCreatedBy(
@@ -54,11 +55,11 @@ function withCreatedBy(
 }
 
 async function listAllAgentMeta(env: Env): Promise<StoredAgentEntry[]> {
-  const list = await env.SESSIONS.list({ prefix: AGENT_META_PREFIX });
+  const list = await getBotStorage(env).list({ prefix: AGENT_META_PREFIX });
   const agents = new Map<string, StoredAgentEntry>();
 
   for (const key of list.keys) {
-    const raw = await env.SESSIONS.get(key.name);
+    const raw = await getBotStorage(env).get(key.name);
     if (!raw) continue;
     const entry = withCreatedBy(JSON.parse(raw) as StoredAgentEntry, 0);
     agents.set(entry.agentId, entry);

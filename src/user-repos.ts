@@ -12,7 +12,7 @@ import {
   userRepoName,
   userRepoUrl,
 } from "./github";
-import { putTextIfChanged } from "./kv-store";
+import { getBotStorage, putTextIfChanged } from "./kv-store";
 import { updateSession } from "./session";
 import type { Env } from "./types";
 
@@ -26,7 +26,7 @@ export async function getStoredUserRepo(
   env: Env,
   userId: number,
 ): Promise<string | null> {
-  const raw = await env.SESSIONS.get(userRepoKey(userId));
+  const raw = await getBotStorage(env).get(userRepoKey(userId));
   return raw?.trim() || null;
 }
 
@@ -35,7 +35,7 @@ export async function setStoredUserRepo(
   userId: number,
   repoUrl: string,
 ): Promise<void> {
-  await putTextIfChanged(env.SESSIONS, userRepoKey(userId), repoUrl);
+  await putTextIfChanged(getBotStorage(env), userRepoKey(userId), repoUrl);
 }
 
 export async function getPrimaryBootstrapRepo(
@@ -124,7 +124,7 @@ async function bindPrimaryBootstrapRepo(env: Env, userId: number): Promise<strin
 
   await updateBootstrapRepo(env, url);
   await updateSession(env, userId, { repoUrl: url });
-  await env.SESSIONS.delete(userRepoKey(userId));
+  await getBotStorage(env).delete(userRepoKey(userId));
 
   return url;
 }

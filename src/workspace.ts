@@ -1,5 +1,5 @@
 import { isBootstrapAdmin } from "./admins";
-import { putJsonIfChanged, putTextIfChanged } from "./kv-store";
+import { getBotStorage, putJsonIfChanged, putTextIfChanged } from "./kv-store";
 import { getSession, updateSession } from "./session";
 import type { StoredAgentEntry } from "./types";
 import type { Env } from "./types";
@@ -45,7 +45,7 @@ export function isSystemAdmin(env: Env, userId: number): boolean {
 async function loadLegacyWorkspaceMap(
   env: Env,
 ): Promise<Record<string, string>> {
-  const raw = await env.SESSIONS.get(LEGACY_MAP_KEY);
+  const raw = await getBotStorage(env).get(LEGACY_MAP_KEY);
   if (!raw) return {};
   try {
     return JSON.parse(raw) as Record<string, string>;
@@ -66,7 +66,7 @@ export async function getAdminWorkspaceFolder(
     if (fromSession) return fromSession;
   }
 
-  const fromKv = await env.SESSIONS.get(workspaceKey(userId));
+  const fromKv = await getBotStorage(env).get(workspaceKey(userId));
   if (fromKv) {
     const normalized = normalizeFolderName(fromKv);
     if (normalized) return normalized;
@@ -113,7 +113,7 @@ export async function setLegacyWorkspaceMapping(
 
   const map = await loadLegacyWorkspaceMap(env);
   map[userId] = normalized;
-  await putJsonIfChanged(env.SESSIONS, LEGACY_MAP_KEY, map);
+  await putJsonIfChanged(getBotStorage(env), LEGACY_MAP_KEY, map);
   await setAdminWorkspaceFolder(env, Number.parseInt(userId, 10), normalized);
 }
 

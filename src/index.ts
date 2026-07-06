@@ -16,6 +16,7 @@ import {
 } from "./telegram";
 import type { Env, TelegramUpdate } from "./types";
 import { PendingPoller } from "./pending-poller";
+import { usesSupabaseStorage } from "./kv-store";
 import { VERSION } from "./version";
 
 export { PendingPoller };
@@ -38,6 +39,7 @@ export default {
         service: "telegram-cursor-bot",
         version: VERSION,
         environment: env.ENVIRONMENT ?? "unknown",
+        storage: usesSupabaseStorage(env) ? "supabase" : "kv",
       });
     }
 

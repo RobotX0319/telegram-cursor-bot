@@ -1,4 +1,4 @@
-import { putTextIfChanged } from "./kv-store";
+import { getBotStorage, putTextIfChanged } from "./kv-store";
 import type { Env, RunStatus } from "./types";
 
 const STICKER_PREFIX = "sticker:";
@@ -11,7 +11,7 @@ export async function getStatusStickerFileId(
   env: Env,
   status: RunStatus,
 ): Promise<string | null> {
-  return env.SESSIONS.get(stickerKey(status));
+  return getBotStorage(env).get(stickerKey(status));
 }
 
 export async function setStatusStickerFileId(
@@ -19,17 +19,17 @@ export async function setStatusStickerFileId(
   status: string,
   fileId: string,
 ): Promise<void> {
-  await putTextIfChanged(env.SESSIONS, stickerKey(status), fileId);
+  await putTextIfChanged(getBotStorage(env), stickerKey(status), fileId);
 }
 
 export async function listStatusStickers(
   env: Env,
 ): Promise<Array<{ status: string; fileId: string }>> {
-  const list = await env.SESSIONS.list({ prefix: STICKER_PREFIX });
+  const list = await getBotStorage(env).list({ prefix: STICKER_PREFIX });
   const stickers: Array<{ status: string; fileId: string }> = [];
 
   for (const key of list.keys) {
-    const fileId = await env.SESSIONS.get(key.name);
+    const fileId = await getBotStorage(env).get(key.name);
     if (!fileId) continue;
     stickers.push({
       status: key.name.slice(STICKER_PREFIX.length),

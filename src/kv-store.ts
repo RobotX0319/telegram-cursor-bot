@@ -1,3 +1,9 @@
+import type { BotStorage, BotStoragePutOptions } from "./bot-storage";
+import { getBotStorage, usesSupabaseStorage } from "./bot-storage";
+import type { Env } from "./types";
+
+export { getBotStorage, usesSupabaseStorage };
+
 export class KvWriteLimitExceeded extends Error {
   constructor() {
     super("KV daily write limit exceeded");
@@ -27,10 +33,13 @@ export function getKvLimitResetAt(): Date {
   );
 }
 
-/** KV yozish imkoniyatini tekshirish (limit tugagan bo'lsa xato) */
-export async function assertKvWritable(kv: KVNamespace): Promise<void> {
+/** KV limit tekshiruvi — Supabase yoqilganda kerak emas */
+export async function assertKvWritable(env: Env): Promise<void> {
+  if (usesSupabaseStorage(env)) return;
+
+  const store = getBotStorage(env);
   try {
-    await kv.put("kv:write_probe", String(Date.now()), { expirationTtl: 120 });
+    await store.put("kv:write_probe", String(Date.now()), { expirationTtl: 120 });
   } catch (error) {
     if (isKvWriteLimitError(error)) {
       throw new KvWriteLimitExceeded();
@@ -63,16 +72,16 @@ export function formatKvLimitMessage(extra?: string): string {
 }
 
 export async function putJsonIfChanged(
-  kv: KVNamespace,
+  store: BotStorage,
   key: string,
   value: unknown,
 ): Promise<boolean> {
   const serialized = JSON.stringify(value);
-  const existing = await kv.get(key);
+  const existing = await store.get(key);
   if (existing === serialized) return false;
 
   try {
-    await kv.put(key, serialized);
+    await store.put(key, serialized);
     return true;
   } catch (error) {
     if (isKvWriteLimitError(error)) {
@@ -84,16 +93,16 @@ export async function putJsonIfChanged(
 }
 
 export async function putJsonRequired(
-  kv: KVNamespace,
+  store: BotStorage,
   key: string,
   value: unknown,
 ): Promise<void> {
   const serialized = JSON.stringify(value);
-  const existing = await kv.get(key);
+  const existing = await store.get(key);
   if (existing === serialized) return;
 
   try {
-    await kv.put(key, serialized);
+    await store.put(key, serialized);
   } catch (error) {
     if (isKvWriteLimitError(error)) {
       throw new KvWriteLimitExceeded();
@@ -103,16 +112,16 @@ export async function putJsonRequired(
 }
 
 export async function putTextIfChanged(
-  kv: KVNamespace,
+  store: BotStorage,
   key: string,
   value: string,
-  options?: KVNamespacePutOptions,
+  options?: BotStoragePutOptions,
 ): Promise<boolean> {
-  const existing = await kv.get(key);
+  const existing = await store.get(key);
   if (existing === value) return false;
 
   try {
-    await kv.put(key, value, options);
+    await store.put(key, value, options);
     return true;
   } catch (error) {
     if (isKvWriteLimitError(error)) {
@@ -124,16 +133,16 @@ export async function putTextIfChanged(
 }
 
 export async function putTextRequired(
-  kv: KVNamespace,
+  store: BotStorage,
   key: string,
   value: string,
-  options?: KVNamespacePutOptions,
+  options?: BotStoragePutOptions,
 ): Promise<void> {
-  const existing = await kv.get(key);
+  const existing = await store.get(key);
   if (existing === value) return;
 
   try {
-    await kv.put(key, value, options);
+    await store.put(key, value, options);
   } catch (error) {
     if (isKvWriteLimitError(error)) {
       throw new KvWriteLimitExceeded();

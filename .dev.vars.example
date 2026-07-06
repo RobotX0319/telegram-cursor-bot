@@ -20,3 +20,7 @@ CLOUDFLARE_API_TOKEN=
 # Ixtiyoriy — Cloudflare cron zaxira polling
 # CLOUDFLARE_API_TOKEN yoki CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY
 WORKER_URL=https://telegram-cursor-bot.fxjournaluz.workers.dev
+
+# Supabase storage (KV limitidan qochish) — service_role faqat mahalliy .dev.vars
+SUPABASE_URL=https://obmdederainzipigyuwi.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=

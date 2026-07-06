@@ -1,5 +1,5 @@
 import { getRunForDisplay, isTerminal } from "./cursor";
-import { putJsonIfChanged } from "./kv-store";
+import { getBotStorage, putJsonIfChanged } from "./kv-store";
 import { schedulePendingPoller } from "./pending-poller";
 import { sendRunResult } from "./telegram";
 import type { Env } from "./types";
@@ -20,7 +20,7 @@ export const TRACK_RUN_MAX_ATTEMPTS = 4;
 export const TRACK_RUN_INTERVAL_MS = 5000;
 
 async function loadPendingIndex(env: Env): Promise<PendingRun[]> {
-  const raw = await env.SESSIONS.get(PENDING_INDEX_KEY);
+  const raw = await getBotStorage(env).get(PENDING_INDEX_KEY);
   if (!raw) return [];
   try {
     return JSON.parse(raw) as PendingRun[];
@@ -34,7 +34,7 @@ async function savePendingIndex(
   env: Env,
   pending: PendingRun[],
 ): Promise<void> {
-  await putJsonIfChanged(env.SESSIONS, PENDING_INDEX_KEY, pending);
+  await putJsonIfChanged(getBotStorage(env), PENDING_INDEX_KEY, pending);
 }
 
 export async function addPendingRun(

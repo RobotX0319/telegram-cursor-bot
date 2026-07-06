@@ -12,6 +12,8 @@ export interface Env {
   CLOUDFLARE_API_TOKEN?: string;
   ENVIRONMENT?: string;
   WORKER_PUBLIC_URL?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
   SESSIONS: KVNamespace;
   PENDING_POLLER?: DurableObjectNamespace;
 }

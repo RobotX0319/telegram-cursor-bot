@@ -4,7 +4,7 @@ import {
 } from "./admins";
 import { resolveGitHubOwner, userRepoName } from "./github";
 import { getRepoForUser } from "./user-repos";
-import { putTextIfChanged } from "./kv-store";
+import { getBotStorage, putTextIfChanged } from "./kv-store";
 import type { Env } from "./types";
 
 const GITHUB_API = "https://api.github.com";
@@ -79,7 +79,7 @@ async function recordDeployedSha(
   userId: number,
   sha: string,
 ): Promise<void> {
-  await putTextIfChanged(env.SESSIONS, deployShaKey(userId), sha);
+  await putTextIfChanged(getBotStorage(env), deployShaKey(userId), sha);
 }
 
 export async function deployUserWorkerFromRepoForUser(
@@ -134,7 +134,7 @@ export async function deployUserRepoIfChanged(
   const sha = await getRepoMainSha(token, parsed.owner, parsed.repo);
   if (!sha) return false;
 
-  const last = await env.SESSIONS.get(deployShaKey(userId));
+  const last = await getBotStorage(env).get(deployShaKey(userId));
   if (last === sha) return false;
 
   try {

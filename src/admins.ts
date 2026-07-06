@@ -1,4 +1,4 @@
-import { putJsonIfChanged, putTextIfChanged } from "./kv-store";
+import { getBotStorage, putJsonIfChanged, putTextIfChanged } from "./kv-store";
 import type { Env } from "./types";
 
 export interface StoredAdmin {
@@ -48,7 +48,7 @@ export function isPrimaryBootstrapAdmin(env: Env, userId: number): boolean {
 }
 
 export async function getBootstrapRepo(env: Env): Promise<string | null> {
-  const fromKv = await env.SESSIONS.get(BOOTSTRAP_REPO_KEY);
+  const fromKv = await getBotStorage(env).get(BOOTSTRAP_REPO_KEY);
   if (fromKv?.trim()) return fromKv.trim();
   return env.DEFAULT_GITHUB_REPO?.trim() ?? null;
 }
@@ -57,7 +57,7 @@ export async function updateBootstrapRepo(
   env: Env,
   repoUrl: string,
 ): Promise<void> {
-  await putTextIfChanged(env.SESSIONS, BOOTSTRAP_REPO_KEY, repoUrl);
+  await putTextIfChanged(getBotStorage(env), BOOTSTRAP_REPO_KEY, repoUrl);
 }
 
 export async function getAdminProfile(
@@ -79,7 +79,7 @@ export async function getAdminProfile(
     };
   }
 
-  const raw = await env.SESSIONS.get(adminKey(String(userId)));
+  const raw = await getBotStorage(env).get(adminKey(String(userId)));
   if (!raw) return null;
   const admin = JSON.parse(raw) as StoredAdmin;
 
@@ -93,11 +93,11 @@ export async function getAdminProfile(
 }
 
 export async function listStoredAdmins(env: Env): Promise<StoredAdmin[]> {
-  const list = await env.SESSIONS.list({ prefix: ADMIN_PREFIX });
+  const list = await getBotStorage(env).list({ prefix: ADMIN_PREFIX });
   const admins: StoredAdmin[] = [];
 
   for (const key of list.keys) {
-    const raw = await env.SESSIONS.get(key.name);
+    const raw = await getBotStorage(env).get(key.name);
     if (!raw) continue;
     admins.push(JSON.parse(raw) as StoredAdmin);
   }
@@ -110,7 +110,7 @@ export async function listStoredAdmins(env: Env): Promise<StoredAdmin[]> {
 export async function isAllowedUser(env: Env, userId: number): Promise<boolean> {
   if (isBootstrapAdmin(env, userId)) return true;
 
-  const raw = await env.SESSIONS.get(adminKey(String(userId)));
+  const raw = await getBotStorage(env).get(adminKey(String(userId)));
   return raw != null;
 }
 
@@ -132,7 +132,7 @@ export async function addAdmin(
   }
 
   const key = adminKey(userId);
-  const existing = await env.SESSIONS.get(key);
+  const existing = await getBotStorage(env).get(key);
   if (existing) return "exists";
 
   const admin: StoredAdmin = {
@@ -141,7 +141,7 @@ export async function addAdmin(
     addedAt: new Date().toISOString(),
   };
 
-  await putJsonIfChanged(env.SESSIONS, key, admin);
+  await putJsonIfChanged(getBotStorage(env), key, admin);
   return "added";
 }
 
@@ -152,7 +152,7 @@ export async function setAdminRepo(
   updatedBy: number,
 ): Promise<void> {
   const key = adminKey(userId);
-  const raw = await env.SESSIONS.get(key);
+  const raw = await getBotStorage(env).get(key);
   const admin: StoredAdmin = raw
     ? (JSON.parse(raw) as StoredAdmin)
     : {
@@ -164,7 +164,7 @@ export async function setAdminRepo(
   admin.repoUrl = repoUrl;
   admin.repoName = repoUrl.split("/").pop();
 
-  await putJsonIfChanged(env.SESSIONS, key, admin);
+  await putJsonIfChanged(getBotStorage(env), key, admin);
 }
 
 export async function removeAdmin(
@@ -176,9 +176,9 @@ export async function removeAdmin(
   }
 
   const key = adminKey(userId);
-  const existing = await env.SESSIONS.get(key);
+  const existing = await getBotStorage(env).get(key);
   if (!existing) return "not_found";
 
-  await env.SESSIONS.delete(key);
+  await getBotStorage(env).delete(key);
   return "removed";
 }

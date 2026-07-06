@@ -1,4 +1,4 @@
-import { putJsonRequired } from "./kv-store";
+import { getBotStorage, putJsonRequired } from "./kv-store";
 import { getRepoForUser } from "./user-repos";
 import type { Env, UserSession } from "./types";
 
@@ -10,7 +10,7 @@ export async function getSession(
   env: Env,
   userId: number,
 ): Promise<UserSession | null> {
-  const raw = await env.SESSIONS.get(sessionKey(userId));
+  const raw = await getBotStorage(env).get(sessionKey(userId));
   if (!raw) return null;
   try {
     return JSON.parse(raw) as UserSession;
@@ -31,7 +31,7 @@ export async function saveSession(
   session: UserSession,
 ): Promise<void> {
   session.updatedAt = new Date().toISOString();
-  await putJsonRequired(env.SESSIONS, sessionKey(userId), session);
+  await putJsonRequired(getBotStorage(env), sessionKey(userId), session);
 }
 
 export async function updateSession(

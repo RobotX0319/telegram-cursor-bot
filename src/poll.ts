@@ -1,5 +1,5 @@
 import { handleMessage } from "./handlers";
-import { putTextIfChanged } from "./kv-store";
+import { getBotStorage, putTextIfChanged } from "./kv-store";
 import type { Env, TelegramUpdate } from "./types";
 
 const OFFSET_KEY = "telegram:poll_offset";
@@ -9,7 +9,7 @@ export async function pollTelegramUpdates(
   ctx: ExecutionContext,
   workerOrigin: string,
 ): Promise<{ ok: boolean; processed: number }> {
-  const offsetRaw = await env.SESSIONS.get(OFFSET_KEY);
+  const offsetRaw = await getBotStorage(env).get(OFFSET_KEY);
   const offset = offsetRaw ? Number(offsetRaw) : 0;
 
   const response = await fetch(
@@ -49,7 +49,7 @@ export async function pollTelegramUpdates(
   }
 
   if (lastUpdateId > offset) {
-    await putTextIfChanged(env.SESSIONS, OFFSET_KEY, String(lastUpdateId));
+    await putTextIfChanged(getBotStorage(env), OFFSET_KEY, String(lastUpdateId));
   }
 
   return { ok: true, processed: data.result.length };

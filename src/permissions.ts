@@ -1,4 +1,4 @@
-import { putJsonIfChanged } from "./kv-store";
+import { getBotStorage, putJsonIfChanged } from "./kv-store";
 import { sendMessage } from "./telegram";
 import type { Env } from "./types";
 import { getBootstrapAdminIds } from "./admins";
@@ -44,7 +44,7 @@ export async function createPermissionRequest(
     createdAt: new Date().toISOString(),
   };
 
-  await putJsonIfChanged(env.SESSIONS, requestKey(req.id), req);
+  await putJsonIfChanged(getBotStorage(env), requestKey(req.id), req);
 
   for (const adminId of getBootstrapAdminIds(env)) {
     const id = Number.parseInt(adminId, 10);
@@ -72,7 +72,7 @@ export async function getPermissionRequest(
   env: Env,
   id: string,
 ): Promise<PermissionRequest | null> {
-  const raw = await env.SESSIONS.get(requestKey(id));
+  const raw = await getBotStorage(env).get(requestKey(id));
   if (!raw) return null;
   return JSON.parse(raw) as PermissionRequest;
 }
@@ -88,9 +88,9 @@ export async function approveRequest(
   req.status = "approved";
   req.resolvedAt = new Date().toISOString();
   req.resolvedBy = resolvedBy;
-  await putJsonIfChanged(env.SESSIONS, requestKey(id), req);
+  await putJsonIfChanged(getBotStorage(env), requestKey(id), req);
 
-  await env.SESSIONS.put(grantKey(req.userId), req.prompt, {
+  await getBotStorage(env).put(grantKey(req.userId), req.prompt, {
     expirationTtl: 60 * 60 * 24,
   });
 
@@ -119,7 +119,7 @@ export async function denyRequest(
   req.status = "denied";
   req.resolvedAt = new Date().toISOString();
   req.resolvedBy = resolvedBy;
-  await putJsonIfChanged(env.SESSIONS, requestKey(id), req);
+  await putJsonIfChanged(getBotStorage(env), requestKey(id), req);
 
   await sendMessage(
     env,
@@ -135,9 +135,9 @@ export async function consumeGrantedPrompt(
   userId: number,
   prompt: string,
 ): Promise<boolean> {
-  const granted = await env.SESSIONS.get(grantKey(userId));
+  const granted = await getBotStorage(env).get(grantKey(userId));
   if (!granted) return false;
   if (granted.trim() !== prompt.trim()) return false;
-  await env.SESSIONS.delete(grantKey(userId));
+  await getBotStorage(env).delete(grantKey(userId));
   return true;
 }
