@@ -1,4 +1,4 @@
-import type { Env } from "./types";
+import type { ChatTurn, Env } from "./types";
 
 const GEMINI_API =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
@@ -11,14 +11,28 @@ function resolveApiKey(env: Env): string {
   throw new Error("GEMINI_API_KEY sozlanmagan");
 }
 
-export async function askGemini(env: Env, prompt: string): Promise<string> {
+function toGeminiContents(history: ChatTurn[], prompt: string) {
+  const contents = history.map((turn) => ({
+    role: turn.role,
+    parts: [{ text: turn.text }],
+  }));
+
+  contents.push({ role: "user" as const, parts: [{ text: prompt }] });
+  return contents;
+}
+
+export async function askGemini(
+  env: Env,
+  prompt: string,
+  history: ChatTurn[] = [],
+): Promise<string> {
   const apiKey = resolveApiKey(env);
 
   const response = await fetch(`${GEMINI_API}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: toGeminiContents(history, prompt),
     }),
   });
 

@@ -1,12 +1,15 @@
 import { askGemini } from "./gemini";
+import { appendTurn, loadHistory, saveHistory } from "./history";
 import { sendMessage } from "./telegram";
 import type { Env, TelegramMessage } from "./types";
 
 const HELP_TEXT = `Gemini AI bot
 
 Barcha javoblar Gemini AI orqali beriladi.
+Oxirgi 10 ta xabar eslab qolinadi.
 
 /ping — ulanishni tekshirish
+/clear — xotirani tozalash
 
 Savol yuboring — AI javob qaytaradi.`;
 
@@ -46,11 +49,16 @@ async function handleCommand(
       await sendMessage(env, chatId, "pong");
       return;
 
+    case "/clear":
+      await saveHistory(env.CHAT_HISTORY, chatId, []);
+      await sendMessage(env, chatId, "Xotira tozalandi.");
+      return;
+
     case "/start":
       await sendMessage(
         env,
         chatId,
-        "Salom! Men Gemini AI botman.\n\nSavol yuboring — javobni AI beradi.\n\n/help — yordam",
+        "Salom! Men Gemini AI botman.\n\nSavol yuboring — javobni AI beradi.\nOxirgi *10 ta xabar* eslab qolinadi.\n\n/help — yordam",
       );
       return;
 
@@ -69,7 +77,10 @@ async function replyWithGemini(
   prompt: string,
 ): Promise<void> {
   try {
-    const reply = await askGemini(env, prompt);
+    const history = await loadHistory(env.CHAT_HISTORY, chatId);
+    const reply = await askGemini(env, prompt, history);
+    const updated = appendTurn(appendTurn(history, "user", prompt), "model", reply);
+    await saveHistory(env.CHAT_HISTORY, chatId, updated);
     await sendMessage(env, chatId, reply);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Noma'lum xato";
