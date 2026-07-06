@@ -1,6 +1,6 @@
 import { formatRunResultPlain } from "./messages";
 import { resolveCursorApiKey } from "./secrets";
-import { wrapPromptForAgent } from "./scope";
+import { finalizePromptForCursor } from "./scope";
 import type {
   CreateAgentResponse,
   CreateRunResponse,
@@ -65,7 +65,7 @@ export async function createAgent(
   startingRef?: string,
 ): Promise<CreateAgentResponse> {
   const branch = startingRef ?? env.DEFAULT_GITHUB_BRANCH ?? "main";
-  const scopedPrompt = wrapPromptForAgent(prompt);
+  const scopedPrompt = finalizePromptForCursor(prompt);
   return cursorFetch<CreateAgentResponse>(env, "/agents", {
     method: "POST",
     body: JSON.stringify({
@@ -84,7 +84,7 @@ export async function createRun(
   agentId: string,
   prompt: string,
 ): Promise<CreateRunResponse> {
-  const scopedPrompt = wrapPromptForAgent(prompt);
+  const scopedPrompt = finalizePromptForCursor(prompt);
   return cursorFetch<CreateRunResponse>(env, `/agents/${agentId}/runs`, {
     method: "POST",
     body: JSON.stringify({

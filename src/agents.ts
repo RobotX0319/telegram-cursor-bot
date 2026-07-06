@@ -2,6 +2,7 @@ import { getBootstrapAdminIds, isBootstrapAdmin } from "./admins";
 import { getAgent } from "./cursor";
 import { getBotStorage, putJsonRequired } from "./kv-store";
 import { getSession, updateSession } from "./session";
+import { getAdminWorkspaceFolder, isSystemAdmin } from "./workspace";
 import type { CursorAgent, CursorRun, Env, StoredAgentEntry, UserSession } from "./types";
 
 export function displayAgentName(name?: string): string {
@@ -175,13 +176,16 @@ export async function registerAgent(
     (existingIndex >= 0 ? agents[existingIndex].name : undefined) ||
     agent.name?.trim() ||
     "Nomsiz";
+  const resolvedFolder = isSystemAdmin(env, userId)
+    ? undefined
+    : workspaceFolder ?? (await getAdminWorkspaceFolder(env, userId)) ?? undefined;
   const entry: StoredAgentEntry = {
     agentId: agent.id,
     name: resolvedName,
     url: agent.url,
     latestRunId: run.id,
     createdBy: userId,
-    workspaceFolder: workspaceFolder ?? session?.workspaceFolder,
+    workspaceFolder: resolvedFolder,
     createdAt:
       existingIndex >= 0
         ? agents[existingIndex].createdAt

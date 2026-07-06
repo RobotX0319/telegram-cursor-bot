@@ -67,6 +67,7 @@ import {
   resolveWorkspaceScope,
   setAdminWorkspaceFolder,
   setLegacyWorkspaceMapping,
+  validateFolderForAdmin,
   type PromptContext,
   type WorkspaceScope,
 } from "./workspace";
@@ -99,7 +100,7 @@ const HELP_TEXT_USER = `Telegram → Cursor Cloud Agent bot
 
 Oddiy matn yuboring — agent avtomatik ishlaydi.
 
-Avval /new → nom bering → papka yarating → keyin ish buyrug'i.`;
+Avval /papka nom → /new (nom bering) → ish buyrug'i.`;
 
 function helpTextFor(env: Env, userId: number): string {
   return isBootstrapAdmin(env, userId) ? HELP_TEXT_BOOTSTRAP : HELP_TEXT_USER;
@@ -879,14 +880,45 @@ async function preparePromptForDispatch(
   if (ctx.mode === "awaiting_folder") {
     const folderFromPrompt = detectFolderSetupIntent(prompt);
     if (folderFromPrompt) {
-      await setAdminWorkspaceFolder(env, ctx.ownerId, folderFromPrompt);
+      const validation = await validateFolderForAdmin(
+        env,
+        ctx.ownerId,
+        folderFromPrompt,
+      );
+      if (!validation.ok) {
+        return { ok: false, message: validation.message };
+      }
+      await setAdminWorkspaceFolder(env, ctx.ownerId, validation.folder);
       ctx = {
         ...ctx,
         mode: "project",
-        folder: folderFromPrompt,
+        folder: validation.folder,
       };
+    } else if (options.isNewAgent && !operatorIsBootstrap) {
+      return { ok: false, message: NO_WORKSPACE_MESSAGE };
     } else if (isLikelyWorkPrompt(prompt) && !options.isNewAgent) {
       return { ok: false, message: NO_WORKSPACE_MESSAGE };
+    }
+  }
+
+  if (ctx.mode === "project" && ctx.folder) {
+    const folderFromPrompt = detectFolderSetupIntent(prompt);
+    if (folderFromPrompt && folderFromPrompt !== ctx.folder) {
+      const validation = await validateFolderForAdmin(
+        env,
+        ctx.ownerId,
+        folderFromPrompt,
+      );
+      if (!validation.ok) {
+        return { ok: false, message: validation.message };
+      }
+      return {
+        ok: false,
+        message: [
+          `Agent faqat «${ctx.folder}/» da ishlaydi.`,
+          `«${folderFromPrompt}/» ga o'tish mumkin emas — yangi agent: /new`,
+        ].join("\n"),
+      };
     }
   }
 
@@ -1071,22 +1103,46 @@ async function createNewAgentWithName(
     return;
   }
 
-  const promptCtx = await resolvePromptContext(env, userId, null);
-  const wrappedPrompt = buildAgentPrompt("Yangi agent tayyor.", promptCtx, {
+  if (!isBootstrapAdmin(env, userId)) {
+    const folder = await getAdminWorkspaceFolder(env, userId);
+    if (!folder) {
+      await updateSession(env, userId, { awaitingNewAgentName: false });
+      await sendMessage(
+        env,
+        chatId,
+        [
+          `Agent nomi: ${name}`,
+          "",
+          NO_WORKSPACE_MESSAGE,
+          "",
+          "Papka belgilangach yana /new yuboring.",
+        ].join("\n"),
+      );
+      return;
+    }
+  }
+
+  const prepared = await preparePromptForDispatch(env, userId, "Yangi agent tayyor.", {
     isNewAgent: true,
+    agentEntry: null,
   });
+  if (!prepared.ok) {
+    await updateSession(env, userId, { awaitingNewAgentName: false });
+    await sendMessage(env, chatId, prepared.message);
+    return;
+  }
 
   await startAgentRun(
     env,
     chatId,
     userId,
-    wrappedPrompt,
+    prepared.wrappedPrompt,
     repoUrl,
     true,
     ctx,
     workerOrigin,
-    promptCtx.folder,
-    promptCtx,
+    prepared.workspaceFolder,
+    prepared.ctx,
     name,
   );
 }
@@ -1192,6 +1248,14 @@ async function startAgentRun(
   let sentToAgent = false;
 
   try {
+    if (pCtx.mode === "project" && pCtx.folder && !isBootstrapAdmin(env, userId)) {
+      const validation = await validateFolderForAdmin(env, userId, pCtx.folder);
+      if (!validation.ok) {
+        await sendMessage(env, chatId, validation.message);
+        return;
+      }
+    }
+
     const { agent, run } = await createAgent(env, prompt, repoUrl);
     sentToAgent = true;
     await registerAgent(
@@ -1200,7 +1264,7 @@ async function startAgentRun(
       agent,
       run,
       repoUrl,
-      workspaceFolder ?? pCtx.folder,
+      pCtx.mode === "project" ? pCtx.folder : workspaceFolder ?? pCtx.folder,
       displayName,
     );
     const updatedSession = await getNormalizedSession(env, userId);

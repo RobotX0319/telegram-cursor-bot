@@ -38,20 +38,77 @@ export function checkTaskScope(prompt: string): ScopeResult {
   };
 }
 
-export const AGENT_SCOPE_PREFIX = `[SCOPE — MUHIM]
-Sen faqat quyidagi loyiha doirasida ishlaysan:
-- Telegram bot (Cloudflare Worker, webhook, buyruqlar, handlerlar)
+export const SYSTEM_AGENT_SCOPE_PREFIX = `[SCOPE — TIZIM AGENT]
+Sen TIZIM AGENTISAN — platforma kodiga kira olasan.
+Ish doirasi:
+- src/, scripts/, wrangler.jsonc — asosiy Telegram bot platformasi
+- .github/workflows/ — deploy va CI/CD
 - Web interface / admin panel (HTML, CSS, JS/TS frontend)
-- Deploy va GitHub Actions (shu loyiha uchun)
 
 QILMA:
-- Boshqa loyihalar, umumiy savollar, repodan tashqari vazifalar
+- Boshqa admin papkalariga (ish/, telegram-video-bot/, ...) tegish
 - wrangler deploy yoki Cloudflare dashboard (GitHub Actions deploy qiladi)
 - Secretlar yoki tokenlarni repoga yozish
 
 Vazifa:
 `;
 
+export function buildProjectAgentScopePrefix(folder: string): string {
+  return `[SCOPE — LOYIHA AGENT]
+Sen LOYIHA AGENTISAN — TIZIM AGENTI EMASSAN.
+Faqat quyidagi papkada ishlaysan: ${folder}/
+
+TAQIQLANGAN (KIRMA, O'ZGARTIRMA):
+- src/, scripts/ — platforma tizim kodi
+- ish/, telegram-video-bot/ — boshqa adminlar loyihalari
+- Repodagi boshqa papkalar
+
+RUXSAT BERILGAN:
+- ${folder}/ ichida Telegram bot, webhook, buyruqlar, admin panel (HTML/CSS/JS)
+
+QILMA:
+- wrangler deploy yoki Cloudflare dashboard
+- Secretlar yoki tokenlarni repoga yozish
+- "Men tizim agentiman" deb javob bermang — siz loyiha agentisiz
+
+Vazifa:
+`;
+}
+
+export const AWAITING_FOLDER_SCOPE_PREFIX = `[SCOPE — LOYIHA AGENT]
+Sen LOYIHA AGENTISAN — TIZIM AGENTI EMASSAN.
+Ish papkasi hali belgilanmagan.
+
+HOZIR FAQAT:
+- Yangi papka yaratish (masalan: my-loyiha)
+- Papka nomini aniqlash
+
+TAQIQLANGAN:
+- src/, scripts/ — platforma kodi
+- ish/, telegram-video-bot/ va boshqa admin papkalari
+- Kod yozish yoki mavjud loyihalarni o'zgartirish
+
+QILMA:
+- "Men tizim agentiman" deb javob bermang
+
+Vazifa:
+`;
+
+/** @deprecated use SYSTEM_AGENT_SCOPE_PREFIX */
+export const AGENT_SCOPE_PREFIX = SYSTEM_AGENT_SCOPE_PREFIX;
+
+export function promptHasScopeBlock(prompt: string): boolean {
+  return /\[SCOPE\s*[—-]/i.test(prompt);
+}
+
 export function wrapPromptForAgent(userPrompt: string): string {
-  return `${AGENT_SCOPE_PREFIX}${userPrompt.trim()}`;
+  return `${SYSTEM_AGENT_SCOPE_PREFIX}${userPrompt.trim()}`;
+}
+
+/** Cursor API ga yuborishdan oldin — scope allaqachon qo'shilgan bo'lsa takrorlamaydi */
+export function finalizePromptForCursor(prompt: string): string {
+  if (promptHasScopeBlock(prompt)) {
+    return prompt;
+  }
+  return wrapPromptForAgent(prompt);
 }

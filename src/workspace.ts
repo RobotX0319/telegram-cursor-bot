@@ -1,5 +1,10 @@
 import { isBootstrapAdmin } from "./admins";
 import { getBotStorage, putJsonIfChanged, putTextIfChanged } from "./kv-store";
+import {
+  AWAITING_FOLDER_SCOPE_PREFIX,
+  SYSTEM_AGENT_SCOPE_PREFIX,
+  buildProjectAgentScopePrefix,
+} from "./scope";
 import { getSession, updateSession } from "./session";
 import type { StoredAgentEntry } from "./types";
 import type { Env } from "./types";
@@ -82,22 +87,91 @@ export async function getAdminWorkspaceFolder(
   return null;
 }
 
+/** Papka qaysi admin (Telegram user id) ga tegishli */
+export async function getFolderOwnerMap(
+  env: Env,
+): Promise<Map<string, number>> {
+  const owners = new Map<string, number>();
+
+  const legacy = await loadLegacyWorkspaceMap(env);
+  for (const [userIdStr, folder] of Object.entries(legacy)) {
+    const userId = Number.parseInt(userIdStr, 10);
+    const normalized = normalizeFolderName(folder);
+    if (!Number.isNaN(userId) && normalized) {
+      owners.set(normalized, userId);
+    }
+  }
+
+  const list = await getBotStorage(env).list({ prefix: WORKSPACE_PREFIX });
+  for (const key of list.keys) {
+    const raw = await getBotStorage(env).get(key.name);
+    if (!raw) continue;
+    const normalized = normalizeFolderName(raw);
+    const userId = Number.parseInt(key.name.slice(WORKSPACE_PREFIX.length), 10);
+    if (normalized && !Number.isNaN(userId)) {
+      owners.set(normalized, userId);
+    }
+  }
+
+  return owners;
+}
+
+export async function validateFolderForAdmin(
+  env: Env,
+  userId: number,
+  folder: string,
+): Promise<{ ok: true; folder: string } | { ok: false; message: string }> {
+  const normalized = normalizeFolderName(folder);
+  if (!normalized) {
+    return {
+      ok: false,
+      message:
+        "Papka nomi noto'g'ri. Faqat harf, raqam, _ va - (masalan: my-bot)",
+    };
+  }
+
+  if (isSystemAdmin(env, userId)) {
+    return { ok: true, folder: normalized };
+  }
+
+  const owners = await getFolderOwnerMap(env);
+  const existingOwner = owners.get(normalized);
+  if (existingOwner != null && existingOwner !== userId) {
+    return {
+      ok: false,
+      message: `«${normalized}/» admin ${existingOwner} ga tegishli — siz kira olmaysiz.`,
+    };
+  }
+
+  if (
+    (PROTECTED_PROJECT_FOLDERS as readonly string[]).includes(normalized) &&
+    existingOwner == null
+  ) {
+    return {
+      ok: false,
+      message: `«${normalized}/» boshqa admin loyihasi — o'z papkangizni yarating (/papka nom).`,
+    };
+  }
+
+  return { ok: true, folder: normalized };
+}
+
 export async function setAdminWorkspaceFolder(
   env: Env,
   userId: number,
   folder: string,
 ): Promise<string> {
-  const normalized = normalizeFolderName(folder);
-  if (!normalized) {
-    throw new Error(
-      "Papka nomi noto'g'ri. Faqat harf, raqam, _ va - (masalan: my-bot)",
-    );
+  const validation = await validateFolderForAdmin(env, userId, folder);
+  if (!validation.ok) {
+    throw new Error(validation.message);
   }
+  const normalized = validation.folder;
 
   const session = await getSession(env, userId);
   if (session?.workspaceFolder === normalized) return normalized;
 
   await updateSession(env, userId, { workspaceFolder: normalized });
+  await putTextIfChanged(getBotStorage(env), workspaceKey(userId), normalized);
   return normalized;
 }
 
@@ -161,6 +235,17 @@ export async function resolvePromptContext(
   const folder =
     agentEntry?.workspaceFolder ??
     (await getAdminWorkspaceFolder(env, ownerId));
+
+  if (folder && !ownerIsBootstrap) {
+    const validation = await validateFolderForAdmin(env, ownerId, folder);
+    if (!validation.ok) {
+      return {
+        mode: "awaiting_folder",
+        ownerId,
+        stealth: operatorIsBootstrap && ownerId !== operatorUserId,
+      };
+    }
+  }
 
   if (!folder) {
     return {
@@ -259,12 +344,12 @@ export const NO_WORKSPACE_MESSAGE = [
   "⚠️ Ish papkasi belgilanmagan.",
   "",
   "Avval quyidagilardan birini qiling:",
-  "1. /new — yangi agent (avval nom bering)",
-  "2. Agentga papka yaratish buyrug'i bering, masalan:",
-  '   "my-loyiha papkasini yarat"',
-  "3. Yoki to'g'ridan-to'g'ri: /papka my-loyiha",
+  "1. /papka my-loyiha — o'z papkangizni belgilang",
+  "2. /new — yangi agent (nom bering)",
   "",
-  "Papka ochilmaguncha kod yozish buyruqlari qabul qilinmaydi.",
+  "Papka ochilmaguncha agent yaratilmaydi va kod buyruqlari qabul qilinmaydi.",
+  "",
+  "Eslatma: ish/, telegram-video-bot/, src/, scripts/ — boshqa adminlar va tizimga tegishli.",
 ].join("\n");
 
 export function buildAgentPrompt(
@@ -274,20 +359,19 @@ export function buildAgentPrompt(
 ): string {
   const userPart = userPrompt.trim();
 
-  // Qoidalar AGENTS.md da — promptga ichki blok qo'shmaymiz (aks-sado bo'lmasin)
   if (ctx.mode === "system") {
-    return userPart;
+    return `${SYSTEM_AGENT_SCOPE_PREFIX}${userPart}`;
   }
 
   if (ctx.mode === "awaiting_folder") {
-    return userPart;
+    return `${AWAITING_FOLDER_SCOPE_PREFIX}${userPart}`;
   }
 
   if (ctx.folder) {
-    return userPart;
+    return `${buildProjectAgentScopePrefix(ctx.folder)}${userPart}`;
   }
 
-  return userPart;
+  return `${AWAITING_FOLDER_SCOPE_PREFIX}${userPart}`;
 }
 
 export function formatWorkspaceStatus(
