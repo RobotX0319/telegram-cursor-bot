@@ -1,4 +1,5 @@
 import {
+  displayAgentName,
   formatAgentsList,
   getActiveAgentEntry,
   getNormalizedSession,
@@ -88,7 +89,7 @@ const HELP_TEXT_USER = `Telegram → Cursor Cloud Agent bot
 /help — yordam
 /status — agent holati
 /repo <url> — GitHub repo
-/new — yangi agent
+/new — yangi agent (avval nom so'raydi)
 /agents — agentlar ro'yxati
 /use 2 — agent tanlash
 /agent — faol agent
@@ -98,7 +99,7 @@ const HELP_TEXT_USER = `Telegram → Cursor Cloud Agent bot
 
 Oddiy matn yuboring — agent avtomatik ishlaydi.
 
-Avval /new → papka yarating → keyin ish buyrug'i.`;
+Avval /new → nom bering → papka yarating → keyin ish buyrug'i.`;
 
 function helpTextFor(env: Env, userId: number): string {
   return isBootstrapAdmin(env, userId) ? HELP_TEXT_BOOTSTRAP : HELP_TEXT_USER;
@@ -166,6 +167,13 @@ async function handleCommand(
   const args = rest.join(" ").trim();
   const cmd = command.toLowerCase().split("@")[0];
 
+  if (cmd !== "/new") {
+    const session = await getNormalizedSession(env, userId);
+    if (session?.awaitingNewAgentName) {
+      await updateSession(env, userId, { awaitingNewAgentName: false });
+    }
+  }
+
   switch (cmd) {
     case "/start":
       await sendMessage(
@@ -193,7 +201,7 @@ async function handleCommand(
       return;
 
     case "/new":
-      await handleNew(env, chatId, userId, args || "Yangi agent tayyor.", ctx, workerOrigin);
+      await handleNewCommand(env, chatId, userId);
       return;
 
     case "/agents":
@@ -643,7 +651,7 @@ async function handleUse(
     await sendMessage(
       env,
       chatId,
-      "Foydalanish:\n/use 2\n/use bc_abc123\n\nRo'yxat: /agents",
+      "Foydalanish:\n/use 2\n\nRo'yxat: /agents",
     );
     return;
   }
@@ -663,9 +671,8 @@ async function handleUse(
       chatId,
       [
         `Faol agent tanlandi ★`,
-        `Nom: ${entry.name}`,
-        `ID: ${entry.agentId}`,
-        entry.url ? `URL: ${entry.url}` : null,
+        `Nom: ${displayAgentName(entry.name)}`,
+        entry.workspaceFolder ? `Papka: ${entry.workspaceFolder}/` : null,
         "",
         "Endi oddiy matn yuboring — shu agentga ketadi.",
       ]
@@ -927,16 +934,13 @@ async function handleAgentInfo(
       env,
       chatId,
       [
-        `Agent: ${agent.name}`,
-        `ID: ${agent.id}`,
+        `Agent: ${displayAgentName(entry?.name ?? agent.name)}`,
         `Status: ${agent.status}`,
         pCtx?.folder ? `Papka: ${pCtx.folder}/` : null,
         pCtx?.stealth ? `Ega: ${pCtx.ownerId} (siz egasi rejimidasiz)` : null,
         isBootstrapAdmin(env, userId) && entry?.createdBy
           ? `Yaratuvchi: ${entry.createdBy}`
           : null,
-        `URL: ${agent.url}`,
-        entry?.latestRunId ? `Latest run: ${entry.latestRunId}` : null,
         "",
         isBootstrapAdmin(env, userId)
           ? "Boshqa agent: /agents → /use 2"
@@ -1012,18 +1016,53 @@ async function handleStatus(
   }
 }
 
-async function handleNew(
+async function handleNewCommand(
   env: Env,
   chatId: number,
   userId: number,
-  prompt: string,
+): Promise<void> {
+  await updateSession(env, userId, { awaitingNewAgentName: true });
+  await sendMessage(
+    env,
+    chatId,
+    [
+      "Yangi agent uchun nom bering.",
+      "",
+      "Masalan: Video bot, Echo loyiha, Admin panel",
+      "",
+      "Keyingi xabaringiz agent nomi bo'ladi.",
+      "Bekor qilish: boshqa buyruq yuboring (/agents, /help, ...).",
+    ].join("\n"),
+  );
+}
+
+async function createNewAgentWithName(
+  env: Env,
+  chatId: number,
+  userId: number,
+  nameInput: string,
   ctx: ExecutionContext,
   workerOrigin: string,
 ): Promise<void> {
+  const name = nameInput.trim();
+  if (!name || name.startsWith("/")) {
+    await sendMessage(
+      env,
+      chatId,
+      "Agent nomi matn bo'lishi kerak (buyruq emas).\n\nMasalan: Video bot",
+    );
+    return;
+  }
+  if (name.length > 64) {
+    await sendMessage(env, chatId, "Nom juda uzun (maksimum 64 belgi).");
+    return;
+  }
+
   const session = await getNormalizedSession(env, userId);
   const repoUrl = await defaultRepo(env, session, userId);
 
   if (!repoUrl) {
+    await updateSession(env, userId, { awaitingNewAgentName: false });
     await sendMessage(
       env,
       chatId,
@@ -1033,11 +1072,9 @@ async function handleNew(
   }
 
   const promptCtx = await resolvePromptContext(env, userId, null);
-  const wrappedPrompt = buildAgentPrompt(
-    prompt || "Yangi agent tayyor.",
-    promptCtx,
-    { isNewAgent: true },
-  );
+  const wrappedPrompt = buildAgentPrompt("Yangi agent tayyor.", promptCtx, {
+    isNewAgent: true,
+  });
 
   await startAgentRun(
     env,
@@ -1050,6 +1087,7 @@ async function handleNew(
     workerOrigin,
     promptCtx.folder,
     promptCtx,
+    name,
   );
 }
 
@@ -1062,6 +1100,12 @@ async function dispatchPrompt(
   workerOrigin: string,
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
+
+  if (session?.awaitingNewAgentName) {
+    await createNewAgentWithName(env, chatId, userId, prompt, ctx, workerOrigin);
+    return;
+  }
+
   const repoUrl = await defaultRepo(env, session, userId);
   const activeId = await resolveActiveAgentId(env, userId, session);
 
@@ -1132,6 +1176,7 @@ async function startAgentRun(
   workerOrigin: string,
   workspaceFolder?: string,
   promptCtx?: PromptContext,
+  displayName?: string,
 ): Promise<void> {
   await sendChatAction(env, chatId, "typing");
 
@@ -1156,17 +1201,23 @@ async function startAgentRun(
       run,
       repoUrl,
       workspaceFolder ?? pCtx.folder,
+      displayName,
     );
-    const agentNumber = (
-      await getNormalizedSession(env, userId)
-    )?.agents?.findIndex((a) => a.agentId === agent.id);
+    const updatedSession = await getNormalizedSession(env, userId);
+    const agentNumber = updatedSession?.agents?.findIndex(
+      (a) => a.agentId === agent.id,
+    );
     const scopeLabel = formatWorkspaceStatus(scope, pCtx);
+    const agentLabel = displayAgentName(
+      displayName ??
+        updatedSession?.agents?.find((a) => a.agentId === agent.id)?.name,
+    );
 
     await sendMessage(
       env,
       chatId,
       [
-        forceNew ? "Yangi agent ochildi." : "Agent ishga tushdi.",
+        forceNew ? `Yangi agent ochildi: ${agentLabel}` : "Agent ishga tushdi.",
         scopeLabel,
         pCtx.stealth ? "Agent egasiga o'xshash rejimda ishlaydi." : null,
         agentNumber != null && agentNumber >= 0
@@ -1178,8 +1229,6 @@ async function startAgentRun(
         pCtx.mode === "awaiting_folder"
           ? "Avval papka yarating yoki /papka nom bering."
           : null,
-        `Agent: ${agent.url}`,
-        `Run: ${run.id}`,
         "",
         "Natija tayyor bo'lganda xabar yuboraman...",
         isBootstrapAdmin(env, userId)
@@ -1244,9 +1293,8 @@ async function continueAgentRun(
       [
         "Buyruq yuborildi.",
         promptCtx?.stealth ? "(egasi rejimi — chat davom etadi)" : null,
-        entry ? `Agent: ${entry.name}` : null,
+        entry ? `Agent: ${displayAgentName(entry.name)}` : null,
         folder ? `Papka: ${folder}/` : null,
-        `Run: ${run.id}`,
         "",
         "Kutilmoqda...",
       ]

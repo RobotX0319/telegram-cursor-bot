@@ -1,8 +1,13 @@
 import { getBootstrapAdminIds, isBootstrapAdmin } from "./admins";
 import { getAgent } from "./cursor";
-import { getBotStorage } from "./kv-store";
+import { getBotStorage, putJsonRequired } from "./kv-store";
 import { getSession, updateSession } from "./session";
 import type { CursorAgent, CursorRun, Env, StoredAgentEntry, UserSession } from "./types";
+
+export function displayAgentName(name?: string): string {
+  const trimmed = name?.trim();
+  return trimmed || "Nomsiz";
+}
 
 export function normalizeSession(session: UserSession | null): UserSession | null {
   if (!session) return null;
@@ -42,6 +47,10 @@ export async function getAgentMeta(
 
 async function deleteAgentMeta(env: Env, agentId: string): Promise<void> {
   await getBotStorage(env).delete(agentMetaKey(agentId));
+}
+
+async function saveAgentMeta(env: Env, entry: StoredAgentEntry): Promise<void> {
+  await putJsonRequired(getBotStorage(env), agentMetaKey(entry.agentId), entry);
 }
 
 function withCreatedBy(
@@ -155,14 +164,20 @@ export async function registerAgent(
   run: CursorRun,
   repoUrl?: string,
   workspaceFolder?: string,
+  displayName?: string,
 ): Promise<UserSession> {
   const session = normalizeSession(await getSession(env, userId));
   const agents = [...(session?.agents ?? [])];
 
   const existingIndex = agents.findIndex((a) => a.agentId === agent.id);
+  const resolvedName =
+    displayName?.trim() ||
+    (existingIndex >= 0 ? agents[existingIndex].name : undefined) ||
+    agent.name?.trim() ||
+    "Nomsiz";
   const entry: StoredAgentEntry = {
     agentId: agent.id,
-    name: agent.name,
+    name: resolvedName,
     url: agent.url,
     latestRunId: run.id,
     createdBy: userId,
@@ -179,11 +194,14 @@ export async function registerAgent(
     agents.push(entry);
   }
 
+  await saveAgentMeta(env, entry);
+
   return updateSession(env, userId, {
     agents,
     activeAgentId: agent.id,
     agentId: agent.id,
     latestRunId: run.id,
+    awaitingNewAgentName: false,
     ...(repoUrl ? { repoUrl } : {}),
   });
 }
@@ -284,7 +302,7 @@ export async function selectAgent(
     ]);
     entry = {
       ...entry,
-      name: agent.name,
+      name: displayAgentName(agent.name?.trim() || entry.name),
       url: agent.url,
       latestRunId: agent.latestRunId ?? entry.latestRunId,
     };
@@ -357,7 +375,7 @@ export async function removeAgentFromList(
     });
   }
 
-  return { ok: true, name: removed.name };
+  return { ok: true, name: displayAgentName(removed.name) };
 }
 
 export async function formatAgentsList(
@@ -382,8 +400,10 @@ export async function formatAgentsList(
     const folderMark = agent.workspaceFolder
       ? `\n   papka: ${agent.workspaceFolder}/`
       : "";
-    const runInfo = agent.latestRunId ? `\n   run: ${agent.latestRunId}` : "";
-    return `${index + 1}. ${agent.name}${activeMark}\n   ${agent.agentId}${ownerMark}${folderMark}${runInfo}`;
+    const details = [ownerMark, folderMark].filter(Boolean).join("");
+    return details
+      ? `${index + 1}. ${displayAgentName(agent.name)}${activeMark}${details}`
+      : `${index + 1}. ${displayAgentName(agent.name)}${activeMark}`;
   });
 
   const header = isBootstrapAdmin(env, userId)

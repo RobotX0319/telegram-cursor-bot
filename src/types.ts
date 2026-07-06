@@ -35,6 +35,8 @@ export interface UserSession {
   repoUrl?: string;
   latestRunId?: string;
   workspaceFolder?: string;
+  /** /new dan keyin foydalanuvchi nom yuborishi kutilmoqda */
+  awaitingNewAgentName?: boolean;
   updatedAt: string;
 }
 

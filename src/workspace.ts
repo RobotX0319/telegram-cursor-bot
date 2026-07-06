@@ -259,7 +259,7 @@ export const NO_WORKSPACE_MESSAGE = [
   "⚠️ Ish papkasi belgilanmagan.",
   "",
   "Avval quyidagilardan birini qiling:",
-  "1. /new — yangi agent oching",
+  "1. /new — yangi agent (avval nom bering)",
   "2. Agentga papka yaratish buyrug'i bering, masalan:",
   '   "my-loyiha papkasini yarat"',
   "3. Yoki to'g'ridan-to'g'ri: /papka my-loyiha",
