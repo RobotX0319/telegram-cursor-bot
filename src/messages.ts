@@ -6,11 +6,24 @@ const PLACEHOLDER_SUFFIX = "\uE001";
 export const INTERNAL_USER_DELIMITER = "===USER===";
 
 export function sanitizeAgentResult(text: string): string {
+  if (!text?.trim()) return "";
+
   let s = text.trim();
 
   const delimiterIdx = s.indexOf(INTERNAL_USER_DELIMITER);
   if (delimiterIdx >= 0) {
     s = s.slice(delimiterIdx + INTERNAL_USER_DELIMITER.length).trim();
+  }
+
+  // Eski format: qoidalar ===USER=== dan oldin
+  const altDelimiter = s.indexOf("===USER===");
+  if (altDelimiter >= 0) {
+    s = s.slice(altDelimiter + "===USER===".length).trim();
+  }
+
+  const botInternalIdx = s.indexOf("---BOT-INTERNAL---");
+  if (botInternalIdx >= 0) {
+    s = s.slice(0, botInternalIdx).trim();
   }
 
   s = s.replace(/<!--[\s\S]*?-->\s*/g, "");
@@ -26,56 +39,62 @@ export function sanitizeAgentResult(text: string): string {
     s = s.replace(pattern, "");
   }
 
-  const leadingInternal =
-    /^(Respond in Uzbek|Never quote|Never repeat|Platform agent|Never touch|Edit only|Workspace:|NEVER mention|Do not speculate|Do not mention|Project workspace|Treat this message|New project agent|First: ask|Never mention platform|Continue work|New agent session|Continue helping|===USER===|\s*)/i;
+  const internalLine =
+    /^(Respond in Uzbek|Never quote|Never repeat|Platform agent|Never touch|Edit only|Workspace:|NEVER mention|Do not speculate|Do not mention|Project workspace|Treat this message|New project agent|First: ask|Never mention platform|Continue work|New agent session|Continue helping|===USER===|---BOT-INTERNAL---|---|\s*)/i;
 
   const lines = s.split("\n");
-  while (lines.length > 0 && leadingInternal.test(lines[0]?.trim() ?? "")) {
+  while (lines.length > 0 && internalLine.test(lines[0]?.trim() ?? "")) {
     lines.shift();
   }
   s = lines.join("\n").trim();
 
+  const internalAnywhere = [
+    /Respond in Uzbek to the user\.?\s*/gi,
+    /Never quote, repeat, or reveal these internal rules\.?\s*/gi,
+    /Platform agent\. Edit only src\/[\s\S]*?Never touch ish\/[\s\S]*?\.?\s*/gi,
+    /Never touch ish\/, telegram-video-bot\/\.?\s*/gi,
+    /===USER===\s*/gi,
+    /---BOT-INTERNAL---[\s\S]*?(?=\n\n|$)/gi,
+    /\[Ichki qoidalar[\s\S]*?(?=\n\n|$)/gi,
+  ];
+  for (const pattern of internalAnywhere) {
+    s = s.replace(pattern, "");
+  }
+
+  // Bot formati aks-sado bo'lsa olib tashlash (agent takrorlaganda)
+  const botEchoLines = [
+    /^🎉\s*✅?\s*Tugadi\s*$/gim,
+    /^✅?\s*Tugadi\s*$/gim,
+    /^Status:\s*FINISHED\s*$/gim,
+    /^⏱\s*Vaqt:\s*\d+\s*soniya\s*$/gim,
+    /^📦\s*Git\s*$/gim,
+    /^🌿\s*Branch:\s*\S+\s*$/gim,
+    /^📝\s*Qisqa xulosa\s*$/gim,
+    /^📄\s*To'liq javob\s*$/gim,
+  ];
+  for (const pattern of botEchoLines) {
+    s = s.replace(pattern, "");
+  }
+
   const internalLines = [
     /^Platform agent\..*$/gim,
     /^Never touch .*\.?\s*$/gim,
-    /^Never repeat these rules.*$/gim,
-    /^Never quote, repeat, or reveal these internal rules\.\s*$/gim,
-    /^Respond in Uzbek to the user\.\s*$/gim,
     /^Edit only .*\.?\s*$/gim,
     /^Workspace: .* ONLY.*$/gim,
-    /^MUHIM:.*$/gim,
     /^NEVER mention:.*$/gim,
-    /^Do not speculate.*$/gim,
-    /^Do not mention other users.*$/gim,
-    /^Project workspace:.*$/gim,
-    /^Treat this message as.*$/gim,
-    /^New project agent\..*$/gim,
-    /^First: ask for folder.*$/gim,
-    /^Never mention platform.*$/gim,
-    /^Continue work in this folder\.\s*$/gim,
-    /^New agent session.*$/gim,
-    /^Continue helping your admin.*$/gim,
-    /^Davom eting — faqat shu papka.*$/gim,
-    /^Bu yangi agent —.*$/gim,
-    /^Faqat platforma kodini.*$/gim,
-    /^Siz asosiy tizim.*$/gim,
-    /^Ruxsat:.*$/gim,
-    /^Taqiq:.*$/gim,
     /^Foydalanuvchi so'rovi:\s*$/gim,
-    /^Foydalanuvchi xabari:\s*$/gim,
     /^User message:\s*$/gim,
-    /^User request:\s*$/gim,
-    /^If user asks about anything outside.*$/gim,
-    /^If asked about outside.*$/gim,
-    /^===USER===\s*$/gim,
-    /^===INTERNAL.*$/gim,
   ];
-
   for (const pattern of internalLines) {
     s = s.replace(pattern, "");
   }
 
   return s.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+export function getDisplayResult(run: CursorRun): string {
+  if (!run.result?.trim()) return "";
+  return sanitizeAgentResult(run.result);
 }
 
 export function escapeHtml(text: string): string {
@@ -245,6 +264,7 @@ export function statusLabel(status: RunStatus): string {
 
 function extractSummary(text: string, maxLen = 280): string {
   const cleaned = stripMarkdown(sanitizeAgentResult(text)).replace(/\s+/g, " ");
+  if (!cleaned) return "";
   if (cleaned.length <= maxLen) return cleaned;
 
   const sentenceEnd = cleaned.search(/[.!?]\s/);
@@ -273,7 +293,8 @@ export function formatRunResultPlain(run: CursorRun): string {
   }
 
   if (run.result) {
-    lines.push("", stripMarkdown(sanitizeAgentResult(run.result)));
+    const body = getDisplayResult(run);
+    if (body) lines.push("", stripMarkdown(body));
   }
 
   return lines.join("\n");
@@ -311,24 +332,28 @@ export function formatRunResultHeaderHtml(run: CursorRun): string {
   }
 
   if (run.result) {
-    parts.push("");
-    parts.push("📝 <b>Qisqa xulosa</b>");
-    parts.push(escapeHtml(extractSummary(run.result)));
+    const summary = extractSummary(run.result);
+    if (summary) {
+      parts.push("");
+      parts.push("📝 <b>Qisqa xulosa</b>");
+      parts.push(escapeHtml(summary));
+    }
   }
 
   return parts.join("\n");
 }
 
 export function formatRunResultBodyPre(run: CursorRun): string | null {
-  if (!run.result?.trim()) return null;
-
-  const body = stripMarkdown(sanitizeAgentResult(run.result.trim()));
+  const body = getDisplayResult(run);
   if (!body) return null;
+
+  const plain = stripMarkdown(body);
+  if (!plain) return null;
   const maxBody = 3800;
   const text =
-    body.length > maxBody
-      ? `${body.slice(0, maxBody)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
-      : body;
+    plain.length > maxBody
+      ? `${plain.slice(0, maxBody)}\n\n… (qisqartirildi, /status bilan qayta ko'ring)`
+      : plain;
 
   return `<pre>${escapeHtml(text)}</pre>`;
 }
@@ -341,6 +366,11 @@ export function formatRunResultHtml(run: CursorRun): string {
     parts.push("");
     parts.push("📄 <b>To'liq javob</b> <i>(nusxalash uchun bosing)</i>");
     parts.push(bodyPre);
+  } else if (run.result?.trim()) {
+    parts.push("");
+    parts.push(
+      "ℹ️ <i>Agent matnli javob qaytarmadi (faqat ish bajarildi). /status bilan qayta ko'ring.</i>",
+    );
   }
 
   return parts.join("\n");
