@@ -1,7 +1,7 @@
 import type { Env } from "./types";
 
 const GEMINI_API =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 export async function askGemini(env: Env, prompt: string): Promise<string> {
   if (!env.GEMINI_API_KEY?.trim()) {
