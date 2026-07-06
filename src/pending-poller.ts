@@ -1,7 +1,7 @@
 import { listPendingRuns, processPendingRuns } from "./pending";
 import type { Env } from "./types";
 
-const POLL_INTERVAL_MS = 30_000;
+const POLL_INTERVAL_MS = 120_000;
 
 export class PendingPoller {
   constructor(

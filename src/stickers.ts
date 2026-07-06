@@ -1,3 +1,4 @@
+import { putTextIfChanged } from "./kv-store";
 import type { Env, RunStatus } from "./types";
 
 const STICKER_PREFIX = "sticker:";
@@ -18,7 +19,7 @@ export async function setStatusStickerFileId(
   status: string,
   fileId: string,
 ): Promise<void> {
-  await env.SESSIONS.put(stickerKey(status), fileId);
+  await putTextIfChanged(env.SESSIONS, stickerKey(status), fileId);
 }
 
 export async function listStatusStickers(

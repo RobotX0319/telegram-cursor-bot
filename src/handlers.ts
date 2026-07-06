@@ -26,7 +26,6 @@ import {
   pollRunAndFormat,
 } from "./cursor";
 import {
-  assertKvWritable,
   formatKvLimitMessage,
   isKvWriteLimitError,
 } from "./kv-store";
@@ -39,6 +38,7 @@ import {
   kickoffPendingPoll,
   listPendingRuns,
   notifyIfFinished,
+  processPendingRuns,
 } from "./pending";
 import {
   STICKER_STATUSES,
@@ -351,10 +351,12 @@ async function handleSetup(
   lines.push(
     pollerOk
       ? "✅ Avtomatik polling (Durable Objects)"
-      : "⚠️ Polling zanjir rejimida",
+      : "⚠️ Polling zaxira rejimida",
   );
 
-  await kickoffPendingPoll(env, workerOrigin);
+  if (!pollerOk) {
+    await processPendingRuns(env);
+  }
 
   lines.push("");
   lines.push("Lokal to'liq o'rnatish:");
@@ -1145,8 +1147,6 @@ async function startAgentRun(
   let sentToAgent = false;
 
   try {
-    await assertKvWritable(env.SESSIONS);
-
     const { agent, run } = await createAgent(env, prompt, repoUrl);
     sentToAgent = true;
     await registerAgent(
@@ -1232,8 +1232,6 @@ async function continueAgentRun(
   let sentToAgent = false;
 
   try {
-    await assertKvWritable(env.SESSIONS);
-
     const { run } = await createRun(env, agentId, prompt);
     sentToAgent = true;
     const session = await updateAgentRun(env, userId, agentId, run.id);

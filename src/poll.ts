@@ -1,4 +1,5 @@
 import { handleMessage } from "./handlers";
+import { putTextIfChanged } from "./kv-store";
 import type { Env, TelegramUpdate } from "./types";
 
 const OFFSET_KEY = "telegram:poll_offset";
@@ -48,7 +49,7 @@ export async function pollTelegramUpdates(
   }
 
   if (lastUpdateId > offset) {
-    await env.SESSIONS.put(OFFSET_KEY, String(lastUpdateId));
+    await putTextIfChanged(env.SESSIONS, OFFSET_KEY, String(lastUpdateId));
   }
 
   return { ok: true, processed: data.result.length };

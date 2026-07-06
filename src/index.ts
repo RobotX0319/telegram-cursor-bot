@@ -4,7 +4,6 @@ import { pollAndDeployUserRepos } from "./user-deploy";
 import {
   continuePollingPendingRuns,
   listPendingRuns,
-  processPendingRuns,
 } from "./pending";
 import { pollTelegramUpdates } from "./poll";
 import {
@@ -139,19 +138,6 @@ export default {
       "https://telegram-cursor-bot.fxjournaluz.workers.dev";
 
     ctx.waitUntil(ensureWebhookHealthy(env, origin));
-    ctx.waitUntil(
-      (async () => {
-        const notified = await processPendingRuns(env);
-        if (notified > 0) {
-          console.log(`Cron poll: ${notified} ta natija yuborildi`);
-        }
-
-        const remaining = await listPendingRuns(env);
-        if (remaining.length > 0) {
-          await continuePollingPendingRuns(env, origin);
-        }
-      })(),
-    );
     ctx.waitUntil(pollAndDeployUserRepos(env));
   },
 };

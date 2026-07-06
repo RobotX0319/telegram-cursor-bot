@@ -1,4 +1,5 @@
 import { isBootstrapAdmin } from "./admins";
+import { putJsonIfChanged, putTextIfChanged } from "./kv-store";
 import { getSession, updateSession } from "./session";
 import type { StoredAgentEntry } from "./types";
 import type { Env } from "./types";
@@ -59,6 +60,12 @@ export async function getAdminWorkspaceFolder(
 ): Promise<string | null> {
   if (isSystemAdmin(env, userId)) return null;
 
+  const session = await getSession(env, userId);
+  if (session?.workspaceFolder) {
+    const fromSession = normalizeFolderName(session.workspaceFolder);
+    if (fromSession) return fromSession;
+  }
+
   const fromKv = await env.SESSIONS.get(workspaceKey(userId));
   if (fromKv) {
     const normalized = normalizeFolderName(fromKv);
@@ -87,13 +94,9 @@ export async function setAdminWorkspaceFolder(
     );
   }
 
-  const existing = await env.SESSIONS.get(workspaceKey(userId));
-  if (existing === normalized) {
-    const session = await getSession(env, userId);
-    if (session?.workspaceFolder === normalized) return normalized;
-  }
+  const session = await getSession(env, userId);
+  if (session?.workspaceFolder === normalized) return normalized;
 
-  await env.SESSIONS.put(workspaceKey(userId), normalized);
   await updateSession(env, userId, { workspaceFolder: normalized });
   return normalized;
 }
@@ -110,7 +113,7 @@ export async function setLegacyWorkspaceMapping(
 
   const map = await loadLegacyWorkspaceMap(env);
   map[userId] = normalized;
-  await env.SESSIONS.put(LEGACY_MAP_KEY, JSON.stringify(map));
+  await putJsonIfChanged(env.SESSIONS, LEGACY_MAP_KEY, map);
   await setAdminWorkspaceFolder(env, Number.parseInt(userId, 10), normalized);
 }
 

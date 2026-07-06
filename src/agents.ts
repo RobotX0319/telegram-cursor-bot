@@ -3,12 +3,6 @@ import { getAgent } from "./cursor";
 import { getSession, updateSession } from "./session";
 import type { CursorAgent, CursorRun, Env, StoredAgentEntry, UserSession } from "./types";
 
-const AGENT_META_PREFIX = "agentmeta:";
-
-function agentMetaKey(agentId: string): string {
-  return `${AGENT_META_PREFIX}${agentId}`;
-}
-
 export function normalizeSession(session: UserSession | null): UserSession | null {
   if (!session) return null;
 
@@ -30,6 +24,12 @@ export async function getNormalizedSession(
   return normalizeSession(await getSession(env, userId));
 }
 
+const AGENT_META_PREFIX = "agentmeta:";
+
+function agentMetaKey(agentId: string): string {
+  return `${AGENT_META_PREFIX}${agentId}`;
+}
+
 export async function getAgentMeta(
   env: Env,
   agentId: string,
@@ -37,13 +37,6 @@ export async function getAgentMeta(
   const raw = await env.SESSIONS.get(agentMetaKey(agentId));
   if (!raw) return null;
   return JSON.parse(raw) as StoredAgentEntry;
-}
-
-async function saveAgentMeta(
-  env: Env,
-  entry: StoredAgentEntry,
-): Promise<void> {
-  await env.SESSIONS.put(agentMetaKey(entry.agentId), JSON.stringify(entry));
 }
 
 async function deleteAgentMeta(env: Env, agentId: string): Promise<void> {
@@ -185,8 +178,6 @@ export async function registerAgent(
     agents.push(entry);
   }
 
-  await saveAgentMeta(env, entry);
-
   return updateSession(env, userId, {
     agents,
     activeAgentId: agent.id,
@@ -203,10 +194,6 @@ export async function updateAgentRun(
   runId: string,
 ): Promise<UserSession> {
   const meta = await getAgentMeta(env, agentId);
-  if (meta && meta.latestRunId !== runId) {
-    await saveAgentMeta(env, { ...meta, latestRunId: runId });
-  }
-
   const creatorId = meta?.createdBy ?? userId;
   if (creatorId !== userId) {
     const creatorSession = normalizeSession(await getSession(env, creatorId));
@@ -279,6 +266,14 @@ export async function selectAgent(
     }
   }
 
+  const session = await getNormalizedSession(env, userId);
+  if (
+    session?.activeAgentId === entry.agentId &&
+    session.latestRunId === (entry.latestRunId ?? session.latestRunId)
+  ) {
+    return { ok: true, entry };
+  }
+
   try {
     const agent = await Promise.race([
       getAgent(env, entry.agentId),
@@ -292,7 +287,6 @@ export async function selectAgent(
       url: agent.url,
       latestRunId: agent.latestRunId ?? entry.latestRunId,
     };
-    await saveAgentMeta(env, entry);
   } catch {
     // Saqlangan ma'lumot bilan davom etamiz
   }
