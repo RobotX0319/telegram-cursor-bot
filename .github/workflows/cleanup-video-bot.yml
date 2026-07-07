@@ -1,0 +1,79 @@
+name: Cleanup video bot infrastructure
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-video-bot.yml"
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete Cloudflare Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN va CLOUDFLARE_ACCOUNT_ID kerak"
+            exit 1
+          fi
+          for worker in telegram-video-bot tcursor-u7862655091; do
+            code=$(curl -s -o /tmp/cf-del.json -w "%{http_code}" -X DELETE \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${worker}" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+            if [ "$code" = "200" ]; then
+              echo "✓ Worker o'chirildi: ${worker}"
+            elif [ "$code" = "404" ]; then
+              echo "- Worker yo'q: ${worker}"
+            else
+              echo "::warning::Worker ${worker}: HTTP ${code}"
+              cat /tmp/cf-del.json || true
+            fi
+          done
+
+      - name: Delete GitHub user repo
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TOKEN="${GH_PAT:-${GITHUB_TOKEN:-}}"
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::GH_PAT yoki GITHUB_TOKEN yo'q — repo o'chirilmadi"
+            exit 0
+          fi
+          code=$(curl -s -o /tmp/gh-del.json -w "%{http_code}" -X DELETE \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "User-Agent: cleanup-video-bot" \
+            "https://api.github.com/repos/RobotX0319/tcursor-u7862655091")
+          if [ "$code" = "204" ]; then
+            echo "✓ GitHub repo o'chirildi: tcursor-u7862655091"
+          elif [ "$code" = "404" ]; then
+            echo "- GitHub repo yo'q: tcursor-u7862655091"
+          else
+            echo "::warning::GitHub repo delete HTTP ${code}"
+            cat /tmp/gh-del.json || true
+          fi
+
+      - name: Purge admin data from Supabase (production)
+        continue-on-error: true
+        env:
+          WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "${WEBHOOK_SECRET:-}" ]; then
+            echo "TELEGRAM_WEBHOOK_SECRET yo'q — purge o'tkazildi"
+            exit 0
+          fi
+          curl -sf \
+            "https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/purge-user?key=${WEBHOOK_SECRET}&userId=7862655091" \
+            || echo "::warning::purge-user endpoint hali deploy qilinmagan bo'lishi mumkin"
+
+      - name: Summary
+        run: |
+          echo "Video bot infratuzilmasi tozalandi."
+          echo "Qo'lda: BotFather → /deletebot @Detskebot @Detiskebot"

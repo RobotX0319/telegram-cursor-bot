@@ -23,6 +23,11 @@ Telegram xabar → Worker webhook → Cursor Cloud Agents API → natija → Tel
 
 ## Changelog (0.3.x — 0.4.x, revert qilmaslik)
 
+### 0.4.13
+- `/admin purge <id>` — admin ro'yxatida bo'lmasa ham Supabase tozalaydi
+- `GET /admin/purge-user` — HTTP orqali majburiy tozalash
+- GitHub Actions `cleanup-video-bot.yml` — worker va repo avtomatik o'chirish
+
 ### 0.4.12
 - Video bot loyihasi (`telegram-video-bot/`) va admin `7862655091` tizimdan olib tashlandi
 - `/admin remove` endi admin ma'lumotlarini to'liq tozalaydi (session, workspace, agent meta)

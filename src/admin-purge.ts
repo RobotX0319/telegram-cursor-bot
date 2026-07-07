@@ -33,11 +33,8 @@ export async function purgeAdminData(
     userRepoKey(userId),
     sessionKey(userId),
   ]) {
-    const raw = await store.get(key);
-    if (raw != null) {
-      await store.delete(key);
-      removed.push(key);
-    }
+    await store.delete(key);
+    removed.push(key);
   }
 
   const legacyRaw = await store.get(LEGACY_MAP_KEY);
@@ -71,4 +68,29 @@ export async function purgeAdminData(
   }
 
   return removed;
+}
+
+function isBootstrapUserId(env: Env, userId: string): boolean {
+  const ids = new Set<string>();
+  if (env.ALLOWED_USER_ID?.trim()) ids.add(env.ALLOWED_USER_ID.trim());
+  if (env.ALLOWED_USER_IDS?.trim()) {
+    for (const part of env.ALLOWED_USER_IDS.split(",")) {
+      const id = part.trim();
+      if (id) ids.add(id);
+    }
+  }
+  return ids.has(userId);
+}
+
+/** Admin yozuvi bo'lmasa ham Supabase/KV dan tozalash */
+export async function forcePurgeUser(
+  env: Env,
+  userId: string,
+): Promise<{ ok: true; purged: string[] } | { ok: false; error: string }> {
+  if (isBootstrapUserId(env, userId)) {
+    return { ok: false, error: "Asosiy adminni o'chirib bo'lmaydi." };
+  }
+
+  const purged = await purgeAdminData(env, userId);
+  return { ok: true, purged };
 }

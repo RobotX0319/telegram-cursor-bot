@@ -1,3 +1,4 @@
+import { purgeUser } from "./admins";
 import { handleMessage } from "./handlers";
 import { handleUserRepoPush } from "./github-webhook";
 import { pollAndDeployUserRepos } from "./user-deploy";
@@ -101,6 +102,33 @@ export default {
 
       const result = await ensureWebhookHealthy(env, url.origin);
       return Response.json(result);
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/purge-user") {
+      const key = url.searchParams.get("key");
+      if (!isAdminKey(env, key)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const userId = url.searchParams.get("userId")?.trim();
+      if (!userId || !/^\d+$/.test(userId)) {
+        return Response.json(
+          { ok: false, error: "userId parametri kerak (raqam)" },
+          { status: 400 },
+        );
+      }
+
+      const result = await purgeUser(env, userId);
+      if (result.status === "protected") {
+        return Response.json({ ok: false, error: result.error }, { status: 403 });
+      }
+
+      return Response.json({
+        ok: true,
+        userId,
+        purged: result.purged,
+        count: result.purged.length,
+      });
     }
 
     if (request.method === "POST" && url.pathname === "/github/user-deploy") {

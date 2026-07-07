@@ -1,5 +1,5 @@
 import { getBotStorage, putJsonIfChanged, putTextIfChanged } from "./kv-store";
-import { purgeAdminData } from "./admin-purge";
+import { forcePurgeUser, purgeAdminData } from "./admin-purge";
 import type { Env } from "./types";
 
 export interface StoredAdmin {
@@ -187,4 +187,19 @@ export async function removeAdmin(
   await getBotStorage(env).delete(key);
   const purged = await purgeAdminData(env, userId);
   return { status: "removed", purged };
+}
+
+/** Admin ro'yxatida bo'lmasa ham tozalash (Supabase migratsiyasi va hokazo) */
+export async function purgeUser(
+  env: Env,
+  userId: string,
+): Promise<
+  | { status: "purged"; purged: string[] }
+  | { status: "protected"; error: string }
+> {
+  const result = await forcePurgeUser(env, userId);
+  if (!result.ok) {
+    return { status: "protected", error: result.error };
+  }
+  return { status: "purged", purged: result.purged };
 }

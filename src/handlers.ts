@@ -16,6 +16,7 @@ import {
   isBootstrapAdmin,
   listAllAdminIds,
   listStoredAdmins,
+  purgeUser,
   removeAdmin,
 } from "./admins";
 import {
@@ -437,6 +438,11 @@ async function handleAdmin(
       await handleAdminRemove(env, chatId, value);
       return;
 
+    case "purge":
+    case "force-remove":
+      await handleAdminPurge(env, chatId, value);
+      return;
+
     case "workspace":
     case "papka":
       await handleAdminWorkspace(env, chatId, userId, value);
@@ -451,6 +457,7 @@ async function handleAdmin(
           "/admin list",
           "/admin add 123456789",
           "/admin remove 123456789",
+          "/admin purge 7862655091 — admin yo'q bo'lsa ham tozalash",
           "/admin workspace set 123 ish",
           "/admin workspace list",
         ].join("\n"),
@@ -590,7 +597,16 @@ async function handleAdminRemove(
   }
 
   if (result.status === "not_found") {
-    await sendMessage(env, chatId, `Admin topilmadi: ${targetId}`);
+    await sendMessage(
+      env,
+      chatId,
+      [
+        `Admin topilmadi: ${targetId}`,
+        "",
+        "Supabase/KV da yozuv yo'q bo'lishi mumkin.",
+        `Majburiy tozalash: /admin purge ${targetId}`,
+      ].join("\n"),
+    );
     return;
   }
 
@@ -720,7 +736,39 @@ async function handleRepo(
   }
 
   await updateSession(env, userId, { repoUrl });
-  await sendMessage(env, chatId, `Repo saqlandi:\n${repoUrl}`);
+  await sendMessage(env, chatId, `Repo saqlandi:\n${repoUrl}`  );
+}
+
+async function handleAdminPurge(
+  env: Env,
+  chatId: number,
+  targetId: string,
+): Promise<void> {
+  if (!/^\d+$/.test(targetId)) {
+    await sendMessage(
+      env,
+      chatId,
+      "Foydalanish: /admin purge 7862655091\n\nAdmin ro'yxatida bo'lmasa ham Supabase/KV tozalanadi.",
+    );
+    return;
+  }
+
+  const result = await purgeUser(env, targetId);
+  if (result.status === "protected") {
+    await sendMessage(env, chatId, result.error);
+    return;
+  }
+
+  await sendMessage(
+    env,
+    chatId,
+    [
+      `Tozalandi: ${targetId}`,
+      `Kalitlar: ${result.purged.length} ta`,
+      "",
+      "Worker/repo uchun GitHub Actions cleanup ishga tushadi.",
+    ].join("\n"),
+  );
 }
 
 async function handleFolder(
