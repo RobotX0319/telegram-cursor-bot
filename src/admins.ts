@@ -1,4 +1,5 @@
 import { getBotStorage, putJsonIfChanged, putTextIfChanged } from "./kv-store";
+import { purgeAdminData } from "./admin-purge";
 import type { Env } from "./types";
 
 export interface StoredAdmin {
@@ -170,15 +171,20 @@ export async function setAdminRepo(
 export async function removeAdmin(
   env: Env,
   userId: string,
-): Promise<"removed" | "not_found" | "protected"> {
+): Promise<
+  | { status: "removed"; purged: string[] }
+  | { status: "not_found" }
+  | { status: "protected" }
+> {
   if (getBootstrapAdminIds(env).includes(userId)) {
-    return "protected";
+    return { status: "protected" };
   }
 
   const key = adminKey(userId);
   const existing = await getBotStorage(env).get(key);
-  if (!existing) return "not_found";
+  if (!existing) return { status: "not_found" };
 
   await getBotStorage(env).delete(key);
-  return "removed";
+  const purged = await purgeAdminData(env, userId);
+  return { status: "removed", purged };
 }

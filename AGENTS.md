@@ -7,7 +7,7 @@ Bu loyiha **Cloudflare Workers** da ishlaydi.
 | Kim | Qayerda ishlaydi |
 |-----|------------------|
 | **Asosiy admin (tizim agenti)** | `src/`, `scripts/`, `wrangler.jsonc` — platforma kodi |
-| **Boshqa adminlar** | Faqat o'z papkalarida (`ish/`, `telegram-video-bot/`, ...) |
+| **Boshqa adminlar** | Faqat o'z papkalarida (`ish/`, ...) |
 
 ### Qoidalar
 
@@ -72,27 +72,10 @@ Quyidagi fayllar va xususiyatlar **ataylab qo'shilgan** — ularni "soddalashtir
 | `agents.ts` | Barcha admin agentlar ro'yxati | Faqat o'z agenti emas |
 | `user-repos.ts` | `tcursor-u{id}` repo biriktirish | Per-user izolyatsiya |
 
-### Video bot (`telegram-video-bot/`) — alohida loyiha
-
-Bu papka **asosiy botdan alohida**. Boshqa agentlar uni o'chirib yoki soddalashtirib qo'ymasin.
-
-| Xususiyat | Tavsif |
-|---|---|
-| Ikki bot | **@Detskebot** (user), **@Detiskebot** (admin/boshqaruv) |
-| Video yuklash | Faqat **@Detskebot** ga (admin user botda yuklaydi) |
-| `video-coordinator.ts` | Durable Object — parallel yuklashda atomik ID |
-| `webapp-auth.ts` + `panel-session.ts` | Mini app + parol himoyasi |
-| `admins.ts` | `TELEGRAM_ADMIN_IDS` — ko'p admin |
-| `protect_content` | Foydalanuvchi videoni yuklab ololmaydi |
-| Takror video | `file_unique_id` bo'yicha "Takrorlandi ID: X" |
-
-**Taqiqlangan:** `mirrorMediaToUserBot` ni qayta qo'shish (admin botdan yuklash — eski, noto'g'ri usul).
-
 ### User repolar (GitHub)
 
 | Repo | Egasi | Loyiha |
 |---|---|---|
-| `tcursor-u7862655091` | 7862655091 | `telegram-video-bot` |
 | `tcursor-u7238164034` | 7238164034 | `ish/echo-bot` |
 
 Bu repolardagi kodni **telegram-cursor-bot** root scaffold bilan almashtirmang.

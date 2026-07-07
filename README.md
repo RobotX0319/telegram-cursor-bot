@@ -23,6 +23,10 @@ Telegram xabar → Worker webhook → Cursor Cloud Agents API → natija → Tel
 
 ## Changelog (0.3.x — 0.4.x, revert qilmaslik)
 
+### 0.4.12
+- Video bot loyihasi (`telegram-video-bot/`) va admin `7862655091` tizimdan olib tashlandi
+- `/admin remove` endi admin ma'lumotlarini to'liq tozalaydi (session, workspace, agent meta)
+
 ### 0.4.6
 - README va `AGENTS.md` — agentlar uchun revert ogohlantirishlari
 - `package.json` versiyasi `version.ts` bilan sinxronlashtirildi
@@ -44,20 +48,6 @@ Telegram xabar → Worker webhook → Cursor Cloud Agents API → natija → Tel
 - Har admin uchun alohida GitHub repo (`tcursor-u<telegram_id>`)
 - KV yozuvlarini tejash (`putJsonIfChanged`, sekin polling)
 - Agent scope va permission flow
-
-### Video bot (`telegram-video-bot/` — alohida deploy)
-
-| Versiya / holat | O'zgarish |
-|---|---|
-| Ikki bot | @Detskebot (foydalanuvchi), @Detiskebot (boshqaruv) |
-| Video yuklash | Faqat @Detskebot ga (admin shu yerda yuklaydi) |
-| Atomik ID | `VideoCoordinator` Durable Object — 100 ta parallel yuklash |
-| Takror | Bir xil video → `Takrorlandi ID: X` |
-| Admin panel | Parol himoyasi (`ADMIN_PANEL_PASSWORD`), mini app |
-| Ko'p admin | `TELEGRAM_ADMIN_IDS=7862655091,1380583834` |
-| Yuklab olish | `protect_content: true` — forward/save blok |
-
-Deploy: `tcursor-u7862655091` worker (`npx wrangler deploy` yoki `scripts/publish-user-projects.mjs`).
 
 ## Funksiyalar
 

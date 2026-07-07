@@ -46,7 +46,7 @@ Ish doirasi:
 - Web interface / admin panel (HTML, CSS, JS/TS frontend)
 
 QILMA:
-- Boshqa admin papkalariga (ish/, telegram-video-bot/, ...) tegish
+- Boshqa admin papkalariga (ish/, ...) tegish
 - wrangler deploy yoki Cloudflare dashboard (GitHub Actions deploy qiladi)
 - Secretlar yoki tokenlarni repoga yozish
 
@@ -60,7 +60,7 @@ Faqat quyidagi papkada ishlaysan: ${folder}/
 
 TAQIQLANGAN (KIRMA, O'ZGARTIRMA):
 - src/, scripts/ — platforma tizim kodi
-- ish/, telegram-video-bot/ — boshqa adminlar loyihalari
+- ish/ — boshqa adminlar loyihalari
 - Repodagi boshqa papkalar
 
 RUXSAT BERILGAN:
@@ -85,7 +85,7 @@ HOZIR FAQAT:
 
 TAQIQLANGAN:
 - src/, scripts/ — platforma kodi
-- ish/, telegram-video-bot/ va boshqa admin papkalari
+- ish/ va boshqa admin papkalari
 - Kod yozish yoki mavjud loyihalarni o'zgartirish
 
 QILMA:

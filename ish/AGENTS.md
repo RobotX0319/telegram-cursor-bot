@@ -11,7 +11,7 @@ Bu papka **bitta adminning loyihasi**. Agent faqat shu yerda ishlaydi.
 
 - `src/` (telegram-cursor-bot platformasi)
 - `scripts/` (ildiz)
-- `telegram-video-bot/` (boshqa admin)
+- `telegram-video-bot/` (olib tashlangan)
 - `wrangler.jsonc` (ildiz)
 
 ## Maxfiylik (MUHIM)

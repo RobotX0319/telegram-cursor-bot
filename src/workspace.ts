@@ -12,7 +12,7 @@ import type { Env } from "./types";
 const WORKSPACE_PREFIX = "workspace:";
 const LEGACY_MAP_KEY = "config:admin_workspaces";
 
-export const PROTECTED_PROJECT_FOLDERS = ["ish", "telegram-video-bot"] as const;
+export const PROTECTED_PROJECT_FOLDERS = ["ish"] as const;
 
 export type WorkspaceScope =
   | { kind: "system" }
@@ -317,7 +317,7 @@ export function detectOutOfScopeProbe(prompt: string): boolean {
     /tizimni\s+ko'r/,
     /ko'ryapsanmi.*tizim/,
     /telegram-cursor-bot/,
-    /\bish\/|\btelegram-video-bot\//,
+    /\bish\//,
     /tizim\s+agent/,
     /boshqa\s+papka/,
     /repo\s+tuzil/,
@@ -349,7 +349,7 @@ export const NO_WORKSPACE_MESSAGE = [
   "",
   "Papka ochilmaguncha agent yaratilmaydi va kod buyruqlari qabul qilinmaydi.",
   "",
-  "Eslatma: ish/, telegram-video-bot/, src/, scripts/ — boshqa adminlar va tizimga tegishli.",
+  "Eslatma: ish/, src/, scripts/ — boshqa adminlar va tizimga tegishli.",
 ].join("\n");
 
 export function buildAgentPrompt(

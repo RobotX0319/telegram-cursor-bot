@@ -580,7 +580,7 @@ async function handleAdminRemove(
 
   const result = await removeAdmin(env, targetId);
 
-  if (result === "protected") {
+  if (result.status === "protected") {
     await sendMessage(
       env,
       chatId,
@@ -589,12 +589,21 @@ async function handleAdminRemove(
     return;
   }
 
-  if (result === "not_found") {
+  if (result.status === "not_found") {
     await sendMessage(env, chatId, `Admin topilmadi: ${targetId}`);
     return;
   }
 
-  await sendMessage(env, chatId, `Admin olib tashlandi: ${targetId}`);
+  const purgeInfo =
+    result.purged.length > 0
+      ? `\n\nTozalangan: ${result.purged.length} ta yozuv`
+      : "";
+
+  await sendMessage(
+    env,
+    chatId,
+    `Admin olib tashlandi: ${targetId}${purgeInfo}`,
+  );
 }
 
 async function handleAgents(

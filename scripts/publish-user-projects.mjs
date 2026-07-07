@@ -18,15 +18,6 @@ const TMP = path.resolve(ROOT, "..", "_user-publish");
 
 const PROJECTS = [
   {
-    userId: "7862655091",
-    repo: "tcursor-u7862655091",
-    source: path.join(ROOT, "telegram-video-bot"),
-    workerUrl: "https://tcursor-u7862655091.fxjournaluz.workers.dev",
-    needsKv: true,
-    kvBinding: "VIDEOS",
-    extraVars: { TELEGRAM_ADMIN_ID: "7862655091" },
-  },
-  {
     userId: "7238164034",
     repo: "tcursor-u7238164034",
     source: path.join(ROOT, "ish", "echo-bot"),
