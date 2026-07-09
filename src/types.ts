@@ -51,6 +51,25 @@ export interface TelegramChat {
   type: string;
 }
 
+export interface TelegramPhotoSize {
+  file_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
+export interface TelegramDocument {
+  file_id: string;
+  mime_type?: string;
+  file_name?: string;
+  file_size?: number;
+}
+
+export interface CursorPromptImage {
+  data: string;
+  mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+}
+
 export interface TelegramSticker {
   file_id: string;
   emoji?: string;
@@ -62,6 +81,9 @@ export interface TelegramMessage {
   from?: TelegramUser;
   chat: TelegramChat;
   text?: string;
+  caption?: string;
+  photo?: TelegramPhotoSize[];
+  document?: TelegramDocument;
   sticker?: TelegramSticker;
   reply_to_message?: TelegramMessage;
 }

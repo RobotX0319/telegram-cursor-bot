@@ -5,6 +5,7 @@ import type {
   CreateAgentResponse,
   CreateRunResponse,
   CursorAgent,
+  CursorPromptImage,
   CursorRun,
   Env,
   RunStatus,
@@ -58,18 +59,30 @@ async function cursorFetch<T>(
   return JSON.parse(body) as T;
 }
 
+function buildPromptBody(text: string, images?: CursorPromptImage[]) {
+  const scopedPrompt = finalizePromptForCursor(text);
+  const body: {
+    text: string;
+    images?: CursorPromptImage[];
+  } = { text: scopedPrompt };
+  if (images?.length) {
+    body.images = images;
+  }
+  return body;
+}
+
 export async function createAgent(
   env: Env,
   prompt: string,
   repoUrl: string,
   startingRef?: string,
+  images?: CursorPromptImage[],
 ): Promise<CreateAgentResponse> {
   const branch = startingRef ?? env.DEFAULT_GITHUB_BRANCH ?? "main";
-  const scopedPrompt = finalizePromptForCursor(prompt);
   return cursorFetch<CreateAgentResponse>(env, "/agents", {
     method: "POST",
     body: JSON.stringify({
-      prompt: { text: scopedPrompt },
+      prompt: buildPromptBody(prompt, images),
       model: { id: "composer-2.5" },
       repos: [{ url: repoUrl, startingRef: branch }],
       workOnCurrentBranch: true,
@@ -83,12 +96,12 @@ export async function createRun(
   env: Env,
   agentId: string,
   prompt: string,
+  images?: CursorPromptImage[],
 ): Promise<CreateRunResponse> {
-  const scopedPrompt = finalizePromptForCursor(prompt);
   return cursorFetch<CreateRunResponse>(env, `/agents/${agentId}/runs`, {
     method: "POST",
     body: JSON.stringify({
-      prompt: { text: scopedPrompt },
+      prompt: buildPromptBody(prompt, images),
     }),
   });
 }

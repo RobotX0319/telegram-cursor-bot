@@ -23,6 +23,10 @@ Telegram xabar → Worker webhook → Cursor Cloud Agents API → natija → Tel
 
 ## Changelog (0.3.x — 0.4.x, revert qilmaslik)
 
+### 0.4.14
+- Telegram rasm yuborish — agentga `prompt.images` orqali uzatiladi (PNG/JPEG/GIF/WebP)
+- Caption bilan rasm yoki rasm sifatida fayl qo'llab-quvvatlanadi
+
 ### 0.4.13
 - `/admin purge <id>` — admin ro'yxatida bo'lmasa ham Supabase tozalaydi
 - `GET /admin/purge-user` — HTTP orqali majburiy tozalash

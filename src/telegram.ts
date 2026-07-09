@@ -195,7 +195,7 @@ async function trySendHtml(
 export async function sendChatAction(
   env: Env,
   chatId: number,
-  action: "typing" | "upload_document" = "typing",
+  action: "typing" | "upload_photo" | "upload_document" = "typing",
 ): Promise<void> {
   await fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendChatAction`, {
     method: "POST",

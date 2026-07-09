@@ -27,6 +27,7 @@ import {
   isTerminal,
   pollRunAndFormat,
 } from "./cursor";
+import { parseTelegramUserMessage, hasTelegramImage } from "./message-input";
 import {
   formatKvLimitMessage,
   isKvWriteLimitError,
@@ -50,7 +51,7 @@ import {
 import { saveCursorApiKey, resolveCursorApiKey } from "./secrets";
 import { defaultRepo, updateSession } from "./session";
 import { sendChatAction, sendMessage, sendRunResult, configureWebhookFromEnv, getWebhookInfo } from "./telegram";
-import type { Env, TelegramMessage } from "./types";
+import type { Env, TelegramMessage, CursorPromptImage } from "./types";
 import { BUILD_DATE, VERSION } from "./version";
 import type { StoredAgentEntry } from "./types";
 import {
@@ -83,7 +84,7 @@ const HELP_TEXT_BOOTSTRAP = `Telegram → Cursor Cloud Agent bot (asosiy admin)
 Siz barcha agentlarni ko'rasiz va ishlata olasiz.
 Boshqa adminning agentini tanlasangiz — u o'z egasiga javob berayotgandek ishlaydi.
 
-Oddiy matn — agentga vazifa.`;
+Oddiy matn yoki rasm — agentga vazifa.`;
 
 const HELP_TEXT_USER = `Telegram → Cursor Cloud Agent bot
 
@@ -99,7 +100,7 @@ const HELP_TEXT_USER = `Telegram → Cursor Cloud Agent bot
 /papka <nom> — papka belgilash
 /version — versiya
 
-Oddiy matn yuboring — agent avtomatik ishlaydi.
+Oddiy matn yoki rasm yuboring — agent avtomatik ishlaydi.
 
 Avval /papka nom → /new (nom bering) → ish buyrug'i.`;
 
@@ -115,9 +116,22 @@ export async function handleMessage(
 ): Promise<void> {
   const userId = message.from?.id;
   const chatId = message.chat.id;
-  const text = message.text?.trim();
 
-  if (!userId || !text) return;
+  if (!userId) return;
+
+  const parsed = await parseTelegramUserMessage(env, message);
+  if (!parsed) {
+    if (hasTelegramImage(message)) {
+      await sendMessage(
+        env,
+        chatId,
+        "Rasm qabul qilinmadi. PNG, JPEG, GIF yoki WebP yuboring (maks. 15 MB).",
+      );
+    }
+    return;
+  }
+
+  const { text, images } = parsed;
 
   try {
     if (!(await isAllowedUser(env, userId))) {
@@ -129,12 +143,26 @@ export async function handleMessage(
       return;
     }
 
+    const session = await getNormalizedSession(env, userId);
+    if (session?.awaitingNewAgentName && images.length > 0) {
+      await sendMessage(
+        env,
+        chatId,
+        "Agent nomi matn bo'lishi kerak (rasm emas).\n\nMasalan: Video bot",
+      );
+      return;
+    }
+
     if (text.startsWith("/")) {
+      if (images.length > 0) {
+        await sendMessage(env, chatId, "Buyruq uchun faqat matn yuboring.");
+        return;
+      }
       await handleCommand(env, chatId, userId, text, ctx, workerOrigin, message);
       return;
     }
 
-    await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin);
+    await dispatchPrompt(env, chatId, userId, text, ctx, workerOrigin, images);
   } catch (error) {
     console.error(
       "handleMessage failed:",
@@ -1211,6 +1239,7 @@ async function dispatchPrompt(
   prompt: string,
   ctx: ExecutionContext,
   workerOrigin: string,
+  images: CursorPromptImage[] = [],
 ): Promise<void> {
   const session = await getNormalizedSession(env, userId);
 
@@ -1243,6 +1272,7 @@ async function dispatchPrompt(
       workerOrigin,
       prepared.workspaceFolder,
       prepared.ctx,
+      images,
     );
     return;
   }
@@ -1275,6 +1305,8 @@ async function dispatchPrompt(
     workerOrigin,
     prepared.workspaceFolder,
     prepared.ctx,
+    undefined,
+    images,
   );
 }
 
@@ -1290,8 +1322,13 @@ async function startAgentRun(
   workspaceFolder?: string,
   promptCtx?: PromptContext,
   displayName?: string,
+  images: CursorPromptImage[] = [],
 ): Promise<void> {
-  await sendChatAction(env, chatId, "typing");
+  await sendChatAction(
+    env,
+    chatId,
+    images.length > 0 ? "upload_photo" : "typing",
+  );
 
   const pCtx =
     promptCtx ?? (await resolvePromptContext(env, userId, null));
@@ -1313,7 +1350,7 @@ async function startAgentRun(
       }
     }
 
-    const { agent, run } = await createAgent(env, prompt, repoUrl);
+    const { agent, run } = await createAgent(env, prompt, repoUrl, undefined, images);
     sentToAgent = true;
     await registerAgent(
       env,
@@ -1339,6 +1376,7 @@ async function startAgentRun(
       chatId,
       [
         forceNew ? `Yangi agent ochildi: ${agentLabel}` : "Agent ishga tushdi.",
+        images.length > 0 ? `📷 Rasm yuborildi (${images.length} ta)` : null,
         scopeLabel,
         pCtx.stealth ? "Agent egasiga o'xshash rejimda ishlaydi." : null,
         agentNumber != null && agentNumber >= 0
@@ -1396,13 +1434,18 @@ async function continueAgentRun(
   workerOrigin: string,
   workspaceFolder?: string,
   promptCtx?: PromptContext,
+  images: CursorPromptImage[] = [],
 ): Promise<void> {
-  await sendChatAction(env, chatId, "typing");
+  await sendChatAction(
+    env,
+    chatId,
+    images.length > 0 ? "upload_photo" : "typing",
+  );
 
   let sentToAgent = false;
 
   try {
-    const { run } = await createRun(env, agentId, prompt);
+    const { run } = await createRun(env, agentId, prompt, images);
     sentToAgent = true;
     const session = await updateAgentRun(env, userId, agentId, run.id);
     const entry = session.agents?.find((a) => a.agentId === agentId);
@@ -1413,6 +1456,7 @@ async function continueAgentRun(
       chatId,
       [
         "Buyruq yuborildi.",
+        images.length > 0 ? `📷 Rasm yuborildi (${images.length} ta)` : null,
         promptCtx?.stealth ? "(egasi rejimi — chat davom etadi)" : null,
         entry ? `Agent: ${displayAgentName(entry.name)}` : null,
         folder ? `Papka: ${folder}/` : null,
