@@ -29,5 +29,8 @@
       "tag": "v1-pending-poller",
       "new_sqlite_classes": ["PendingPoller"]
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  }
 }

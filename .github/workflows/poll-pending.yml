@@ -1,30 +1,45 @@
 name: Poll pending agent runs
 
+# Asosiy polling: Cloudflare Worker cron (wrangler.jsonc triggers.crons).
+# Bu workflow faqat qo'lda zaxira — GitHub Secrets kerak bo'lmasa ishlamaydi.
+
 on:
-  schedule:
-    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 jobs:
   poll:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
-      - name: Check pending runs
+      - name: Check pending runs (manual backup)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
         run: |
+          set +e
           BASE="https://telegram-cursor-bot.fxjournaluz.workers.dev/admin/poll-pending"
           BOT_ID="${TELEGRAM_BOT_TOKEN%%:*}"
           BOOTSTRAP="tg_${BOT_ID}_bootstrap"
+          STATUS=0
 
           if [ -n "$TELEGRAM_WEBHOOK_SECRET" ]; then
-            curl -sf "$BASE?key=$TELEGRAM_WEBHOOK_SECRET" && exit 0
+            HTTP=$(curl -s -o /tmp/poll.json -w "%{http_code}" "$BASE?key=$TELEGRAM_WEBHOOK_SECRET")
+            echo "poll (WEBHOOK_SECRET): HTTP $HTTP"
+            cat /tmp/poll.json || true
+            [ "$HTTP" = "200" ] && exit 0
+            STATUS=1
           fi
 
           if [ -n "$BOT_ID" ]; then
-            curl -sf "$BASE?key=$BOOTSTRAP" && exit 0
+            HTTP=$(curl -s -o /tmp/poll.json -w "%{http_code}" "$BASE?key=$BOOTSTRAP")
+            echo "poll (bootstrap): HTTP $HTTP"
+            cat /tmp/poll.json || true
+            [ "$HTTP" = "200" ] && exit 0
+            STATUS=1
           fi
 
-          echo "TELEGRAM_WEBHOOK_SECRET yoki TELEGRAM_BOT_TOKEN GitHub Secrets da kerak"
-          exit 1
+          echo ""
+          echo "::warning::GitHub Secrets yo'q yoki noto'g'ri — bu normal."
+          echo "Asosiy polling Cloudflare Worker cron orqali ishlaydi (har 10 daqiqa)."
+          echo "Secret qo'shish: Settings → Secrets → TELEGRAM_WEBHOOK_SECRET"
+          exit $STATUS

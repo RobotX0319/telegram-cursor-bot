@@ -23,6 +23,10 @@ Telegram xabar → Worker webhook → Cursor Cloud Agents API → natija → Tel
 
 ## Changelog (0.3.x — 0.4.x, revert qilmaslik)
 
+### 0.4.15
+- Pending run polling: Cloudflare Worker cron (har 10 daqiqa) — GitHub Secrets shart emas
+- GitHub `poll-pending` workflow: faqat qo'lda (schedule olib tashlandi, 401 xatoliklar to'xtadi)
+
 ### 0.4.14
 - Telegram rasm yuborish — agentga `prompt.images` orqali uzatiladi (PNG/JPEG/GIF/WebP)
 - Caption bilan rasm yoki rasm sifatida fayl qo'llab-quvvatlanadi

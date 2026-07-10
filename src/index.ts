@@ -4,6 +4,7 @@ import { handleUserRepoPush } from "./github-webhook";
 import { pollAndDeployUserRepos } from "./user-deploy";
 import {
   continuePollingPendingRuns,
+  kickoffPendingPoll,
   listPendingRuns,
 } from "./pending";
 import { pollTelegramUpdates } from "./poll";
@@ -169,5 +170,6 @@ export default {
 
     ctx.waitUntil(ensureWebhookHealthy(env, origin));
     ctx.waitUntil(pollAndDeployUserRepos(env));
+    ctx.waitUntil(kickoffPendingPoll(env, origin));
   },
 };
