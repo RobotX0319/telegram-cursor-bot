@@ -142,7 +142,13 @@ jobs:
       - name: Setup webhook and menu
         run: |
           KEY=$(jq -r '.TELEGRAM_WEBHOOK_SECRET' "$VARS_FILE")
-          curl -sf "${WORKER_URL}/admin/setup-webhook?key=${KEY}"
-          echo ""
+          for i in 1 2 3 4 5; do
+            if curl -sf "${WORKER_URL}/admin/setup-webhook?key=${KEY}"; then
+              echo ""
+              break
+            fi
+            echo "Webhook setup urinish $i muvaffaqiyatsiz, qayta..."
+            sleep 5
+          done
           curl -sf "${WORKER_URL}/health"
           echo ""
