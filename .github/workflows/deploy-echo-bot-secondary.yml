@@ -4,6 +4,7 @@ name: Deploy telegram-echo-bot (secondary)
 # GitHub Secrets (repoga YOZMAYDI):
 #   TELEGRAM_ECHO_BOT_TOKEN_2
 #   TELEGRAM_ECHO_WEBHOOK_SECRET_2  (masalan: tg_8835962050_echo)
+# Qo'llanma: node scripts/setup-echo-bot-2-secrets.mjs
 
 on:
   push:
@@ -11,6 +12,7 @@ on:
     paths:
       - "ish/echo-bot/**"
       - ".github/workflows/deploy-echo-bot-secondary.yml"
+      - "scripts/setup-echo-bot-2-secrets.mjs"
   workflow_dispatch:
 
 jobs:
@@ -19,6 +21,9 @@ jobs:
     defaults:
       run:
         working-directory: ish/echo-bot
+    env:
+      WORKER_NAME: telegram-echo-bot-2
+      WORKER_URL: https://telegram-echo-bot-2.fxjournaluz.workers.dev
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +41,7 @@ jobs:
           if [ -z "$TELEGRAM_ECHO_BOT_TOKEN_2" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::warning::TELEGRAM_ECHO_BOT_TOKEN_2 GitHub Secrets da yo'q — ikkinchi bot deploy o'tkazildi"
+            echo "::warning::Qo'llanma: node scripts/setup-echo-bot-2-secrets.mjs"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "Secondary bot token topildi."
@@ -56,6 +62,22 @@ jobs:
             exit 1
           fi
 
+      - name: Ensure separate KV namespace
+        if: steps.gate.outputs.skip != 'true'
+        id: kv
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          TITLE="telegram-echo-bot-2-CHAT_HISTORY"
+          KV_ID=$(npx wrangler kv namespace list --json | jq -r --arg t "$TITLE" '.[] | select(.title == $t) | .id' | head -1)
+          if [ -z "$KV_ID" ] || [ "$KV_ID" = "null" ]; then
+            echo "Creating KV namespace: $TITLE"
+            KV_ID=$(npx wrangler kv namespace create "$TITLE" --json | jq -r '.id')
+          fi
+          echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
+          echo "KV namespace: $KV_ID"
+
       - name: Sync Worker secrets (secondary)
         if: steps.gate.outputs.skip != 'true'
         env:
@@ -64,7 +86,6 @@ jobs:
           TELEGRAM_ECHO_BOT_TOKEN_2: ${{ secrets.TELEGRAM_ECHO_BOT_TOKEN_2 }}
           TELEGRAM_ECHO_WEBHOOK_SECRET_2: ${{ secrets.TELEGRAM_ECHO_WEBHOOK_SECRET_2 }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          WORKER_NAME: telegram-echo-bot-2
         run: |
           sync_secret() {
             local name="$1"
@@ -85,10 +106,23 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          KV_ID: ${{ steps.kv.outputs.kv_id }}
         run: |
-          npx wrangler deploy \
-            --name telegram-echo-bot-2 \
-            --var WORKER_PUBLIC_URL:https://telegram-echo-bot-2.fxjournaluz.workers.dev
+          # Birinchi bot tokenlari vars sifatida ikkinchi workerga tushmasin
+          jq \
+            --arg name "$WORKER_NAME" \
+            --arg url "$WORKER_URL" \
+            --arg kv "$KV_ID" \
+            '
+              .name = $name
+              | .vars.WORKER_PUBLIC_URL = $url
+              | .vars.TELEGRAM_BOT_TOKEN = "via-secret"
+              | .vars.TELEGRAM_WEBHOOK_SECRET = "via-secret"
+              | del(.vars.GEMINI_API_KEY_B64)
+              | .kv_namespaces = [{ "binding": "CHAT_HISTORY", "id": $kv }]
+            ' wrangler.jsonc > wrangler.secondary.jsonc
+
+          npx wrangler deploy --config wrangler.secondary.jsonc
 
       - name: Setup webhook and menu
         if: steps.gate.outputs.skip != 'true'
@@ -96,8 +130,7 @@ jobs:
           TELEGRAM_ECHO_WEBHOOK_SECRET_2: ${{ secrets.TELEGRAM_ECHO_WEBHOOK_SECRET_2 }}
         run: |
           KEY="${TELEGRAM_ECHO_WEBHOOK_SECRET_2:-tg_8835962050_echo}"
-          BASE="https://telegram-echo-bot-2.fxjournaluz.workers.dev"
-          curl -sf "${BASE}/admin/setup-webhook?key=${KEY}"
+          curl -sf "${WORKER_URL}/admin/setup-webhook?key=${KEY}"
           echo ""
-          curl -sf "${BASE}/health"
+          curl -sf "${WORKER_URL}/health"
           echo ""

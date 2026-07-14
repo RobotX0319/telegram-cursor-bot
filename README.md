@@ -23,6 +23,10 @@ Telegram xabar → Worker webhook → Cursor Cloud Agents API → natija → Tel
 
 ## Changelog (0.3.x — 0.4.x, revert qilmaslik)
 
+### 0.4.17
+- Ikkinchi echo-bot deploy: alohida KV namespace, birinchi bot tokeni vars dan ajratildi
+- `scripts/setup-echo-bot-2-secrets.mjs` — ikkinchi bot GitHub Secrets qo'llanmasi
+
 ### 0.4.16
 - Ikkinchi echo-bot Worker (`telegram-echo-bot-2`) — @Glabalashganbot bilan parallel Gemini bot
 - GitHub: `TELEGRAM_ECHO_BOT_TOKEN_2`, `TELEGRAM_ECHO_WEBHOOK_SECRET_2`
