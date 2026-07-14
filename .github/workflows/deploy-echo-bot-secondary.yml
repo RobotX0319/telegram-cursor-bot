@@ -65,13 +65,34 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           TITLE="telegram-echo-bot-2-CHAT_HISTORY"
-          KV_ID=$(npx wrangler kv namespace list --json | jq -r --arg t "$TITLE" '.[] | select(.title == $t) | .id' | head -1)
+          PRESET=$(jq -r '.CHAT_HISTORY_KV_ID // empty' "$VARS_FILE")
+          if [ -n "$PRESET" ]; then
+            echo "kv_id=$PRESET" >> "$GITHUB_OUTPUT"
+            echo "KV namespace (repo): $PRESET"
+            exit 0
+          fi
+
+          KV_ID=""
+          LIST_JSON=$(npx wrangler kv namespace list 2>/dev/null || echo "[]")
+          KV_ID=$(echo "$LIST_JSON" | jq -r --arg t "$TITLE" '.[]? | select(.title == $t) | .id' | head -1)
+
           if [ -z "$KV_ID" ] || [ "$KV_ID" = "null" ]; then
             echo "Creating KV namespace: $TITLE"
-            KV_ID=$(npx wrangler kv namespace create "$TITLE" --json | jq -r '.id')
+            CREATE_OUT=$(npx wrangler kv namespace create "$TITLE" 2>&1) || true
+            echo "$CREATE_OUT"
+            KV_ID=$(echo "$CREATE_OUT" | grep -oE 'id = "[a-f0-9]+"' | sed 's/id = "//;s/"//' | head -1)
+            if [ -z "$KV_ID" ]; then
+              KV_ID=$(echo "$CREATE_OUT" | jq -r '.id // empty' 2>/dev/null || true)
+            fi
           fi
-          echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
-          echo "KV namespace: $KV_ID"
+
+          if [ -z "$KV_ID" ]; then
+            echo "::warning::KV yaratib bo'lmadi — bot ishlaydi, lekin suhbat tarixi saqlanmaydi"
+            echo "kv_id=" >> "$GITHUB_OUTPUT"
+          else
+            echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
+            echo "KV namespace: $KV_ID"
+          fi
 
       - name: Deploy secondary Worker
         env:
@@ -83,21 +104,38 @@ jobs:
           WEBHOOK_SECRET=$(jq -r '.TELEGRAM_WEBHOOK_SECRET' "$VARS_FILE")
           GEMINI_B64=$(jq -r '.GEMINI_API_KEY_B64 // empty' "$VARS_FILE")
 
-          jq \
-            --arg name "$WORKER_NAME" \
-            --arg url "$WORKER_URL" \
-            --arg kv "$KV_ID" \
-            --arg token "$BOT_TOKEN" \
-            --arg webhook "$WEBHOOK_SECRET" \
-            --arg gemini "$GEMINI_B64" \
-            '
-              .name = $name
-              | .vars.WORKER_PUBLIC_URL = $url
-              | .vars.TELEGRAM_BOT_TOKEN = $token
-              | .vars.TELEGRAM_WEBHOOK_SECRET = $webhook
-              | .vars.GEMINI_API_KEY_B64 = $gemini
-              | .kv_namespaces = [{ "binding": "CHAT_HISTORY", "id": $kv }]
-            ' wrangler.jsonc > wrangler.secondary.jsonc
+          if [ -n "$KV_ID" ]; then
+            jq \
+              --arg name "$WORKER_NAME" \
+              --arg url "$WORKER_URL" \
+              --arg kv "$KV_ID" \
+              --arg token "$BOT_TOKEN" \
+              --arg webhook "$WEBHOOK_SECRET" \
+              --arg gemini "$GEMINI_B64" \
+              '
+                .name = $name
+                | .vars.WORKER_PUBLIC_URL = $url
+                | .vars.TELEGRAM_BOT_TOKEN = $token
+                | .vars.TELEGRAM_WEBHOOK_SECRET = $webhook
+                | .vars.GEMINI_API_KEY_B64 = $gemini
+                | .kv_namespaces = [{ "binding": "CHAT_HISTORY", "id": $kv }]
+              ' wrangler.jsonc > wrangler.secondary.jsonc
+          else
+            jq \
+              --arg name "$WORKER_NAME" \
+              --arg url "$WORKER_URL" \
+              --arg token "$BOT_TOKEN" \
+              --arg webhook "$WEBHOOK_SECRET" \
+              --arg gemini "$GEMINI_B64" \
+              '
+                .name = $name
+                | .vars.WORKER_PUBLIC_URL = $url
+                | .vars.TELEGRAM_BOT_TOKEN = $token
+                | .vars.TELEGRAM_WEBHOOK_SECRET = $webhook
+                | .vars.GEMINI_API_KEY_B64 = $gemini
+                | .kv_namespaces = []
+              ' wrangler.jsonc > wrangler.secondary.jsonc
+          fi
 
           npx wrangler deploy --config wrangler.secondary.jsonc
 
