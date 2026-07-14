@@ -1,18 +1,16 @@
 name: Deploy telegram-echo-bot (secondary)
 
-# @Glabalashganbot bilan parallel — ikkinchi Telegram bot (alohida Worker).
-# GitHub Secrets (repoga YOZMAYDI):
-#   TELEGRAM_ECHO_BOT_TOKEN_2
-#   TELEGRAM_ECHO_WEBHOOK_SECRET_2  (masalan: tg_8835962050_echo)
-# Qo'llanma: node scripts/setup-echo-bot-2-secrets.mjs
+# @Glabalashganbot bilan parallel — mustaqil Worker (telegram-echo-bot-2).
+# Token va Gemini kaliti: scripts/echo-bot-2/vars.jsonc (repoda).
+# Cursor agent tokenlari ISHLATILMAYDI — faqat Telegram + Gemini.
 
 on:
   push:
     branches: [main]
     paths:
       - "ish/echo-bot/**"
+      - "scripts/echo-bot-2/**"
       - ".github/workflows/deploy-echo-bot-secondary.yml"
-      - "scripts/setup-echo-bot-2-secrets.mjs"
   workflow_dispatch:
 
 jobs:
@@ -24,6 +22,7 @@ jobs:
     env:
       WORKER_NAME: telegram-echo-bot-2
       WORKER_URL: https://telegram-echo-bot-2.fxjournaluz.workers.dev
+      VARS_FILE: ../../scripts/echo-bot-2/vars.jsonc
     steps:
       - uses: actions/checkout@v4
 
@@ -33,26 +32,23 @@ jobs:
           cache: npm
           cache-dependency-path: ish/echo-bot/package-lock.json
 
-      - name: Validate secondary bot token
-        id: gate
-        env:
-          TELEGRAM_ECHO_BOT_TOKEN_2: ${{ secrets.TELEGRAM_ECHO_BOT_TOKEN_2 }}
+      - name: Validate repo config
         run: |
-          if [ -z "$TELEGRAM_ECHO_BOT_TOKEN_2" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::TELEGRAM_ECHO_BOT_TOKEN_2 GitHub Secrets da yo'q — ikkinchi bot deploy o'tkazildi"
-            echo "::warning::Qo'llanma: node scripts/setup-echo-bot-2-secrets.mjs"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "Secondary bot token topildi."
+          if [ ! -f "$VARS_FILE" ]; then
+            echo "::error::scripts/echo-bot-2/vars.jsonc topilmadi"
+            exit 1
           fi
+          TOKEN=$(jq -r '.TELEGRAM_BOT_TOKEN // empty' "$VARS_FILE")
+          if [ -z "$TOKEN" ]; then
+            echo "::error::TELEGRAM_BOT_TOKEN vars.jsonc da yo'q"
+            exit 1
+          fi
+          echo "Ikkinchi bot konfiguratsiyasi topildi."
 
       - name: Install dependencies
-        if: steps.gate.outputs.skip != 'true'
         run: npm ci
 
       - name: Validate Cloudflare credentials
-        if: steps.gate.outputs.skip != 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -63,7 +59,6 @@ jobs:
           fi
 
       - name: Ensure separate KV namespace
-        if: steps.gate.outputs.skip != 'true'
         id: kv
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -78,58 +73,37 @@ jobs:
           echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
           echo "KV namespace: $KV_ID"
 
-      - name: Sync Worker secrets (secondary)
-        if: steps.gate.outputs.skip != 'true'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          TELEGRAM_ECHO_BOT_TOKEN_2: ${{ secrets.TELEGRAM_ECHO_BOT_TOKEN_2 }}
-          TELEGRAM_ECHO_WEBHOOK_SECRET_2: ${{ secrets.TELEGRAM_ECHO_WEBHOOK_SECRET_2 }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          sync_secret() {
-            local name="$1"
-            local value="$2"
-            if [ -n "$value" ]; then
-              echo "$value" | npx wrangler secret put "$name" --name "$WORKER_NAME"
-            else
-              echo "::warning::Secret $name yo'q — o'tkazib yuborildi"
-            fi
-          }
-          sync_secret TELEGRAM_BOT_TOKEN "$TELEGRAM_ECHO_BOT_TOKEN_2"
-          WEBHOOK_SECRET="${TELEGRAM_ECHO_WEBHOOK_SECRET_2:-tg_8835962050_echo}"
-          sync_secret TELEGRAM_WEBHOOK_SECRET "$WEBHOOK_SECRET"
-          sync_secret GEMINI_API_KEY "$GEMINI_API_KEY"
-
       - name: Deploy secondary Worker
-        if: steps.gate.outputs.skip != 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           KV_ID: ${{ steps.kv.outputs.kv_id }}
         run: |
-          # Birinchi bot tokenlari vars sifatida ikkinchi workerga tushmasin
+          BOT_TOKEN=$(jq -r '.TELEGRAM_BOT_TOKEN' "$VARS_FILE")
+          WEBHOOK_SECRET=$(jq -r '.TELEGRAM_WEBHOOK_SECRET' "$VARS_FILE")
+          GEMINI_B64=$(jq -r '.GEMINI_API_KEY_B64 // empty' "$VARS_FILE")
+
           jq \
             --arg name "$WORKER_NAME" \
             --arg url "$WORKER_URL" \
             --arg kv "$KV_ID" \
+            --arg token "$BOT_TOKEN" \
+            --arg webhook "$WEBHOOK_SECRET" \
+            --arg gemini "$GEMINI_B64" \
             '
               .name = $name
               | .vars.WORKER_PUBLIC_URL = $url
-              | .vars.TELEGRAM_BOT_TOKEN = "via-secret"
-              | .vars.TELEGRAM_WEBHOOK_SECRET = "via-secret"
-              | del(.vars.GEMINI_API_KEY_B64)
+              | .vars.TELEGRAM_BOT_TOKEN = $token
+              | .vars.TELEGRAM_WEBHOOK_SECRET = $webhook
+              | .vars.GEMINI_API_KEY_B64 = $gemini
               | .kv_namespaces = [{ "binding": "CHAT_HISTORY", "id": $kv }]
             ' wrangler.jsonc > wrangler.secondary.jsonc
 
           npx wrangler deploy --config wrangler.secondary.jsonc
 
       - name: Setup webhook and menu
-        if: steps.gate.outputs.skip != 'true'
-        env:
-          TELEGRAM_ECHO_WEBHOOK_SECRET_2: ${{ secrets.TELEGRAM_ECHO_WEBHOOK_SECRET_2 }}
         run: |
-          KEY="${TELEGRAM_ECHO_WEBHOOK_SECRET_2:-tg_8835962050_echo}"
+          KEY=$(jq -r '.TELEGRAM_WEBHOOK_SECRET' "$VARS_FILE")
           curl -sf "${WORKER_URL}/admin/setup-webhook?key=${KEY}"
           echo ""
           curl -sf "${WORKER_URL}/health"

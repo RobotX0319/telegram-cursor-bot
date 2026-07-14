@@ -1,42 +1,28 @@
 #!/usr/bin/env node
 /**
- * Ikkinchi echo-bot (telegram-echo-bot-2) uchun GitHub Secrets qo'llanmasi.
- * Token repoga YOZILMAYDI — faqat GitHub Secrets orqali.
+ * Ikkinchi echo-bot konfiguratsiyasi repoda: scripts/echo-bot-2/vars.jsonc
+ * GitHub Secrets shart emas (token repoda).
  *
- * Ishlatish (mahalliy mashinada, gh CLI bilan):
- *   node scripts/setup-echo-bot-2-secrets.mjs
- *   gh secret set TELEGRAM_ECHO_BOT_TOKEN_2 --body "YOUR_BOT_TOKEN"
- *   gh secret set TELEGRAM_ECHO_WEBHOOK_SECRET_2 --body "tg_8835962050_echo"
- *
- * Keyin GitHub Actions → "Deploy telegram-echo-bot (secondary)" → Run workflow
+ * Deploy: GitHub Actions → "Deploy telegram-echo-bot (secondary)"
+ * yoki main ga push (scripts/echo-bot-2/ o'zgarganda).
  */
 
-const REPO = "RobotX0319/telegram-cursor-bot";
 const WORKER = "telegram-echo-bot-2";
 const HEALTH = `https://${WORKER}.fxjournaluz.workers.dev/health`;
 
 console.log(`
-Ikkinchi Gemini echo-bot (@Glabalashganbot bilan parallel)
-=========================================================
+Ikkinchi Gemini echo-bot (mustaqil Worker)
+===========================================
 
-1) GitHub Secrets qo'shing (repoga token yozmang):
+Konfig: scripts/echo-bot-2/vars.jsonc
+  - TELEGRAM_BOT_TOKEN
+  - TELEGRAM_WEBHOOK_SECRET
+  - GEMINI_API_KEY_B64
 
-   gh secret set TELEGRAM_ECHO_BOT_TOKEN_2 --repo ${REPO}
-   gh secret set TELEGRAM_ECHO_WEBHOOK_SECRET_2 --repo ${REPO} --body "tg_8835962050_echo"
+Cursor agent tokenlari ishlatilmaydi — faqat Telegram + Gemini.
 
-   GEMINI_API_KEY allaqachon birinchi echo-bot uchun bo'lsa, qayta qo'shish shart emas.
+Deploy: push main yoki GitHub Actions workflow_dispatch.
 
-2) Deploy ishga tushiring:
-
-   GitHub → Actions → "Deploy telegram-echo-bot (secondary)" → Run workflow
-
-   yoki main ga push (ish/echo-bot yoki workflow o'zgarganda).
-
-3) Tekshirish:
-
-   curl ${HEALTH}
-
-   BotFather dan yangi bot username ni tekshiring — u @Glabalashganbot dan boshqa bo'ladi.
-
-Eslatma: token chatda ochiq bo'lsa, BotFather → /revoke qiling va yangi token oling.
+Tekshirish:
+  curl ${HEALTH}
 `);
